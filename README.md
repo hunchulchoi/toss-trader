@@ -156,12 +156,12 @@ TELEGRAM_TOPIC=...
 infisical run --env=prod --path=/ -- \
   env DOCKER_HOST=ssh://choi@dev.dgst.me:50022 \
   docker compose -p toss-trader up -d --build \
-  metrics alertmanager prometheus grafana
+  metrics alertmanager prometheus
 ```
 
 Tailscale 접속 포트는 metrics `9108`, Prometheus `19090`, Alertmanager
-`19093`, Grafana `13000`입니다. Telegram 비밀값으로 생성한 Alertmanager
-설정은 container tmpfs에만 저장됩니다.
+`19093`입니다. dashboard는 공용 Grafana `3001`의 `Trading` 폴더를 사용한다.
+Telegram 비밀값으로 생성한 Alertmanager 설정은 container tmpfs에만 저장됩니다.
 
 n8n은 평일 `08:30 KST`에 장전 시장분석·종목발굴 리포트, 국내 장 마감 뒤
 `15:40 KST`에 paper cycle·마감 리포트를 실행한다.

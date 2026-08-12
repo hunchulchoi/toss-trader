@@ -76,18 +76,16 @@ class MonitoringAssetsTest(unittest.TestCase):
 
         self.assertIn("100.74.208.69", compose)
         self.assertIn("prometheus:", compose)
-        self.assertIn("grafana:", compose)
         self.assertIn("alertmanager:", compose)
         self.assertIn("${PROMETHEUS_PORT:-19090}:9090", compose)
-        self.assertIn("${GRAFANA_PORT:-13000}:3000", compose)
         self.assertIn("${ALERTMANAGER_PORT:-19093}:9093", compose)
-        self.assertIn("GRAFANA_ADMIN_PASSWORD", compose)
         self.assertIn("TELEGRAM_BOT_TOKEN", compose)
         self.assertIn("TELEGRAM_CHAT_ID", compose)
         self.assertIn("TELEGRAM_TOPIC", compose)
         self.assertIn("context: ./monitoring/prometheus", compose)
-        self.assertIn("context: ./monitoring/grafana", compose)
         self.assertIn("context: ./monitoring/alertmanager", compose)
+        self.assertNotIn("toss-trader-grafana", compose)
+        self.assertNotIn("${GRAFANA_PORT:-13000}:3000", compose)
         self.assertNotIn("scrape-job.yml:/etc/prometheus", compose)
 
     def test_compose_automation_is_internal_paper_only(self) -> None:

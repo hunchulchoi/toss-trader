@@ -176,7 +176,7 @@ Grafana는 Tailscale 주소로만 접근한다. 현재 기본 port:
 | Metrics | `9108` |
 | Prometheus | `19090` |
 | Alertmanager | `19093` |
-| Grafana | `13000` |
+| Grafana (공용) | `3001` |
 
 ## 장애 처리
 
