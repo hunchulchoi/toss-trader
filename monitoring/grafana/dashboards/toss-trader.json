@@ -135,6 +135,36 @@
       "targets": [{"editorMode": "code", "expr": "toss_trader_paper_deployed_cash_krw", "instant": false, "legendFormat": "Deployed cash", "range": true, "refId": "A"}],
       "title": "Deployed Paper Cash",
       "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 18},
+      "id": 12,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT evaluated_at AS time, symbol, side, notional, approved, violations::text AS violations, available_cash, position_notional, daily_return_rate, consecutive_api_errors, signal_id, decision_id FROM paper_risk_decisions WHERE $__timeFilter(evaluated_at) ORDER BY evaluated_at DESC LIMIT 100", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "title": "Recent RiskManager Decisions",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "bars", "fillOpacity": 20, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "normal"}, "thresholdsStyle": {"mode": "off"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 28},
+      "id": 13,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "time_series", "rawQuery": true, "rawSql": "SELECT $__timeGroupAlias(finished_at, '1d'), SUM(prompt_tokens) AS prompt, SUM(completion_tokens) AS completion FROM automation_run_logs WHERE $__timeFilter(finished_at) GROUP BY 1 ORDER BY 1", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "title": "Hermes Token Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 16, "x": 8, "y": 28},
+      "id": 14,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT finished_at AS time, run_type, status, stage, duration_ms, prompt_tokens, completion_tokens, total_tokens, error, details::text AS details, run_id FROM automation_run_logs WHERE $__timeFilter(finished_at) ORDER BY finished_at DESC LIMIT 100", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "title": "Automation Run Log",
+      "type": "table"
     }
   ],
   "refresh": "30s",
@@ -146,6 +176,6 @@
   "timezone": "browser",
   "title": "Toss Trader",
   "uid": "toss-trader",
-  "version": 2,
+  "version": 3,
   "weekStart": "monday"
 }

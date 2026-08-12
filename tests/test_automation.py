@@ -7,7 +7,9 @@ from unittest.mock import patch
 from toss_trader.automation import (
     AlertmanagerReporter,
     AutomationBusy,
+    AutomationRunLog,
     DailyAutomation,
+    HermesAnalysis,
     HermesAnalyzer,
     MarketScanAutomation,
     automation_response,
@@ -33,8 +35,34 @@ class DailyAutomationTest(unittest.TestCase):
         self.assertEqual(result["reported"], {"accepted": True})
         self.assertEqual(result["finishedAt"], "2026-08-12T06:40:00+00:00")
 
+    def test_records_success_with_hermes_token_usage(self) -> None:
+        audits: list[AutomationRunLog] = []
+        service = DailyAutomation(
+            run_cycle=lambda: {
+                "exitCode": 0,
+                "cycle": {"summary": {"symbols": 1, "fills": 0}},
+            },
+            analyze=lambda _: HermesAnalysis(
+                content="정상",
+                prompt_tokens=100,
+                completion_tokens=20,
+                total_tokens=120,
+            ),
+            report=lambda _: {"accepted": True},
+            audit=lambda run: audits.append(run) or "audit-daily-1",
+            clock=lambda: datetime(2026, 8, 12, 6, 40, tzinfo=UTC),
+        )
+
+        result = service.run()
+
+        self.assertEqual(result["auditRunId"], "audit-daily-1")
+        self.assertEqual(result["hermesUsage"]["totalTokens"], 120)
+        self.assertEqual(audits[0].status, "succeeded")
+        self.assertEqual(audits[0].total_tokens, 120)
+
     def test_reports_failure_when_hermes_fails(self) -> None:
         reports: list[dict[str, object]] = []
+        audits: list[AutomationRunLog] = []
 
         def fail(_: dict[str, object]) -> str:
             raise RuntimeError("Hermes unavailable")
@@ -43,6 +71,7 @@ class DailyAutomationTest(unittest.TestCase):
             run_cycle=lambda: {"exitCode": 0, "cycle": {}},
             analyze=fail,
             report=lambda value: reports.append(value) or {"accepted": True},
+            audit=lambda run: audits.append(run) or "audit-failed-1",
         )
 
         with self.assertRaisesRegex(RuntimeError, "hermes stage failed"):
@@ -50,6 +79,8 @@ class DailyAutomationTest(unittest.TestCase):
 
         self.assertEqual(reports[0]["stage"], "hermes")
         self.assertFalse(reports[0]["ok"])
+        self.assertEqual(audits[0].status, "failed")
+        self.assertEqual(audits[0].stage, "hermes")
 
     def test_rejects_concurrent_run(self) -> None:
         service = DailyAutomation(
@@ -63,7 +94,6 @@ class DailyAutomationTest(unittest.TestCase):
                 service.run()
         finally:
             service._lock.release()
-
 
 class MarketScanAutomationTest(unittest.TestCase):
     def test_sends_only_market_scan_json_to_hermes(self) -> None:
@@ -118,7 +148,14 @@ class HermesAnalyzerTest(unittest.TestCase):
 
             def read(self) -> bytes:
                 return json.dumps(
-                    {"choices": [{"message": {"content": "시장 의견입니다."}}]}
+                    {
+                        "choices": [{"message": {"content": "시장 의견입니다."}}],
+                        "usage": {
+                            "prompt_tokens": 436,
+                            "completion_tokens": 6,
+                            "total_tokens": 442,
+                        },
+                    }
                 ).encode()
 
         scan = {"markets": [], "candidates": [], "errors": {}}
@@ -133,7 +170,10 @@ class HermesAnalyzerTest(unittest.TestCase):
 
         request = urlopen.call_args.args[0]
         body = json.loads(request.data)
-        self.assertEqual(result, "시장 의견입니다.")
+        self.assertEqual(result.content, "시장 의견입니다.")
+        self.assertEqual(result.prompt_tokens, 436)
+        self.assertEqual(result.completion_tokens, 6)
+        self.assertEqual(result.total_tokens, 442)
         self.assertEqual(request.get_header("Authorization"), f"Bearer {'a' * 32}")
         self.assertEqual(json.loads(body["messages"][1]["content"]), scan)
         self.assertNotIn("tools", body)
@@ -170,7 +210,6 @@ class AlertmanagerReporterTest(unittest.TestCase):
         description = captured[0][0]["annotations"]["description"]
         self.assertIn("Hermes 분석 실패", description)
         self.assertIn("Hermes API request failed", description)
-
 
 class AutomationHttpTest(unittest.TestCase):
     def test_health_and_daily_run_routes(self) -> None:

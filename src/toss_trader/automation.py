@@ -10,11 +10,14 @@ import threading
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
 
+from .config import Settings
+from .paper import open_paper_ledger
 from .screening import format_market_scan_report
 
 logger = logging.getLogger(__name__)
@@ -24,38 +27,77 @@ class AutomationBusy(RuntimeError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class HermesAnalysis:
+    content: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class AutomationRunLog:
+    run_type: str
+    status: str
+    stage: str
+    started_at: datetime
+    finished_at: datetime
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    error: str | None = None
+    details: dict[str, object] | None = None
+
+
 class DailyAutomation:
     def __init__(
         self,
         *,
         run_cycle: Callable[[], dict[str, Any]],
-        analyze: Callable[[dict[str, Any]], str],
+        analyze: Callable[[dict[str, Any]], str | HermesAnalysis],
         report: Callable[[dict[str, Any]], dict[str, Any]],
+        audit: Callable[[AutomationRunLog], str] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._run_cycle = run_cycle
         self._analyze = analyze
         self._report = report
+        self._audit = audit
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = threading.Lock()
 
     def run(self) -> dict[str, Any]:
         if not self._lock.acquire(blocking=False):
             raise AutomationBusy("daily automation is already running")
+        started_at = self._clock()
+        usage = HermesAnalysis(content="")
         stage = "cycle"
         try:
             cycle = self._run_cycle()
             stage = "hermes"
-            analysis = self._analyze(cycle)
+            usage = _hermes_analysis(self._analyze(cycle))
             stage = "report"
             result = {
                 "ok": True,
                 "cycle": cycle,
-                "analysis": analysis,
+                "analysis": usage.content,
+                "hermesUsage": _hermes_usage(usage),
                 "finishedAt": self._clock().isoformat(),
             }
             reported = self._report(result)
-            return {**result, "reported": reported}
+            result = {**result, "reported": reported}
+            stage = "audit"
+            audit_run_id = self._record_audit(
+                status="succeeded",
+                stage="completed",
+                started_at=started_at,
+                finished_at=self._clock(),
+                usage=usage,
+                details=_daily_run_details(cycle),
+            )
+            if audit_run_id is not None:
+                result["auditRunId"] = audit_run_id
+            return result
         except AutomationBusy:
             raise
         except Exception as error:
@@ -65,6 +107,15 @@ class DailyAutomation:
                 "error": _safe_error(error),
                 "finishedAt": self._clock().isoformat(),
             }
+            if stage != "audit":
+                audit_run_id = self._record_failed_audit(
+                    stage=stage,
+                    started_at=started_at,
+                    usage=usage,
+                    error=failure["error"],
+                )
+                if audit_run_id is not None:
+                    failure["auditRunId"] = audit_run_id
             if stage != "report":
                 try:
                     self._report(failure)
@@ -73,6 +124,55 @@ class DailyAutomation:
             raise RuntimeError(f"{stage} stage failed") from error
         finally:
             self._lock.release()
+
+    def _record_audit(
+        self,
+        *,
+        status: str,
+        stage: str,
+        started_at: datetime,
+        finished_at: datetime,
+        usage: HermesAnalysis,
+        error: str | None = None,
+        details: dict[str, object] | None = None,
+    ) -> str | None:
+        if self._audit is None:
+            return None
+        return self._audit(
+            AutomationRunLog(
+                run_type="daily",
+                status=status,
+                stage=stage,
+                started_at=started_at,
+                finished_at=finished_at,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                error=error,
+                details=details,
+            )
+        )
+
+    def _record_failed_audit(
+        self,
+        *,
+        stage: str,
+        started_at: datetime,
+        usage: HermesAnalysis,
+        error: object,
+    ) -> str | None:
+        try:
+            return self._record_audit(
+                status="failed",
+                stage=stage,
+                started_at=started_at,
+                finished_at=self._clock(),
+                usage=usage,
+                error=str(error),
+            )
+        except Exception:  # noqa: BLE001
+            logger.error("daily automation audit could not be recorded")
+            return None
 
 
 class PaperCycleProcess:
@@ -135,19 +235,23 @@ class MarketScanAutomation:
         self,
         *,
         run_scan: Callable[[], dict[str, Any]],
-        analyze: Callable[[dict[str, Any]], str],
+        analyze: Callable[[dict[str, Any]], str | HermesAnalysis],
         report: Callable[[dict[str, Any]], dict[str, Any]],
+        audit: Callable[[AutomationRunLog], str] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._run_scan = run_scan
         self._analyze = analyze
         self._report = report
+        self._audit = audit
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = threading.Lock()
 
     def run(self) -> dict[str, Any]:
         if not self._lock.acquire(blocking=False):
             raise AutomationBusy("market scan automation is already running")
+        started_at = self._clock()
+        usage = HermesAnalysis(content="")
         stage = "scan"
         try:
             scan = self._run_scan()
@@ -155,17 +259,31 @@ class MarketScanAutomation:
             if not isinstance(scan_payload, dict):
                 raise TypeError("market scan process returned invalid JSON")
             stage = "hermes"
-            opinion = self._analyze(scan_payload)
+            usage = _hermes_analysis(self._analyze(scan_payload))
+            opinion = usage.content
             stage = "report"
             result = {
                 "ok": True,
                 "scan": scan,
                 "opinion": opinion,
                 "analysis": format_market_scan_report(scan, opinion=opinion),
+                "hermesUsage": _hermes_usage(usage),
                 "finishedAt": self._clock().isoformat(),
             }
             reported = self._report(result)
-            return {**result, "reported": reported}
+            result = {**result, "reported": reported}
+            stage = "audit"
+            audit_run_id = self._record_audit(
+                status="succeeded",
+                stage="completed",
+                started_at=started_at,
+                finished_at=self._clock(),
+                usage=usage,
+                details=_market_run_details(scan),
+            )
+            if audit_run_id is not None:
+                result["auditRunId"] = audit_run_id
+            return result
         except AutomationBusy:
             raise
         except Exception as error:
@@ -175,6 +293,15 @@ class MarketScanAutomation:
                 "error": _safe_error(error),
                 "finishedAt": self._clock().isoformat(),
             }
+            if stage != "audit":
+                audit_run_id = self._record_failed_audit(
+                    stage=stage,
+                    started_at=started_at,
+                    usage=usage,
+                    error=failure["error"],
+                )
+                if audit_run_id is not None:
+                    failure["auditRunId"] = audit_run_id
             if stage != "report":
                 try:
                     self._report(failure)
@@ -183,6 +310,55 @@ class MarketScanAutomation:
             raise RuntimeError(f"{stage} stage failed") from error
         finally:
             self._lock.release()
+
+    def _record_audit(
+        self,
+        *,
+        status: str,
+        stage: str,
+        started_at: datetime,
+        finished_at: datetime,
+        usage: HermesAnalysis,
+        error: str | None = None,
+        details: dict[str, object] | None = None,
+    ) -> str | None:
+        if self._audit is None:
+            return None
+        return self._audit(
+            AutomationRunLog(
+                run_type="market_scan",
+                status=status,
+                stage=stage,
+                started_at=started_at,
+                finished_at=finished_at,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                error=error,
+                details=details,
+            )
+        )
+
+    def _record_failed_audit(
+        self,
+        *,
+        stage: str,
+        started_at: datetime,
+        usage: HermesAnalysis,
+        error: object,
+    ) -> str | None:
+        try:
+            return self._record_audit(
+                status="failed",
+                stage=stage,
+                started_at=started_at,
+                finished_at=self._clock(),
+                usage=usage,
+                error=str(error),
+            )
+        except Exception:  # noqa: BLE001
+            logger.error("market scan automation audit could not be recorded")
+            return None
 
 
 class HermesAnalyzer:
@@ -206,7 +382,7 @@ class HermesAnalyzer:
             "수익률, 다음 확인사항을 요약하라. 매매 추천은 하지 마라."
         )
 
-    def analyze(self, cycle: dict[str, Any]) -> str:
+    def analyze(self, cycle: dict[str, Any]) -> HermesAnalysis:
         cycle_json = json.dumps(cycle, ensure_ascii=False, default=str)
         request_body = {
             "model": "hermes-agent",
@@ -242,7 +418,20 @@ class HermesAnalyzer:
             raise RuntimeError("Hermes API response is missing content") from error
         if not content:
             raise RuntimeError("Hermes API returned empty content")
-        return content[:4000]
+        usage = payload.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        prompt_tokens = _token_count(usage.get("prompt_tokens"))
+        completion_tokens = _token_count(usage.get("completion_tokens"))
+        total_tokens = max(
+            _token_count(usage.get("total_tokens")),
+            prompt_tokens + completion_tokens,
+        )
+        return HermesAnalysis(
+            content=content[:4000],
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
 
 
 class AlertmanagerReporter:
@@ -327,6 +516,7 @@ def create_daily_automation_from_env() -> DailyAutomation:
                 "http://alertmanager:9093/api/v2/alerts",
             )
         ).report,
+        audit=_record_automation_run_from_env,
     )
 
 
@@ -356,6 +546,7 @@ def create_market_scan_automation_from_env() -> MarketScanAutomation:
             alert_name="TossTraderMarketScan",
             summary="Toss Trader 시장분석·종목발굴",
         ).report,
+        audit=_record_automation_run_from_env,
     )
 
 
@@ -427,6 +618,92 @@ def _load_json(raw: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return value if isinstance(value, dict) else None
+
+
+def _record_automation_run_from_env(run: AutomationRunLog) -> str:
+    settings = Settings.from_env()
+    ledger = open_paper_ledger(
+        postgres_parameters=settings.postgres_connection_parameters(),
+        sqlite_path=settings.paper_db_path,
+    )
+    try:
+        return ledger.record_automation_run(
+            run_type=run.run_type,
+            status=run.status,
+            stage=run.stage,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            prompt_tokens=run.prompt_tokens,
+            completion_tokens=run.completion_tokens,
+            total_tokens=run.total_tokens,
+            error=run.error,
+            details=run.details,
+        )
+    finally:
+        ledger.close()
+
+
+def _hermes_analysis(value: str | HermesAnalysis) -> HermesAnalysis:
+    if isinstance(value, HermesAnalysis):
+        return value
+    if not isinstance(value, str):
+        raise TypeError("Hermes analyzer returned invalid result")
+    content = value.strip()
+    if not content:
+        raise RuntimeError("Hermes analyzer returned empty content")
+    return HermesAnalysis(content=content[:4000])
+
+
+def _hermes_usage(analysis: HermesAnalysis) -> dict[str, int]:
+    return {
+        "promptTokens": analysis.prompt_tokens,
+        "completionTokens": analysis.completion_tokens,
+        "totalTokens": analysis.total_tokens,
+    }
+
+
+def _token_count(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
+def _daily_run_details(cycle: dict[str, Any]) -> dict[str, object]:
+    payload = cycle.get("cycle")
+    payload = payload if isinstance(payload, dict) else {}
+    summary = payload.get("summary")
+    summary = summary if isinstance(summary, dict) else {}
+    return {
+        "exitCode": cycle.get("exitCode"),
+        "symbols": _non_negative_int(summary.get("symbols")),
+        "signals": _non_negative_int(summary.get("signals")),
+        "fills": _non_negative_int(summary.get("fills")),
+        "failed": _non_negative_int(summary.get("failed")),
+    }
+
+
+def _market_run_details(scan: dict[str, Any]) -> dict[str, object]:
+    payload = scan.get("scan")
+    payload = payload if isinstance(payload, dict) else {}
+    markets = payload.get("markets")
+    candidates = payload.get("candidates")
+    errors = payload.get("errors")
+    return {
+        "exitCode": scan.get("exitCode"),
+        "markets": len(markets) if isinstance(markets, list) else 0,
+        "candidates": len(candidates) if isinstance(candidates, list) else 0,
+        "errors": len(errors) if isinstance(errors, dict) else 0,
+    }
+
+
+def _non_negative_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(parsed, 0)
 
 
 def _safe_error(error: Exception) -> str:

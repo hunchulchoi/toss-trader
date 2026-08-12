@@ -16,6 +16,13 @@ class MonitoringAssetsTest(unittest.TestCase):
             target["expr"]
             for panel in dashboard["panels"]
             for target in panel.get("targets", [])
+            if "expr" in target
+        }
+        sql_queries = {
+            target["rawSql"]
+            for panel in dashboard["panels"]
+            for target in panel.get("targets", [])
+            if "rawSql" in target
         }
 
         self.assertEqual(dashboard["uid"], "toss-trader")
@@ -32,7 +39,14 @@ class MonitoringAssetsTest(unittest.TestCase):
             for panel in dashboard["panels"]
             if "datasource" in panel
         }
-        self.assertEqual(datasources, {"toss-prometheus"})
+        self.assertEqual(datasources, {"toss-prometheus", "toss-postgres"})
+        self.assertTrue(
+            any("paper_risk_decisions" in query for query in sql_queries)
+        )
+        self.assertTrue(
+            any("automation_run_logs" in query for query in sql_queries)
+        )
+        self.assertTrue(any("prompt_tokens" in query for query in sql_queries))
         self.assertNotIn("DS_PROMETHEUS", dashboard)
 
     def test_prometheus_assets_cover_outage_loss_and_stale_cycle(self) -> None:
