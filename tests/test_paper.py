@@ -30,6 +30,9 @@ class PaperLedgerTest(unittest.TestCase):
         self.assertEqual(fill.notional, Decimal(142000))
         self.assertEqual(self.ledger.daily_buy_count(executed_at.date()), 1)
         self.assertEqual(self.ledger.position_notional("005930"), Decimal(142000))
+        self.assertEqual(
+            self.ledger.cash_balance(Decimal(1000000)), Decimal(858000)
+        )
         with self.assertRaises(DuplicatePaperOrder):
             self.ledger.execute(trade_signal, executed_at=executed_at)
 
@@ -63,6 +66,7 @@ class PaperLedgerTest(unittest.TestCase):
             Decimal(420),
         )
         self.assertEqual(self.ledger.position_quantity("AAPL"), Decimal(2))
+        self.assertEqual(self.ledger.cash_balance(Decimal(1000)), Decimal(610))
 
 
 class FakePaperCursor:

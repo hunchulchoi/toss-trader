@@ -167,6 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "strategyShortWindow": settings.strategy_short_window,
                     "strategyLongWindow": settings.strategy_long_window,
                     "paperOrderQuantity": settings.paper_order_quantity,
+                    "paperInitialCash": settings.paper_initial_cash,
                     "metricsHost": settings.metrics_host,
                     "metricsPort": settings.metrics_port,
                 }
@@ -258,7 +259,9 @@ def _paper_order(settings: Settings, args: argparse.Namespace) -> int:
     )
     try:
         result = PaperTradingService(
-            ledger=ledger, risk_manager=RiskManager(RiskLimits())
+            ledger=ledger,
+            risk_manager=RiskManager(RiskLimits()),
+            initial_cash=settings.paper_initial_cash,
         ).submit(
             signal,
             now=now,
@@ -354,6 +357,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             trading=PaperTradingService(
                 ledger=paper_ledger,
                 risk_manager=RiskManager(RiskLimits()),
+                initial_cash=settings.paper_initial_cash,
             ),
             calendar=MarketCalendarService(client),
             performance=PortfolioPerformance(
@@ -369,6 +373,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             quantity=quantity,
             now=datetime.now(UTC),
         )
+        cash_balance = paper_ledger.cash_balance(settings.paper_initial_cash)
     _emit(
         {
             "runId": result.run_id,
@@ -377,6 +382,8 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             "interval": result.interval,
             "dailyReturnRate": result.daily_return_rate,
             "currencyReturns": result.currency_returns,
+            "initialCash": settings.paper_initial_cash,
+            "cashBalance": cash_balance,
             "consecutiveApiErrors": result.consecutive_api_errors,
             "summary": {
                 "symbols": result.symbol_count,

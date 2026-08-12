@@ -83,6 +83,15 @@ class RiskManagerTest(unittest.TestCase):
         self.assertFalse(decision.approved)
         self.assertIn("market-closed", decision.violations)
 
+    def test_rejects_buy_larger_than_available_paper_cash(self) -> None:
+        decision = self.manager.evaluate(
+            signal(),
+            RiskContext(now=NOW, available_cash=Decimal(200000)),
+        )
+
+        self.assertFalse(decision.approved)
+        self.assertIn("insufficient-paper-cash", decision.violations)
+
     def test_rejects_sell_larger_than_position(self) -> None:
         decision = self.manager.evaluate(
             signal(side=Side.SELL, quantity=Decimal(3)),

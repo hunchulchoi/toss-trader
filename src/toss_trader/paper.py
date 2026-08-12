@@ -32,6 +32,8 @@ class PaperLedgerStore(Protocol):
 
     def position_quantities(self) -> dict[str, Decimal]: ...
 
+    def cash_balance(self, initial_cash: Decimal) -> Decimal: ...
+
     def seen_signal_ids(self) -> frozenset[str]: ...
 
 
@@ -160,6 +162,21 @@ class PaperLedger:
             signed = Decimal(quantity) if side == Side.BUY.value else -Decimal(quantity)
             positions[str(symbol)] = positions.get(str(symbol), Decimal(0)) + signed
         return {symbol: quantity for symbol, quantity in positions.items() if quantity}
+
+    def cash_balance(self, initial_cash: Decimal) -> Decimal:
+        rows = self._connection.execute(
+            "SELECT side, notional FROM paper_fills"
+        ).fetchall()
+        cash_change = sum(
+            (
+                -Decimal(notional)
+                if side == Side.BUY.value
+                else Decimal(notional)
+                for side, notional in rows
+            ),
+            start=Decimal(0),
+        )
+        return initial_cash + cash_change
 
     def seen_signal_ids(self) -> frozenset[str]:
         rows = self._connection.execute("SELECT signal_id FROM paper_fills").fetchall()
@@ -329,6 +346,19 @@ class PostgresPaperLedger:
             )
             rows = cursor.fetchall()
         return {str(symbol): Decimal(quantity) for symbol, quantity in rows}
+
+    def cash_balance(self, initial_cash: Decimal) -> Decimal:
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(
+                    CASE WHEN side = 'BUY' THEN -notional ELSE notional END
+                ), 0)
+                FROM paper_fills
+                """
+            )
+            row = cursor.fetchone()
+        return initial_cash + (Decimal(row[0]) if row else Decimal(0))
 
     def seen_signal_ids(self) -> frozenset[str]:
         with self._connection.cursor() as cursor:

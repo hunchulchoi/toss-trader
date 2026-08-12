@@ -53,6 +53,40 @@ class PaperTradingServiceTest(unittest.TestCase):
         self.assertIsNone(result.fill)
         self.assertEqual(self.ledger.daily_buy_count(self.now.date()), 0)
 
+    def test_rejects_buy_after_initial_cash_is_spent(self) -> None:
+        service = PaperTradingService(
+            ledger=self.ledger,
+            risk_manager=RiskManager(RiskLimits()),
+            initial_cash=Decimal(100000),
+        )
+        first = service.submit(
+            TradeSignal(
+                signal_id="cash-buy-1",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(71000),
+                quantity=Decimal(1),
+                reason="test",
+            ),
+            now=self.now,
+        )
+        second = service.submit(
+            TradeSignal(
+                signal_id="cash-buy-2",
+                symbol="000660",
+                side=Side.BUY,
+                reference_price=Decimal(50000),
+                quantity=Decimal(1),
+                reason="test",
+            ),
+            now=self.now,
+        )
+
+        self.assertTrue(first.decision.approved)
+        self.assertFalse(second.decision.approved)
+        self.assertIn("insufficient-paper-cash", second.decision.violations)
+        self.assertEqual(self.ledger.cash_balance(Decimal(100000)), Decimal(29000))
+
 
 if __name__ == "__main__":
     unittest.main()

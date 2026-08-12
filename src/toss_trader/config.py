@@ -30,6 +30,7 @@ class Settings:
     strategy_short_window: int = 20
     strategy_long_window: int = 60
     paper_order_quantity: Decimal = Decimal(1)
+    paper_initial_cash: Decimal = Decimal(1000000)
     metrics_host: str = "0.0.0.0"
     metrics_port: int = 9108
 
@@ -50,6 +51,9 @@ class Settings:
             raise ValueError("STRATEGY_INTERVAL must be 1m or 1d")
         quantity = _positive_decimal(
             "PAPER_ORDER_QUANTITY", values.get("PAPER_ORDER_QUANTITY", "1")
+        )
+        initial_cash = _positive_decimal(
+            "PAPER_INITIAL_CASH", values.get("PAPER_INITIAL_CASH", "1000000")
         )
         metrics_host = values.get("METRICS_HOST", "0.0.0.0").strip()
         if not metrics_host:
@@ -95,6 +99,7 @@ class Settings:
             strategy_short_window=short_window,
             strategy_long_window=long_window,
             paper_order_quantity=quantity,
+            paper_initial_cash=initial_cash,
             metrics_host=metrics_host,
             metrics_port=metrics_port,
         )

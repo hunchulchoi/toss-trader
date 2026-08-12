@@ -16,9 +16,18 @@ class PaperExecutionResult:
 
 
 class PaperTradingService:
-    def __init__(self, *, ledger: PaperLedgerStore, risk_manager: RiskManager) -> None:
+    def __init__(
+        self,
+        *,
+        ledger: PaperLedgerStore,
+        risk_manager: RiskManager,
+        initial_cash: Decimal = Decimal(1000000),
+    ) -> None:
+        if initial_cash <= 0:
+            raise ValueError("paper initial cash must be positive")
         self._ledger = ledger
         self._risk_manager = risk_manager
+        self._initial_cash = initial_cash
 
     def submit(
         self,
@@ -38,6 +47,7 @@ class PaperTradingService:
                 signal.symbol, mark_price=signal.reference_price
             ),
             position_quantity=self._ledger.position_quantity(signal.symbol),
+            available_cash=self._ledger.cash_balance(self._initial_cash),
             daily_buy_count=self._ledger.daily_buy_count(now.date()),
             daily_return_rate=daily_return_rate,
             consecutive_api_errors=consecutive_api_errors,

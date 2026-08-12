@@ -24,6 +24,7 @@ class RiskContext:
     market_is_business_day: bool = True
     position_notional: Decimal = Decimal(0)
     position_quantity: Decimal = Decimal(0)
+    available_cash: Decimal | None = None
     daily_buy_count: int = 0
     daily_return_rate: Decimal = Decimal(0)
     consecutive_api_errors: int = 0
@@ -47,6 +48,12 @@ class RiskManager:
             violations.append("duplicate-signal")
         if signal.notional > self._limits.max_order_notional:
             violations.append("max-order-notional")
+        if (
+            signal.side is Side.BUY
+            and context.available_cash is not None
+            and signal.notional > context.available_cash
+        ):
+            violations.append("insufficient-paper-cash")
         if (
             signal.side is Side.BUY
             and context.position_notional + signal.notional
