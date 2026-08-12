@@ -151,8 +151,11 @@ class MarketScanAutomation:
         stage = "scan"
         try:
             scan = self._run_scan()
+            scan_payload = scan.get("scan")
+            if not isinstance(scan_payload, dict):
+                raise TypeError("market scan process returned invalid JSON")
             stage = "hermes"
-            opinion = self._analyze(scan)
+            opinion = self._analyze(scan_payload)
             stage = "report"
             result = {
                 "ok": True,
@@ -267,11 +270,15 @@ class AlertmanagerReporter:
         severity = "info" if ok and exit_code == 0 else "warning"
         if not ok:
             severity = "critical"
-        description = (
-            str(result.get("analysis", ""))
-            if ok
-            else f"{result.get('stage', 'unknown')}: {result.get('error', 'failed')}"
-        )
+        if ok:
+            description = str(result.get("analysis", ""))
+        elif result.get("stage") == "hermes":
+            description = f"Hermes 분석 실패\n{result.get('error', 'failed')}"
+        else:
+            description = (
+                f"{result.get('stage', 'unknown')}: "
+                f"{result.get('error', 'failed')}"
+            )
         alert = [
             {
                 "labels": {
@@ -310,7 +317,9 @@ def create_daily_automation_from_env() -> DailyAutomation:
         run_cycle=PaperCycleProcess().run,
         analyze=HermesAnalyzer(
             api_key=api_key,
-            base_url=os.environ.get("HERMES_API_BASE_URL", "http://hermes:8642"),
+            base_url=os.environ.get(
+                "HERMES_API_BASE_URL", "http://hermes-analysis:8642"
+            ),
         ).analyze,
         report=AlertmanagerReporter(
             url=os.environ.get(
@@ -327,7 +336,9 @@ def create_market_scan_automation_from_env() -> MarketScanAutomation:
         run_scan=MarketScanProcess().run,
         analyze=HermesAnalyzer(
             api_key=api_key,
-            base_url=os.environ.get("HERMES_API_BASE_URL", "http://hermes:8642"),
+            base_url=os.environ.get(
+                "HERMES_API_BASE_URL", "http://hermes-analysis:8642"
+            ),
             system_prompt=(
                 "너는 한국 주식시장 장전 리포트 분석가다. 제공된 JSON의 시장 "
                 "상태, 20일 모멘텀, 거래량 비율, 발굴 후보를 함께 비교해 맥락을 "

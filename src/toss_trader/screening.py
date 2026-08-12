@@ -17,6 +17,30 @@ class MarketRegime(StrEnum):
     RISK_OFF = "RISK_OFF"
 
 
+MARKET_DISPLAY_NAMES = {
+    "069500": "KOSPI200",
+    "229200": "KOSDAQ150",
+}
+
+SECURITY_DISPLAY_NAMES = {
+    "000270": "기아",
+    "000660": "SK하이닉스",
+    "005380": "현대차",
+    "005930": "삼성전자",
+    "006400": "삼성SDI",
+    "012330": "현대모비스",
+    "028260": "삼성물산",
+    "035420": "NAVER",
+    "035720": "카카오",
+    "051910": "LG화학",
+    "055550": "신한지주",
+    "068270": "셀트리온",
+    "105560": "KB금융",
+    "207940": "삼성바이오로직스",
+    "373220": "LG에너지솔루션",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class MarketAnalysis:
     symbol: str
@@ -174,6 +198,7 @@ def market_scan_to_dict(result: MarketScanResult) -> dict[str, object]:
         "markets": [
             {
                 "symbol": item.symbol,
+                "name": MARKET_DISPLAY_NAMES.get(item.symbol, item.symbol),
                 "regime": item.regime.value,
                 "asOf": item.as_of,
                 "closePrice": item.close_price,
@@ -188,6 +213,7 @@ def market_scan_to_dict(result: MarketScanResult) -> dict[str, object]:
         "candidates": [
             {
                 "symbol": item.symbol,
+                "name": SECURITY_DISPLAY_NAMES.get(item.symbol, item.symbol),
                 "asOf": item.as_of,
                 "closePrice": item.close_price,
                 "ma20": item.ma20,
@@ -219,15 +245,15 @@ def format_market_scan_report(
     errors = scan.get("errors") if isinstance(scan.get("errors"), dict) else {}
 
     market_lines = [
-        f"• {item.get('symbol', '?')}: {item.get('regime', 'UNKNOWN')}\n"
+        f"• {_market_label(item)}: {item.get('regime', 'UNKNOWN')}\n"
         f"  20일 모멘텀 {_percent(item.get('momentum20d'))}"
         for item in markets
         if isinstance(item, dict)
     ]
     candidate_lines = [
-        f"{index}. {item.get('symbol', '?')}\n"
-        f"   모멘텀 {_percent(item.get('momentum20d'))} · "
-        f"거래량 {_ratio(item.get('volumeRatio'))}\n"
+        f"{index}. {_candidate_label(item)}\n"
+        f"   모멘텀 {_percent(item.get('momentum20d'))}\n"
+        f"   거래량 {_ratio(item.get('volumeRatio'))}\n"
         f"   점수 {item.get('score', '?')}"
         for index, item in enumerate(
             (item for item in candidates if isinstance(item, dict)), start=1
@@ -238,10 +264,21 @@ def format_market_scan_report(
         f"{'\n\n'.join(market_lines) if market_lines else '분석 결과 없음'}\n\n"
         "🔎 발굴 종목\n"
         f"{'\n\n'.join(candidate_lines) if candidate_lines else '조건 충족 종목 없음'}\n\n"
-        "💬 간단 의견\n"
+        "💬 Hermes 의견\n"
         f"{opinion[:1500]}\n\n"
         f"오류 {len(errors)}건"
     )
+
+
+def _market_label(item: dict[str, object]) -> str:
+    symbol = str(item.get("symbol", "?"))
+    return str(item.get("name") or MARKET_DISPLAY_NAMES.get(symbol, symbol))
+
+
+def _candidate_label(item: dict[str, object]) -> str:
+    symbol = str(item.get("symbol", "?"))
+    name = str(item.get("name") or SECURITY_DISPLAY_NAMES.get(symbol, symbol))
+    return f"{name} ({symbol})" if name != symbol else symbol
 
 
 def _validate_daily_candles(candles: list[Candle]) -> None:

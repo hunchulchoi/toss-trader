@@ -1,10 +1,14 @@
 import json
 import unittest
 from datetime import UTC, datetime
+from typing import Self
+from unittest.mock import patch
 
 from toss_trader.automation import (
+    AlertmanagerReporter,
     AutomationBusy,
     DailyAutomation,
+    HermesAnalyzer,
     MarketScanAutomation,
     automation_response,
 )
@@ -59,6 +63,113 @@ class DailyAutomationTest(unittest.TestCase):
                 service.run()
         finally:
             service._lock.release()
+
+
+class MarketScanAutomationTest(unittest.TestCase):
+    def test_sends_only_market_scan_json_to_hermes(self) -> None:
+        analyzed: list[dict[str, object]] = []
+        scan = {
+            "markets": [{"symbol": "069500", "regime": "NEUTRAL"}],
+            "candidates": [{"symbol": "068270", "score": "18.0851"}],
+            "errors": {},
+        }
+        service = MarketScanAutomation(
+            run_scan=lambda: {"exitCode": 0, "scan": scan},
+            analyze=lambda value: analyzed.append(value) or "LLM 시장 의견입니다.",
+            report=lambda _: {"accepted": True},
+        )
+
+        result = service.run()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(analyzed, [scan])
+
+    def test_reports_hermes_failure_without_fallback_opinion(self) -> None:
+        reports: list[dict[str, object]] = []
+
+        def fail(_: dict[str, object]) -> str:
+            raise RuntimeError("Hermes API request failed")
+
+        service = MarketScanAutomation(
+            run_scan=lambda: {
+                "exitCode": 0,
+                "scan": {"markets": [], "candidates": [], "errors": {}},
+            },
+            analyze=fail,
+            report=lambda value: reports.append(value) or {"accepted": True},
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "hermes stage failed"):
+            service.run()
+
+        self.assertEqual(reports[0]["stage"], "hermes")
+        self.assertNotIn("opinion", reports[0])
+        self.assertNotIn("analysis", reports[0])
+
+
+class HermesAnalyzerTest(unittest.TestCase):
+    def test_posts_bearer_authenticated_json_without_tools(self) -> None:
+        class Response:
+            def __enter__(self) -> Self:
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return json.dumps(
+                    {"choices": [{"message": {"content": "시장 의견입니다."}}]}
+                ).encode()
+
+        scan = {"markets": [], "candidates": [], "errors": {}}
+        analyzer = HermesAnalyzer(
+            api_key="a" * 32,
+            base_url="http://hermes-analysis:8642",
+            system_prompt="시장 분석",
+        )
+
+        with patch("urllib.request.urlopen", return_value=Response()) as urlopen:
+            result = analyzer.analyze(scan)
+
+        request = urlopen.call_args.args[0]
+        body = json.loads(request.data)
+        self.assertEqual(result, "시장 의견입니다.")
+        self.assertEqual(request.get_header("Authorization"), f"Bearer {'a' * 32}")
+        self.assertEqual(json.loads(body["messages"][1]["content"]), scan)
+        self.assertNotIn("tools", body)
+
+
+class AlertmanagerReporterTest(unittest.TestCase):
+    def test_hermes_failure_message_is_explicit(self) -> None:
+        captured: list[list[dict[str, object]]] = []
+
+        class Response:
+            def __enter__(self) -> Self:
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b""
+
+        def send(request: object, **_: object) -> Response:
+            captured.append(json.loads(request.data))
+            return Response()
+
+        reporter = AlertmanagerReporter(alert_name="TossTraderMarketScan")
+        with patch("urllib.request.urlopen", side_effect=send):
+            reporter.report(
+                {
+                    "ok": False,
+                    "stage": "hermes",
+                    "error": "Hermes API request failed",
+                }
+            )
+
+        description = captured[0][0]["annotations"]["description"]
+        self.assertIn("Hermes 분석 실패", description)
+        self.assertIn("Hermes API request failed", description)
 
 
 class AutomationHttpTest(unittest.TestCase):
@@ -117,7 +228,7 @@ class AutomationHttpTest(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["opinion"], "LLM 시장 의견")
         self.assertEqual(payload["reported"], {"accepted": True})
-        self.assertEqual(len(analyzed), 1)
+        self.assertEqual(analyzed, [{"markets": [], "candidates": []}])
         self.assertEqual(len(calls), 1)
 
 

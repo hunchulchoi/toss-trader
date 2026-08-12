@@ -5,9 +5,11 @@ from decimal import Decimal
 from toss_trader.models import Candle
 from toss_trader.screening import (
     MarketRegime,
+    MarketScanResult,
     analyze_market,
     discover_candidate,
     format_market_scan_report,
+    market_scan_to_dict,
 )
 
 
@@ -70,6 +72,20 @@ class DiscoveryTest(unittest.TestCase):
             discover_candidate(candles("005930", list(range(160, 100, -1))))
         )
 
+    def test_market_json_contains_display_names(self) -> None:
+        market = analyze_market(candles("069500", list(range(100, 160))))
+        candidate = discover_candidate(candles("068270", list(range(100, 160))))
+        assert candidate is not None
+
+        payload = market_scan_to_dict(
+            MarketScanResult(
+                markets=(market,), candidates=(candidate,), errors={}
+            )
+        )
+
+        self.assertEqual(payload["markets"][0]["name"], "KOSPI200")
+        self.assertEqual(payload["candidates"][0]["name"], "셀트리온")
+
     def test_formats_telegram_report(self) -> None:
         report = format_market_scan_report(
             {
@@ -97,10 +113,11 @@ class DiscoveryTest(unittest.TestCase):
         )
 
         self.assertIn("📊 시장 분석\n", report)
-        self.assertIn("• 069500: RISK_ON", report)
+        self.assertIn("• KOSPI200: RISK_ON", report)
         self.assertIn("🔎 발굴 종목\n", report)
-        self.assertIn("1. 005930", report)
-        self.assertIn("💬 간단 의견\n", report)
+        self.assertIn("1. 삼성전자 (005930)", report)
+        self.assertIn("모멘텀 +10.00%\n   거래량 1.30x", report)
+        self.assertIn("💬 Hermes 의견\n", report)
         self.assertIn("시장 추세 양호", report)
         self.assertIn("오류 0건", report)
 

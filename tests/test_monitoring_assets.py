@@ -97,6 +97,24 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("openclaw-net", compose)
         self.assertNotIn("/var/run/docker.sock", compose)
 
+    def test_compose_uses_isolated_zero_tool_hermes_sidecar(self) -> None:
+        compose = (ROOT / "compose.yaml").read_text()
+        hermes_config = (
+            ROOT / "automation" / "hermes-analysis" / "config.yaml"
+        ).read_text()
+
+        self.assertIn("hermes-analysis:", compose)
+        self.assertIn("HERMES_API_BASE_URL: http://hermes-analysis:8642", compose)
+        self.assertIn("API_SERVER_KEY: ${HERMES_API_KEY", compose)
+        self.assertIn("hermes-analysis-data:/opt/data", compose)
+        self.assertNotIn("8642:8642", compose)
+        self.assertNotIn("/var/run/docker.sock", compose)
+        self.assertIn("api_server: []", hermes_config)
+        self.assertIn("enabled: []", hermes_config)
+        self.assertIn("mcp_servers: {}", hermes_config)
+        self.assertIn("context:\n  engine: compressor", hermes_config)
+        self.assertIn("memory_enabled: false", hermes_config)
+
     def test_n8n_workflow_runs_weekdays_after_market_close(self) -> None:
         workflow = json.loads(
             (ROOT / "automation" / "n8n" / "toss-trader-daily.json").read_text()

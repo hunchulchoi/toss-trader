@@ -120,26 +120,32 @@ automation service가 별도 프로세스로 `run-paper-cycle`을 실행한다. 
 
 ### 5. Hermes 분석
 
-paper cycle JSON만 전달한다. Hermes 역할:
+일일 보고에는 paper cycle JSON만, 시장분석 보고에는 규칙 기반 시장분석 JSON만
+전달한다. 인증정보, 환경변수, 파일, 이전 대화는 전달하지 않는다. Hermes 역할:
 
 - 결과, 신호, 가상 체결, 실패, 수익률 요약
 - 한국어 평문 6줄 이내
 - 매매 추천 금지
 - 응답 최대 4,000자
+- 시장분석 의견은 한국어 2~4문장으로 시장 간 엇갈림, 모멘텀, 거래량,
+  후보 강도와 주의점을 해석
+- 직접적인 매수·매도 지시와 확정적 수익 표현 금지
 
 `HERMES_API_KEY` 하나를 Hermes의 `API_SERVER_KEY`와 Toss Trader의 bearer
 token으로 같이 사용한다. 별도 Hermes 키는 필요 없다.
 
-보안 활성화 조건:
+분석 전용 `hermes-analysis` sidecar를 다음 경계로 실행한다.
 
-- 분석 전용 Hermes API profile 또는 별도 sidecar 사용
-- API agent의 실제 tool surface가 0개인지 `/v1/toolsets`로 검증
-- analyzer 컨테이너에 Docker socket과 host filesystem 미제공
-- API port를 인터넷에 공개하지 않고 Docker 내부망에서만 접근
+- `openclaw-net` 내부 `http://hermes-analysis:8642`에서만 접근
+- bearer 인증 필수, host port publish 없음
+- Docker socket과 host filesystem mount 없음
+- `platform_toolsets.api_server`, plugin, MCP, context tool 모두 0개
+- 인증된 `/v1/toolsets` 응답의 enabled/resolved tool이 모두 0개인지 검증
+- 전용 named volume에는 별도로 승인한 OAuth credential만 저장
 
-현재 공용 Hermes 컨테이너는 Docker socket을 가진다. 위 격리가 끝나기 전에는
-Toss Trader 분석 endpoint로 활성화하지 않는다. system prompt의 “도구를
-호출하지 마라” 문구만으로는 보안 경계가 되지 않는다.
+Docker socket을 가진 기존 공용 Hermes 컨테이너와 그 credential은 공유하지
+않는다. system prompt의 “도구를 호출하지 마라” 문구는 보안 경계로 간주하지
+않는다.
 
 ### 6. Telegram 보고
 
@@ -180,7 +186,7 @@ Grafana는 Tailscale 주소로만 접근한다. 현재 기본 port:
 | 시장 일정 조회 실패 | 해당 국가 신호 실행 금지 |
 | RiskManager 거부 | 체결 없음, 위반 코드 기록 |
 | paper cycle 비정상 종료 | Hermes 단계 생략, 실패 alert 시도 |
-| Hermes 오류/timeout | paper 결과는 유지, 실패 alert 시도 |
+| Hermes 오류/timeout | 기계적 의견으로 대체하지 않고 `hermes` 단계 실패 alert 전송 |
 | Alertmanager 오류 | API가 `502` 반환, n8n execution 실패 기록 |
 | 중복 실행 | 두 번째 요청 `409` 반환 |
 

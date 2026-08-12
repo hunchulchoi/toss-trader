@@ -1,0 +1,22 @@
+_config_version: 33
+
+model:
+  default: gpt-5.6-terra
+  provider: openai-codex
+  base_url: https://chatgpt.com/backend-api/codex
+
+platform_toolsets:
+  api_server: []
+
+plugins:
+  enabled: []
+
+mcp_servers: {}
+
+context:
+  engine: compressor
+
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+  provider: ""
