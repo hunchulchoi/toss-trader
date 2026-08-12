@@ -1,0 +1,79 @@
+{
+  "id": "toss-trader-daily-paper-hermes",
+  "name": "Toss Trader Daily Paper + Hermes",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "40 15 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-weekday-1540",
+      "name": "평일 15:40 KST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {},
+      "id": "manual-test",
+      "name": "수동 테스트",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://toss-trader-automation:8088/run-daily",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "run-paper-hermes-report",
+      "name": "Paper + Hermes + Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 80]
+    }
+  ],
+  "connections": {
+    "평일 15:40 KST": {
+      "main": [
+        [
+          {
+            "node": "Paper + Hermes + Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "수동 테스트": {
+      "main": [
+        [
+          {
+            "node": "Paper + Hermes + Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul"
+  },
+  "pinData": {},
+  "versionId": "a5954981-f973-4bfd-a23b-4bc5a1e4fc3f"
+}

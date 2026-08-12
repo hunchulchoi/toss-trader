@@ -1,0 +1,46 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: telegram
+  group_by:
+    - alertname
+    - severity
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - receiver: telegram-report
+      matchers:
+        - alertname="TossTraderDailyReport"
+    - receiver: telegram-report
+      matchers:
+        - alertname="TossTraderMarketScan"
+
+receivers:
+  - name: telegram
+    telegram_configs:
+      - bot_token: "__TELEGRAM_BOT_TOKEN__"
+        chat_id: __TELEGRAM_CHAT_ID__
+        message_thread_id: __TELEGRAM_TOPIC__
+        send_resolved: true
+        parse_mode: HTML
+        message: |-
+          <b>Toss Trader {{ .Status }}</b>
+          {{ range .Alerts }}
+          <b>{{ .Labels.alertname }}</b> ({{ .Labels.severity }})
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+  - name: telegram-report
+    telegram_configs:
+      - bot_token: "__TELEGRAM_BOT_TOKEN__"
+        chat_id: __TELEGRAM_CHAT_ID__
+        message_thread_id: __TELEGRAM_TOPIC__
+        send_resolved: false
+        parse_mode: HTML
+        message: |-
+          <b>{{ .CommonAnnotations.summary }}</b>
+          {{ range .Alerts }}
+          {{ .Annotations.description }}
+          {{ end }}

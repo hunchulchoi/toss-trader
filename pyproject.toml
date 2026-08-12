@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "toss-trader"
+version = "0.1.0"
+description = "Safety-first Toss Securities market data and paper trading MVP"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2,<4"]
+
+[project.scripts]
+toss-trader = "toss_trader.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/toss_trader"]

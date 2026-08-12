@@ -1,0 +1,79 @@
+{
+  "id": "toss-trader-market-scan",
+  "name": "Toss Trader Market Analysis + Discovery",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 8 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-weekday-0830",
+      "name": "평일 08:30 KST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {},
+      "id": "manual-market-scan",
+      "name": "수동 시장 스캔",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://toss-trader-automation:8088/run-market-scan",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "run-market-analysis-discovery",
+      "name": "시장분석 + 종목발굴 + Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 80]
+    }
+  ],
+  "connections": {
+    "평일 08:30 KST": {
+      "main": [
+        [
+          {
+            "node": "시장분석 + 종목발굴 + Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "수동 시장 스캔": {
+      "main": [
+        [
+          {
+            "node": "시장분석 + 종목발굴 + Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul"
+  },
+  "pinData": {},
+  "versionId": "57f037bf-dd93-4c61-ad10-9454335bfbe7"
+}

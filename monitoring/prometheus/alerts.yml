@@ -1,0 +1,56 @@
+groups:
+  - name: toss-trader
+    rules:
+      - alert: TossTraderMetricsDown
+        expr: up{job="toss-trader"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Toss Trader metrics endpoint is down
+          description: Prometheus cannot scrape Toss Trader for 5 minutes.
+
+      - alert: TossTraderCycleMissing
+        expr: toss_trader_cycle_last_present == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Toss Trader has no completed cycle
+          description: Metrics database contains no completed paper cycle.
+
+      - alert: TossTraderLastCycleFailed
+        expr: (toss_trader_cycle_last_present == 1) and (toss_trader_cycle_last_success == 0)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Latest Toss Trader cycle did not fully succeed
+          description: Check failed symbols and API error streak.
+
+      - alert: TossTraderApiErrorStreak
+        expr: toss_trader_cycle_last_consecutive_api_errors >= 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Toss API errors are repeating
+          description: Three or more consecutive cycle API failures were recorded.
+
+      - alert: TossTraderDailyLossLimit
+        expr: toss_trader_cycle_last_daily_return_ratio <= -0.03
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Paper portfolio daily loss limit reached
+          description: Worst currency bucket return is at or below -3%.
+
+      - alert: TossTraderCycleStale
+        expr: (toss_trader_cycle_last_present == 1) and (time() - toss_trader_cycle_last_finished_timestamp_seconds > 90000)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Toss Trader cycle is stale
+          description: No completed cycle has been recorded for more than 25 hours.
