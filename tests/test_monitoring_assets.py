@@ -23,6 +23,9 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("toss_trader_cycle_last_success", expressions)
         self.assertIn("toss_trader_cycle_last_daily_return_ratio", expressions)
         self.assertIn("toss_trader_paper_position_quantity", expressions)
+        self.assertIn("toss_trader_paper_initial_cash_krw", expressions)
+        self.assertIn("toss_trader_paper_available_cash_krw", expressions)
+        self.assertIn("toss_trader_paper_deployed_cash_krw", expressions)
 
         datasources = {
             panel["datasource"]["uid"]

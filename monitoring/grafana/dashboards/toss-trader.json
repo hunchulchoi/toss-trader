@@ -105,6 +105,36 @@
       "targets": [{"editorMode": "code", "expr": "toss_trader_paper_position_quantity", "instant": true, "legendFormat": "{{symbol}}", "range": false, "refId": "A"}],
       "title": "Open Paper Positions",
       "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "currencyKRW"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 13},
+      "id": 9,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "toss_trader_paper_initial_cash_krw", "instant": true, "legendFormat": "Initial cash", "range": false, "refId": "A"}],
+      "title": "Initial Paper Cash",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 300000}, {"color": "green", "value": 600000}]}, "unit": "currencyKRW"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 13},
+      "id": 10,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "toss_trader_paper_available_cash_krw", "instant": false, "legendFormat": "Available cash", "range": true, "refId": "A"}],
+      "title": "Available Paper Cash",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "currencyKRW"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 13},
+      "id": 11,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "toss_trader_paper_deployed_cash_krw", "instant": false, "legendFormat": "Deployed cash", "range": true, "refId": "A"}],
+      "title": "Deployed Paper Cash",
+      "type": "stat"
     }
   ],
   "refresh": "30s",
@@ -116,6 +146,6 @@
   "timezone": "browser",
   "title": "Toss Trader",
   "uid": "toss-trader",
-  "version": 1,
+  "version": 2,
   "weekStart": "monday"
 }

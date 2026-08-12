@@ -434,7 +434,9 @@ def _render_metrics(settings: Settings) -> int:
         sqlite_path=settings.paper_db_path,
     )
     try:
-        sys.stdout.write(MetricsService(store).render())
+        sys.stdout.write(
+            MetricsService(store, initial_cash=settings.paper_initial_cash).render()
+        )
     finally:
         store.close()
     return 0
@@ -452,7 +454,7 @@ def _serve_metrics(settings: Settings, args: argparse.Namespace) -> int:
         sqlite_path=settings.paper_db_path,
     )
     try:
-        service = MetricsService(store)
+        service = MetricsService(store, initial_cash=settings.paper_initial_cash)
         print(
             json.dumps({"metricsServer": "listening", "host": host, "port": port}),
             flush=True,

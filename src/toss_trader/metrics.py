@@ -33,6 +33,7 @@ class MetricsSnapshot:
     run_counts: dict[str, int]
     paper_fill_count: int
     position_quantities: dict[str, Decimal]
+    paper_cash_change: Decimal = Decimal(0)
 
 
 class MetricsStore(Protocol):
@@ -68,6 +69,9 @@ class SqliteMetricsStore:
             position_rows = self._connection.execute(
                 "SELECT symbol, side, quantity FROM paper_fills ORDER BY symbol"
             ).fetchall()
+            cash_rows = self._connection.execute(
+                "SELECT side, notional FROM paper_fills"
+            ).fetchall()
         except sqlite3.Error as error:
             raise RuntimeError("SQLite metrics query failed") from error
         return MetricsSnapshot(
@@ -76,6 +80,7 @@ class SqliteMetricsStore:
             run_counts=_run_counts(count_rows),
             paper_fill_count=int(fill_row[0]) if fill_row else 0,
             position_quantities=_sqlite_positions(position_rows),
+            paper_cash_change=_paper_cash_change(cash_rows),
         )
 
 
@@ -139,6 +144,8 @@ class PostgresMetricsStore:
                     """
                 )
                 position_rows = cursor.fetchall()
+                cursor.execute("SELECT side, notional FROM paper_fills")
+                cash_rows = cursor.fetchall()
         except self._database_error as error:
             self._connection.rollback()
             raise RuntimeError("PostgreSQL metrics query failed") from error
@@ -152,6 +159,7 @@ class PostgresMetricsStore:
                 str(symbol): Decimal(str(quantity))
                 for symbol, quantity in position_rows
             },
+            paper_cash_change=_paper_cash_change(cash_rows),
         )
 
 
@@ -170,19 +178,30 @@ class MetricsService:
         self,
         store: MetricsStore,
         *,
+        initial_cash: Decimal = Decimal(1000000),
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        if initial_cash <= 0:
+            raise ValueError("paper initial cash must be positive")
         self._store = store
+        self._initial_cash = initial_cash
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def render(self) -> str:
-        return render_prometheus(self._store.snapshot(generated_at=self._clock()))
+        return render_prometheus(
+            self._store.snapshot(generated_at=self._clock()),
+            initial_cash=self._initial_cash,
+        )
 
 
-def render_prometheus(snapshot: MetricsSnapshot) -> str:
+def render_prometheus(
+    snapshot: MetricsSnapshot, *, initial_cash: Decimal = Decimal(1000000)
+) -> str:
     latest = snapshot.latest_run
     present = int(latest is not None)
     success = int(latest is not None and latest.status == "succeeded")
+    available_cash = initial_cash + snapshot.paper_cash_change
+    deployed_cash = -snapshot.paper_cash_change
     lines = [
         "# HELP toss_trader_up Metrics database query succeeded.",
         "# TYPE toss_trader_up gauge",
@@ -220,6 +239,15 @@ def render_prometheus(snapshot: MetricsSnapshot) -> str:
             "# HELP toss_trader_paper_fills_total Persisted paper fills.",
             "# TYPE toss_trader_paper_fills_total counter",
             f"toss_trader_paper_fills_total {snapshot.paper_fill_count}",
+            "# HELP toss_trader_paper_initial_cash_krw Paper starting cash in KRW.",
+            "# TYPE toss_trader_paper_initial_cash_krw gauge",
+            f"toss_trader_paper_initial_cash_krw {_number(initial_cash)}",
+            "# HELP toss_trader_paper_available_cash_krw Available paper cash in KRW.",
+            "# TYPE toss_trader_paper_available_cash_krw gauge",
+            f"toss_trader_paper_available_cash_krw {_number(available_cash)}",
+            "# HELP toss_trader_paper_deployed_cash_krw Net paper cash deployed in KRW.",
+            "# TYPE toss_trader_paper_deployed_cash_krw gauge",
+            f"toss_trader_paper_deployed_cash_krw {_number(deployed_cash)}",
             "# HELP toss_trader_paper_position_quantity Open paper quantity by symbol.",
             "# TYPE toss_trader_paper_position_quantity gauge",
         ]
@@ -338,6 +366,19 @@ def _sqlite_positions(rows: Sequence[Sequence[object]]) -> dict[str, Decimal]:
         signed = Decimal(str(quantity)) if side == "BUY" else -Decimal(str(quantity))
         positions[str(symbol)] = positions.get(str(symbol), Decimal(0)) + signed
     return {symbol: quantity for symbol, quantity in positions.items() if quantity}
+
+
+def _paper_cash_change(rows: Sequence[Sequence[object]]) -> Decimal:
+    change = Decimal(0)
+    for side, notional in rows:
+        value = Decimal(str(notional))
+        if side == "BUY":
+            change -= value
+        elif side == "SELL":
+            change += value
+        else:
+            raise ValueError(f"unsupported paper fill side: {side}")
+    return change
 
 
 def _run_from_row(row: Sequence[object]) -> PaperCycleRun:
