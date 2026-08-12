@@ -1,6 +1,7 @@
 import unittest
 from datetime import UTC, datetime
 from decimal import Decimal
+from unittest.mock import patch
 
 from toss_trader.execution import PaperTradingService
 from toss_trader.models import Side, TradeSignal
@@ -35,6 +36,11 @@ class PaperTradingServiceTest(unittest.TestCase):
 
         self.assertTrue(result.decision.approved)
         self.assertIsNotNone(result.fill)
+        self.assertTrue(result.decision_id)
+        decisions = self.ledger.recent_risk_decisions()
+        self.assertEqual(len(decisions), 1)
+        self.assertTrue(decisions[0]["approved"])
+        self.assertEqual(decisions[0]["availableCash"], "1000000")
 
     def test_rejected_signal_is_not_recorded(self) -> None:
         result = self.service.submit(
@@ -51,7 +57,30 @@ class PaperTradingServiceTest(unittest.TestCase):
 
         self.assertFalse(result.decision.approved)
         self.assertIsNone(result.fill)
+        self.assertFalse(self.ledger.recent_risk_decisions()[0]["approved"])
         self.assertEqual(self.ledger.daily_buy_count(self.now.date()), 0)
+
+    def test_audit_failure_prevents_fill(self) -> None:
+        signal = TradeSignal(
+            signal_id="audit-write-failure",
+            symbol="005930",
+            side=Side.BUY,
+            reference_price=Decimal(70000),
+            quantity=Decimal(1),
+            reason="audit must precede fill",
+        )
+
+        with (
+            patch.object(
+                self.ledger,
+                "record_risk_decision",
+                side_effect=RuntimeError("audit unavailable"),
+            ),
+            self.assertRaisesRegex(RuntimeError, "audit unavailable"),
+        ):
+            self.service.submit(signal, now=self.now)
+
+        self.assertEqual(self.ledger.seen_signal_ids(), set())
 
     def test_rejects_buy_after_initial_cash_is_spent(self) -> None:
         service = PaperTradingService(
@@ -86,6 +115,12 @@ class PaperTradingServiceTest(unittest.TestCase):
         self.assertFalse(second.decision.approved)
         self.assertIn("insufficient-paper-cash", second.decision.violations)
         self.assertEqual(self.ledger.cash_balance(Decimal(100000)), Decimal(29000))
+        decisions = self.ledger.recent_risk_decisions()
+        self.assertEqual(len(decisions), 2)
+        self.assertFalse(decisions[0]["approved"])
+        self.assertEqual(
+            decisions[0]["violations"], ["insufficient-paper-cash"]
+        )
 
 
 if __name__ == "__main__":

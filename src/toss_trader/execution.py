@@ -13,6 +13,7 @@ from .risk import RiskContext, RiskDecision, RiskManager
 class PaperExecutionResult:
     decision: RiskDecision
     fill: PaperFill | None
+    decision_id: str
 
 
 class PaperTradingService:
@@ -54,7 +55,17 @@ class PaperTradingService:
             seen_signal_ids=self._ledger.seen_signal_ids(),
         )
         decision = self._risk_manager.evaluate(signal, context)
+        decision_id = self._ledger.record_risk_decision(
+            signal,
+            decision,
+            context,
+            evaluated_at=now,
+        )
         fill = (
             self._ledger.execute(signal, executed_at=now) if decision.approved else None
         )
-        return PaperExecutionResult(decision=decision, fill=fill)
+        return PaperExecutionResult(
+            decision=decision,
+            fill=fill,
+            decision_id=decision_id,
+        )

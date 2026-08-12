@@ -147,6 +147,9 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(client.calls, [("005930", 4), ("AAPL", 4)])
         self.assertEqual(client.calendar_calls, ["KR"])
         self.assertEqual(self.paper_ledger.position_quantity("005930"), Decimal(1))
+        decision_items = [item for item in result.items if item.decision is not None]
+        self.assertEqual(len(decision_items), 1)
+        self.assertIsNotNone(decision_items[0].decision_id)
         latest = self.cycle_state.latest_run()
         assert latest is not None
         self.assertEqual(latest.status, "succeeded")

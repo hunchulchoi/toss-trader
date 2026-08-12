@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import sqlite3
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from .models import PaperFill, Side, TradeSignal
+from .risk import RiskContext, RiskDecision
 
 
 class DuplicatePaperOrder(RuntimeError):
@@ -21,6 +23,46 @@ class PaperLedgerStore(Protocol):
     def execute(
         self, signal: TradeSignal, *, executed_at: datetime | None = None
     ) -> PaperFill: ...
+
+    def record_risk_decision(
+        self,
+        signal: TradeSignal,
+        decision: RiskDecision,
+        context: RiskContext,
+        *,
+        evaluated_at: datetime,
+    ) -> str: ...
+
+    def recent_risk_decisions(
+        self,
+        *,
+        limit: int = 100,
+        symbol: str | None = None,
+        approved: bool | None = None,
+    ) -> list[dict[str, object]]: ...
+
+    def record_automation_run(
+        self,
+        *,
+        run_type: str,
+        status: str,
+        stage: str,
+        started_at: datetime,
+        finished_at: datetime,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+        error: str | None = None,
+        details: Mapping[str, object] | None = None,
+    ) -> str: ...
+
+    def recent_automation_runs(
+        self,
+        *,
+        limit: int = 100,
+        run_type: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, object]]: ...
 
     def daily_buy_count(self, day: date) -> int: ...
 
@@ -55,6 +97,61 @@ class PaperLedger:
                 reason TEXT NOT NULL,
                 executed_at TEXT NOT NULL
             )
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS paper_risk_decisions (
+                decision_id TEXT PRIMARY KEY,
+                signal_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
+                quantity TEXT NOT NULL,
+                reference_price TEXT NOT NULL,
+                notional TEXT NOT NULL,
+                signal_reason TEXT NOT NULL,
+                approved INTEGER NOT NULL CHECK (approved IN (0, 1)),
+                violations TEXT NOT NULL,
+                position_notional TEXT NOT NULL,
+                position_quantity TEXT NOT NULL,
+                available_cash TEXT,
+                daily_buy_count INTEGER NOT NULL,
+                daily_return_rate TEXT NOT NULL,
+                consecutive_api_errors INTEGER NOT NULL,
+                market_is_business_day INTEGER NOT NULL,
+                market_close_at TEXT,
+                evaluated_at TEXT NOT NULL
+            )
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS paper_risk_decisions_time_idx
+            ON paper_risk_decisions (evaluated_at DESC)
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS automation_run_logs (
+                run_id TEXT PRIMARY KEY,
+                run_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                prompt_tokens INTEGER NOT NULL,
+                completion_tokens INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                error TEXT,
+                details TEXT NOT NULL
+            )
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS automation_run_logs_time_idx
+            ON automation_run_logs (finished_at DESC)
             """
         )
         self._connection.commit()
@@ -103,6 +200,139 @@ class PaperLedger:
                 f"paper fill already exists for signal_id={signal.signal_id}"
             ) from error
         return fill
+
+    def record_risk_decision(
+        self,
+        signal: TradeSignal,
+        decision: RiskDecision,
+        context: RiskContext,
+        *,
+        evaluated_at: datetime,
+    ) -> str:
+        decision_id = str(uuid4())
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO paper_risk_decisions (
+                    decision_id, signal_id, symbol, side, quantity,
+                    reference_price, notional, signal_reason, approved,
+                    violations, position_notional, position_quantity,
+                    available_cash, daily_buy_count, daily_return_rate,
+                    consecutive_api_errors, market_is_business_day,
+                    market_close_at, evaluated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                tuple(
+                    _sqlite_audit_value(value)
+                    for value in _risk_decision_values(
+                        decision_id, signal, decision, context, evaluated_at
+                    )
+                ),
+            )
+        return decision_id
+
+    def recent_risk_decisions(
+        self,
+        *,
+        limit: int = 100,
+        symbol: str | None = None,
+        approved: bool | None = None,
+    ) -> list[dict[str, object]]:
+        _validate_audit_query(limit, symbol)
+        conditions: list[str] = []
+        parameters: list[object] = []
+        if symbol is not None:
+            conditions.append("symbol = ?")
+            parameters.append(symbol)
+        if approved is not None:
+            conditions.append("approved = ?")
+            parameters.append(int(approved))
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        rows = self._connection.execute(
+            f"""
+            SELECT decision_id, signal_id, symbol, side, quantity,
+                   reference_price, notional, signal_reason, approved, violations,
+                   position_notional, position_quantity, available_cash,
+                   daily_buy_count, daily_return_rate, consecutive_api_errors,
+                   market_is_business_day, market_close_at, evaluated_at
+            FROM paper_risk_decisions
+            {where}
+            ORDER BY evaluated_at DESC, rowid DESC
+            LIMIT ?
+            """,
+            (*parameters, limit),
+        ).fetchall()
+        return [_risk_decision_row(row) for row in rows]
+
+    def record_automation_run(
+        self,
+        *,
+        run_type: str,
+        status: str,
+        stage: str,
+        started_at: datetime,
+        finished_at: datetime,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+        error: str | None = None,
+        details: Mapping[str, object] | None = None,
+    ) -> str:
+        values = _automation_run_values(
+            run_type=run_type,
+            status=status,
+            stage=stage,
+            started_at=started_at,
+            finished_at=finished_at,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            error=error,
+            details=details,
+        )
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO automation_run_logs (
+                    run_id, run_type, status, stage, started_at, finished_at,
+                    duration_ms, prompt_tokens, completion_tokens, total_tokens,
+                    error, details
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                tuple(_sqlite_audit_value(value) for value in values),
+            )
+        return str(values[0])
+
+    def recent_automation_runs(
+        self,
+        *,
+        limit: int = 100,
+        run_type: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, object]]:
+        _validate_automation_query(limit, run_type, status)
+        conditions: list[str] = []
+        parameters: list[object] = []
+        if run_type is not None:
+            conditions.append("run_type = ?")
+            parameters.append(run_type)
+        if status is not None:
+            conditions.append("status = ?")
+            parameters.append(status)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        rows = self._connection.execute(
+            f"""
+            SELECT run_id, run_type, status, stage, started_at, finished_at,
+                   duration_ms, prompt_tokens, completion_tokens, total_tokens,
+                   error, details
+            FROM automation_run_logs
+            {where}
+            ORDER BY finished_at DESC, rowid DESC
+            LIMIT ?
+            """,
+            (*parameters, limit),
+        ).fetchall()
+        return [_automation_run_row(row) for row in rows]
 
     def daily_buy_count(self, day: date) -> int:
         row = self._connection.execute(
@@ -202,6 +432,57 @@ CREATE INDEX IF NOT EXISTS paper_fills_symbol_time_idx
 ON paper_fills (symbol, executed_at DESC)
 """
 
+POSTGRES_RISK_DECISION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS paper_risk_decisions (
+    decision_id UUID PRIMARY KEY,
+    signal_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
+    quantity NUMERIC NOT NULL CHECK (quantity > 0),
+    reference_price NUMERIC NOT NULL CHECK (reference_price > 0),
+    notional NUMERIC NOT NULL CHECK (notional > 0),
+    signal_reason TEXT NOT NULL,
+    approved BOOLEAN NOT NULL,
+    violations JSONB NOT NULL,
+    position_notional NUMERIC NOT NULL,
+    position_quantity NUMERIC NOT NULL,
+    available_cash NUMERIC,
+    daily_buy_count INTEGER NOT NULL,
+    daily_return_rate NUMERIC NOT NULL,
+    consecutive_api_errors INTEGER NOT NULL,
+    market_is_business_day BOOLEAN NOT NULL,
+    market_close_at TIMESTAMPTZ,
+    evaluated_at TIMESTAMPTZ NOT NULL
+)
+"""
+
+POSTGRES_RISK_DECISION_INDEX = """
+CREATE INDEX IF NOT EXISTS paper_risk_decisions_time_idx
+ON paper_risk_decisions (evaluated_at DESC)
+"""
+
+POSTGRES_AUTOMATION_RUN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS automation_run_logs (
+    run_id UUID PRIMARY KEY,
+    run_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL,
+    finished_at TIMESTAMPTZ NOT NULL,
+    duration_ms BIGINT NOT NULL,
+    prompt_tokens BIGINT NOT NULL,
+    completion_tokens BIGINT NOT NULL,
+    total_tokens BIGINT NOT NULL,
+    error TEXT,
+    details JSONB NOT NULL
+)
+"""
+
+POSTGRES_AUTOMATION_RUN_INDEX = """
+CREATE INDEX IF NOT EXISTS automation_run_logs_time_idx
+ON automation_run_logs (finished_at DESC)
+"""
+
 
 class PostgresPaperLedger:
     def __init__(
@@ -234,6 +515,10 @@ class PostgresPaperLedger:
         with self._connection.cursor() as cursor:
             cursor.execute(POSTGRES_PAPER_SCHEMA)
             cursor.execute(POSTGRES_PAPER_INDEX)
+            cursor.execute(POSTGRES_RISK_DECISION_SCHEMA)
+            cursor.execute(POSTGRES_RISK_DECISION_INDEX)
+            cursor.execute(POSTGRES_AUTOMATION_RUN_SCHEMA)
+            cursor.execute(POSTGRES_AUTOMATION_RUN_INDEX)
         self._connection.commit()
 
     def close(self) -> None:
@@ -284,6 +569,156 @@ class PostgresPaperLedger:
                 ) from error
             raise
         return fill
+
+    def record_risk_decision(
+        self,
+        signal: TradeSignal,
+        decision: RiskDecision,
+        context: RiskContext,
+        *,
+        evaluated_at: datetime,
+    ) -> str:
+        decision_id = str(uuid4())
+        values = _risk_decision_values(
+            decision_id, signal, decision, context, evaluated_at
+        )
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO paper_risk_decisions (
+                        decision_id, signal_id, symbol, side, quantity,
+                        reference_price, notional, signal_reason, approved,
+                        violations, position_notional, position_quantity,
+                        available_cash, daily_buy_count, daily_return_rate,
+                        consecutive_api_errors, market_is_business_day,
+                        market_close_at, evaluated_at
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    """,
+                    values,
+                )
+            self._connection.commit()
+        except self._database_error:
+            self._connection.rollback()
+            raise
+        return decision_id
+
+    def recent_risk_decisions(
+        self,
+        *,
+        limit: int = 100,
+        symbol: str | None = None,
+        approved: bool | None = None,
+    ) -> list[dict[str, object]]:
+        _validate_audit_query(limit, symbol)
+        conditions: list[str] = []
+        parameters: list[object] = []
+        if symbol is not None:
+            conditions.append("symbol = %s")
+            parameters.append(symbol)
+        if approved is not None:
+            conditions.append("approved = %s")
+            parameters.append(approved)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT decision_id, signal_id, symbol, side, quantity,
+                       reference_price, notional, signal_reason, approved, violations,
+                       position_notional, position_quantity, available_cash,
+                       daily_buy_count, daily_return_rate, consecutive_api_errors,
+                       market_is_business_day, market_close_at, evaluated_at
+                FROM paper_risk_decisions
+                {where}
+                ORDER BY evaluated_at DESC, decision_id DESC
+                LIMIT %s
+                """,
+                (*parameters, limit),
+            )
+            rows = cursor.fetchall()
+        return [_risk_decision_row(row) for row in rows]
+
+    def record_automation_run(
+        self,
+        *,
+        run_type: str,
+        status: str,
+        stage: str,
+        started_at: datetime,
+        finished_at: datetime,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+        error: str | None = None,
+        details: Mapping[str, object] | None = None,
+    ) -> str:
+        values = _automation_run_values(
+            run_type=run_type,
+            status=status,
+            stage=stage,
+            started_at=started_at,
+            finished_at=finished_at,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            error=error,
+            details=details,
+        )
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO automation_run_logs (
+                        run_id, run_type, status, stage, started_at, finished_at,
+                        duration_ms, prompt_tokens, completion_tokens, total_tokens,
+                        error, details
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb
+                    )
+                    """,
+                    values,
+                )
+            self._connection.commit()
+        except self._database_error:
+            self._connection.rollback()
+            raise
+        return str(values[0])
+
+    def recent_automation_runs(
+        self,
+        *,
+        limit: int = 100,
+        run_type: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, object]]:
+        _validate_automation_query(limit, run_type, status)
+        conditions: list[str] = []
+        parameters: list[object] = []
+        if run_type is not None:
+            conditions.append("run_type = %s")
+            parameters.append(run_type)
+        if status is not None:
+            conditions.append("status = %s")
+            parameters.append(status)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT run_id, run_type, status, stage, started_at, finished_at,
+                       duration_ms, prompt_tokens, completion_tokens, total_tokens,
+                       error, details
+                FROM automation_run_logs
+                {where}
+                ORDER BY finished_at DESC, run_id DESC
+                LIMIT %s
+                """,
+                (*parameters, limit),
+            )
+            rows = cursor.fetchall()
+        return [_automation_run_row(row) for row in rows]
 
     def daily_buy_count(self, day: date) -> int:
         with self._connection.cursor() as cursor:
@@ -375,3 +810,178 @@ def open_paper_ledger(
     if postgres_parameters:
         return PostgresPaperLedger(postgres_parameters)
     return PaperLedger(sqlite_path)
+
+
+def _risk_decision_values(
+    decision_id: str,
+    signal: TradeSignal,
+    decision: RiskDecision,
+    context: RiskContext,
+    evaluated_at: datetime,
+) -> tuple[object, ...]:
+    if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
+        raise ValueError("risk decision timestamp must include timezone")
+    return (
+        decision_id,
+        signal.signal_id,
+        signal.symbol,
+        signal.side.value,
+        signal.quantity,
+        signal.reference_price,
+        signal.notional,
+        signal.reason,
+        decision.approved,
+        json.dumps(decision.violations, ensure_ascii=False),
+        context.position_notional,
+        context.position_quantity,
+        context.available_cash,
+        context.daily_buy_count,
+        context.daily_return_rate,
+        context.consecutive_api_errors,
+        context.market_is_business_day,
+        context.market_close_at,
+        evaluated_at,
+    )
+
+
+def _automation_run_values(
+    *,
+    run_type: str,
+    status: str,
+    stage: str,
+    started_at: datetime,
+    finished_at: datetime,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    error: str | None,
+    details: Mapping[str, object] | None,
+) -> tuple[object, ...]:
+    if run_type not in {"daily", "market_scan"}:
+        raise ValueError("unknown automation run type")
+    if status not in {"succeeded", "failed"}:
+        raise ValueError("unknown automation run status")
+    if not stage.strip():
+        raise ValueError("automation run stage must not be empty")
+    if any(
+        value.tzinfo is None or value.utcoffset() is None
+        for value in (started_at, finished_at)
+    ):
+        raise ValueError("automation run timestamps must include timezone")
+    if finished_at < started_at:
+        raise ValueError("automation run cannot finish before it starts")
+    token_values = (prompt_tokens, completion_tokens, total_tokens)
+    if any(isinstance(value, bool) or value < 0 for value in token_values):
+        raise ValueError("automation token counts must be non-negative integers")
+    if prompt_tokens + completion_tokens > total_tokens:
+        raise ValueError("automation total tokens are inconsistent")
+    duration_ms = int((finished_at - started_at).total_seconds() * 1000)
+    return (
+        str(uuid4()),
+        run_type,
+        status,
+        stage,
+        started_at,
+        finished_at,
+        duration_ms,
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        error,
+        json.dumps(details or {}, ensure_ascii=False, default=str),
+    )
+
+
+def _validate_audit_query(limit: int, symbol: str | None) -> None:
+    if not 1 <= limit <= 1000:
+        raise ValueError("risk decision limit must be between 1 and 1000")
+    if symbol is not None and not symbol.strip():
+        raise ValueError("risk decision symbol must not be empty")
+
+
+def _validate_automation_query(
+    limit: int, run_type: str | None, status: str | None
+) -> None:
+    if not 1 <= limit <= 1000:
+        raise ValueError("automation run limit must be between 1 and 1000")
+    if run_type is not None and run_type not in {"daily", "market_scan"}:
+        raise ValueError("unknown automation run type")
+    if status is not None and status not in {"succeeded", "failed"}:
+        raise ValueError("unknown automation run status")
+
+
+def _sqlite_audit_value(value: object) -> object:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, bool):
+        return int(value)
+    return value
+
+
+def _risk_decision_row(row: Sequence[object]) -> dict[str, object]:
+    values = tuple(row)
+    raw_violations = values[9]
+    violations = (
+        json.loads(raw_violations)
+        if isinstance(raw_violations, str)
+        else list(raw_violations)
+    )
+    return {
+        "decisionId": str(values[0]),
+        "signalId": str(values[1]),
+        "symbol": str(values[2]),
+        "side": str(values[3]),
+        "quantity": str(values[4]),
+        "referencePrice": str(values[5]),
+        "notional": str(values[6]),
+        "signalReason": str(values[7]),
+        "approved": bool(values[8]),
+        "violations": violations,
+        "positionNotional": str(values[10]),
+        "positionQuantity": str(values[11]),
+        "availableCash": str(values[12]) if values[12] is not None else None,
+        "dailyBuyCount": int(values[13]),
+        "dailyReturnRate": str(values[14]),
+        "consecutiveApiErrors": int(values[15]),
+        "marketIsBusinessDay": bool(values[16]),
+        "marketCloseAt": (
+            values[17].isoformat()
+            if isinstance(values[17], datetime)
+            else str(values[17]) if values[17] is not None else None
+        ),
+        "evaluatedAt": (
+            values[18].isoformat()
+            if isinstance(values[18], datetime)
+            else str(values[18])
+        ),
+    }
+
+
+def _automation_run_row(row: Sequence[object]) -> dict[str, object]:
+    values = tuple(row)
+    raw_details = values[11]
+    details = (
+        json.loads(raw_details)
+        if isinstance(raw_details, str)
+        else dict(raw_details)
+    )
+    return {
+        "runId": str(values[0]),
+        "runType": str(values[1]),
+        "status": str(values[2]),
+        "stage": str(values[3]),
+        "startedAt": _serialized_datetime(values[4]),
+        "finishedAt": _serialized_datetime(values[5]),
+        "durationMs": int(values[6]),
+        "promptTokens": int(values[7]),
+        "completionTokens": int(values[8]),
+        "totalTokens": int(values[9]),
+        "error": str(values[10]) if values[10] is not None else None,
+        "details": details,
+    }
+
+
+def _serialized_datetime(value: object) -> str:
+    return value.isoformat() if isinstance(value, datetime) else str(value)

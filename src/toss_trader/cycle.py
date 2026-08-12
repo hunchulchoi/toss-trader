@@ -23,6 +23,7 @@ class SymbolCycleResult:
     collection: CollectionResult | None = None
     signal: TradeSignal | None = None
     decision: RiskDecision | None = None
+    decision_id: str | None = None
     fill: PaperFill | None = None
     error: str | None = None
 
@@ -227,6 +228,9 @@ class PaperCycleRunner:
                 collection=collections[index],
                 signal=signals[index],
                 decision=(executions[index].decision if executions[index] else None),
+                decision_id=(
+                    executions[index].decision_id if executions[index] else None
+                ),
                 fill=executions[index].fill if executions[index] else None,
                 error=errors[index],
             )

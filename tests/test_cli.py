@@ -10,8 +10,10 @@ from unittest.mock import patch
 
 from toss_trader.cli import build_parser, main
 from toss_trader.cycle_state import SqliteCycleStateStore
+from toss_trader.execution import PaperTradingService
 from toss_trader.models import Side, TradeSignal
 from toss_trader.paper import PaperLedger
+from toss_trader.risk import RiskLimits, RiskManager
 
 
 class MetricsCliTest(unittest.TestCase):
@@ -95,6 +97,78 @@ class MetricsCliTest(unittest.TestCase):
 
         self.assertEqual(args.command, "serve-automation")
         self.assertFalse(hasattr(args, "live"))
+
+    def test_queries_persisted_risk_decisions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = str(Path(directory) / "paper.db")
+            ledger = PaperLedger(database_path)
+            PaperTradingService(
+                ledger=ledger,
+                risk_manager=RiskManager(RiskLimits()),
+            ).submit(
+                TradeSignal(
+                    signal_id="cli-risk-buy",
+                    symbol="005930",
+                    side=Side.BUY,
+                    reference_price=Decimal(70000),
+                    quantity=Decimal(1),
+                    reason="audit fixture",
+                ),
+                now=datetime(2026, 8, 12, tzinfo=UTC),
+            )
+            ledger.close()
+            output = io.StringIO()
+
+            with (
+                patch.dict(
+                    "os.environ",
+                    {"PAPER_DB_PATH": database_path},
+                    clear=True,
+                ),
+                redirect_stdout(output),
+            ):
+                exit_code = main(
+                    ["risk-decisions", "--symbol", "005930", "--limit", "10"]
+                )
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["count"], 1)
+        self.assertTrue(payload["decisions"][0]["approved"])
+
+    def test_queries_automation_run_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = str(Path(directory) / "paper.db")
+            ledger = PaperLedger(database_path)
+            ledger.record_automation_run(
+                run_type="market_scan",
+                status="succeeded",
+                stage="completed",
+                started_at=datetime(2026, 8, 12, 8, 30, tzinfo=UTC),
+                finished_at=datetime(2026, 8, 12, 8, 30, 1, tzinfo=UTC),
+                prompt_tokens=100,
+                completion_tokens=20,
+                total_tokens=120,
+            )
+            ledger.close()
+            output = io.StringIO()
+
+            with (
+                patch.dict(
+                    "os.environ",
+                    {"PAPER_DB_PATH": database_path},
+                    clear=True,
+                ),
+                redirect_stdout(output),
+            ):
+                exit_code = main(
+                    ["automation-runs", "--type", "market_scan", "--limit", "10"]
+                )
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["runs"][0]["totalTokens"], 120)
 
 if __name__ == "__main__":
     unittest.main()

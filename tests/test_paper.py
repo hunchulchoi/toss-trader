@@ -68,6 +68,27 @@ class PaperLedgerTest(unittest.TestCase):
         self.assertEqual(self.ledger.position_quantity("AAPL"), Decimal(2))
         self.assertEqual(self.ledger.cash_balance(Decimal(1000)), Decimal(610))
 
+    def test_records_and_queries_automation_run_tokens(self) -> None:
+        started_at = datetime(2026, 8, 12, 8, 30, tzinfo=UTC)
+        run_id = self.ledger.record_automation_run(
+            run_type="market_scan",
+            status="succeeded",
+            stage="completed",
+            started_at=started_at,
+            finished_at=datetime(2026, 8, 12, 8, 30, 2, tzinfo=UTC),
+            prompt_tokens=436,
+            completion_tokens=6,
+            total_tokens=442,
+            details={"markets": 2, "candidates": 1, "errors": 0},
+        )
+
+        runs = self.ledger.recent_automation_runs(run_type="market_scan")
+
+        self.assertEqual(runs[0]["runId"], run_id)
+        self.assertEqual(runs[0]["durationMs"], 2000)
+        self.assertEqual(runs[0]["totalTokens"], 442)
+        self.assertEqual(runs[0]["details"]["errors"], 0)
+
 
 class FakePaperCursor:
     def __init__(self) -> None:
@@ -137,7 +158,11 @@ class PostgresPaperLedgerTest(unittest.TestCase):
 
         self.assertEqual(fill.notional, Decimal(71000))
         self.assertIn("TIMESTAMPTZ", connection.cursor_instance.executed[0][0])
-        insert, params = connection.cursor_instance.executed[2]
+        insert, params = next(
+            (query, params)
+            for query, params in connection.cursor_instance.executed
+            if "INSERT INTO paper_fills" in query
+        )
         self.assertIn("VALUES (%s, %s", insert)
         assert isinstance(params, tuple)
         self.assertEqual(params[1:4], ("pg-signal-1", "005930", "BUY"))

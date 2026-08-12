@@ -99,6 +99,26 @@ def build_parser() -> argparse.ArgumentParser:
     paper.add_argument("--daily-return-rate", type=Decimal, default=Decimal(0))
     paper.add_argument("--consecutive-api-errors", type=int, default=0)
 
+    risk_decisions = subparsers.add_parser(
+        "risk-decisions", help="query persisted RiskManager audit decisions"
+    )
+    risk_decisions.add_argument("--limit", type=int, default=100)
+    risk_decisions.add_argument("--symbol")
+    risk_decisions.add_argument(
+        "--status", choices=("all", "approved", "rejected"), default="all"
+    )
+
+    automation_runs = subparsers.add_parser(
+        "automation-runs", help="query automation execution and Hermes token logs"
+    )
+    automation_runs.add_argument("--limit", type=int, default=100)
+    automation_runs.add_argument(
+        "--type", choices=("all", "daily", "market_scan"), default="all"
+    )
+    automation_runs.add_argument(
+        "--status", choices=("all", "succeeded", "failed"), default="all"
+    )
+
     cycle = subparsers.add_parser(
         "run-paper-cycle",
         help="collect watchlist, scan MA, risk-check, and paper execute",
@@ -210,6 +230,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _emit(asdict(result) if result else {"signal": None})
         if args.command == "paper-order":
             return _paper_order(settings, args)
+        if args.command == "risk-decisions":
+            return _risk_decisions(settings, args)
+        if args.command == "automation-runs":
+            return _automation_runs(settings, args)
         if args.command == "run-paper-cycle":
             return _run_paper_cycle(settings, args)
         if args.command == "run-market-scan":
@@ -278,6 +302,43 @@ def _paper_order(settings: Settings, args: argparse.Namespace) -> int:
     }
     _emit(payload)
     return 0 if result.decision.approved else 2
+
+
+def _risk_decisions(settings: Settings, args: argparse.Namespace) -> int:
+    ledger = open_paper_ledger(
+        postgres_parameters=settings.postgres_connection_parameters(),
+        sqlite_path=settings.paper_db_path,
+    )
+    approved = (
+        None
+        if args.status == "all"
+        else args.status == "approved"
+    )
+    try:
+        decisions = ledger.recent_risk_decisions(
+            limit=args.limit,
+            symbol=args.symbol.upper() if args.symbol else None,
+            approved=approved,
+        )
+    finally:
+        ledger.close()
+    return _emit({"count": len(decisions), "decisions": decisions})
+
+
+def _automation_runs(settings: Settings, args: argparse.Namespace) -> int:
+    ledger = open_paper_ledger(
+        postgres_parameters=settings.postgres_connection_parameters(),
+        sqlite_path=settings.paper_db_path,
+    )
+    try:
+        runs = ledger.recent_automation_runs(
+            limit=args.limit,
+            run_type=None if args.type == "all" else args.type,
+            status=None if args.status == "all" else args.status,
+        )
+    finally:
+        ledger.close()
+    return _emit({"count": len(runs), "runs": runs})
 
 
 def _collect_candles(settings: Settings, args: argparse.Namespace) -> int:

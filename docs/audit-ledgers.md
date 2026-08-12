@@ -1,0 +1,25 @@
+# RiskManager·자동화 감사 장부
+
+Toss Trader는 PostgreSQL 사용 시 아래 두 장부를 운영 DB에 영구 저장한다.
+SQLite 개발 모드에서도 같은 인터페이스와 필드를 제공한다.
+
+- `paper_risk_decisions`: 승인·거부 여부, 위반 규칙, 신호, 포지션, 가용 현금,
+  일일 수익률, Toss API 오류 연속 횟수, 장 상태와 판단 시각
+- `automation_run_logs`: daily/market scan 성공·실패 단계, 소요 시간, Hermes
+  prompt/completion/total token, 오류와 건수 요약
+
+RiskManager 판단은 paper fill보다 먼저 기록한다. 판단 기록에 실패하면 해당
+paper fill도 실행하지 않는다. 실제 주문은 지원하지 않으며
+`TRADING_ENABLED=false`를 유지한다.
+
+최근 기록은 CLI에서 조회할 수 있다.
+
+```bash
+toss-trader risk-decisions --status rejected --limit 100
+toss-trader risk-decisions --symbol 005930 --limit 20
+toss-trader automation-runs --type market_scan --status failed --limit 100
+```
+
+공용 Grafana의 `Toss Trader` dashboard는 `toss-postgres` read-only datasource로
+최근 판단, Hermes token 사용량, 자동화 실행 로그를 조회한다. 장부에는 API
+key, bearer token, 전체 Hermes prompt/response를 저장하지 않는다.
