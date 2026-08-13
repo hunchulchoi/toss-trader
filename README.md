@@ -5,6 +5,8 @@
 자동 실행·리스크·Hermes·Telegram 흐름은
 [`docs/automatic-trading-scenario.md`](docs/automatic-trading-scenario.md)에
 정리되어 있습니다.
+Hermes Telegram의 paper 장부 조회는
+[`docs/paper-mcp.md`](docs/paper-mcp.md)를 참고합니다.
 
 - OAuth 2.0 Client Credentials 토큰 캐시
 - 현재가, 1분/일 캔들, 계좌 목록, 보유 종목 조회

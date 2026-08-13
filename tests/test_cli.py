@@ -205,6 +205,16 @@ class MetricsCliTest(unittest.TestCase):
         self.assertEqual(args.command, "serve-automation")
         self.assertFalse(hasattr(args, "live"))
 
+    def test_serve_paper_mcp_is_internal_read_only(self) -> None:
+        args = build_parser().parse_args(
+            ["serve-paper-mcp", "--host", "127.0.0.1", "--port", "8090"]
+        )
+
+        self.assertEqual(args.command, "serve-paper-mcp")
+        self.assertEqual(args.host, "127.0.0.1")
+        self.assertEqual(args.port, 8090)
+        self.assertFalse(hasattr(args, "live"))
+
     def test_queries_persisted_risk_decisions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database_path = str(Path(directory) / "paper.db")

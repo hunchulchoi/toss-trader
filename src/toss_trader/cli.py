@@ -33,6 +33,7 @@ from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
 from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
 from .paper import DuplicatePaperOrder, open_paper_ledger
+from .paper_mcp import PaperMcpService, PostgresPaperReadStore, serve_paper_mcp
 from .portfolio import PortfolioPerformance
 from .repository import open_market_repository
 from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
@@ -199,6 +200,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     automation_server.add_argument("--host", default="0.0.0.0")
     automation_server.add_argument("--port", type=int, default=8088)
+    paper_mcp_server = subparsers.add_parser(
+        "serve-paper-mcp", help="serve internal read-only paper ledger MCP"
+    )
+    paper_mcp_server.add_argument("--host", default="0.0.0.0")
+    paper_mcp_server.add_argument("--port", type=int, default=8090)
     return parser
 
 
@@ -249,6 +255,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _serve_metrics(settings, args)
         if args.command == "serve-automation":
             return _serve_automation(args)
+        if args.command == "serve-paper-mcp":
+            return _serve_paper_mcp(settings, args)
         if args.command == "prices":
             return _emit(_client(settings).prices(args.symbols))
         if args.command == "candles":
@@ -321,6 +329,23 @@ def _client(settings: Settings) -> TossClient:
         base_url=settings.base_url,
         candle_min_interval_seconds=settings.candle_request_interval_seconds,
     )
+
+
+def _serve_paper_mcp(settings: Settings, args: argparse.Namespace) -> int:
+    postgres_parameters = settings.postgres_connection_parameters()
+    if postgres_parameters is None:
+        raise ValueError("serve-paper-mcp requires PostgreSQL settings")
+    service = PaperMcpService(
+        PostgresPaperReadStore(
+            postgres_parameters,
+            initial_cash=settings.paper_initial_cash,
+        )
+    )
+    try:
+        serve_paper_mcp(host=args.host, port=args.port, service=service)
+    except KeyboardInterrupt:
+        return 0
+    return 0
 
 
 def _paper_order(settings: Settings, args: argparse.Namespace) -> int:

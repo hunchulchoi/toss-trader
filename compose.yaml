@@ -144,6 +144,46 @@ services:
       retries: 3
       start_period: 10s
 
+  paper-mcp:
+    build: .
+    image: toss-trader-paper-mcp:local
+    command: ["serve-paper-mcp"]
+    restart: unless-stopped
+    environment:
+      TRADING_ENABLED: "false"
+      POSTGRES_HOST: ${POSTGRES_HOST:-}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5431}
+      POSTGRES_USER: ${POSTGRES_USER:-}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-}
+      PAPER_INITIAL_CASH: ${PAPER_INITIAL_CASH:-1000000}
+    expose:
+      - "8090"
+    networks:
+      openclaw:
+        aliases:
+          - toss-trader-paper-mcp
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json, urllib.request;
+          response = json.load(urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=2));
+          assert response == {'status': 'ok', 'tools': 3}
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
   hermes-analysis:
     build:
       context: ./automation/hermes-analysis
