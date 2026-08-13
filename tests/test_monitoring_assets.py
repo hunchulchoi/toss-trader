@@ -219,6 +219,15 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("/workflow/paper-hermes-1d", encoded)
         self.assertIn("/workflow/hermes-daily", encoded)
         self.assertIn("/workflow/report-daily", encoded)
+        for branch in (
+            "Rule 일봉 정상?",
+            "Rule 일봉 체결 있음?",
+            "Hermes 일봉 정상?",
+            "Hermes 일봉 체결 있음?",
+            "Hermes 마감 분석 정상?",
+            "마감 Telegram 정상?",
+        ):
+            self.assertIn(branch, nodes)
 
     def test_n8n_workflow_runs_intraday_paper_every_five_minutes(self) -> None:
         workflow = json.loads(
@@ -239,6 +248,14 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("/workflow/paper-hermes-1m", encoded)
         self.assertIn("/workflow/report-paper", encoded)
         self.assertIn("비교 결과 병합", encoded)
+        for branch in (
+            "Rule Cycle 정상?",
+            "Rule 체결 있음?",
+            "Hermes Cycle 정상?",
+            "Hermes 체결 있음?",
+            "특이사항 있음?",
+        ):
+            self.assertIn(branch, encoded)
 
     def test_n8n_workflow_sends_weekday_market_discovery_report(self) -> None:
         workflow = json.loads(
@@ -252,6 +269,42 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("/workflow/market-scan", encoded)
         self.assertIn("/workflow/hermes-market", encoded)
         self.assertIn("/workflow/report-market", encoded)
+        for branch in (
+            "시장 스캔 정상?",
+            "발굴 후보 있음?",
+            "Hermes 의견 정상?",
+            "Telegram 전송 정상?",
+        ):
+            self.assertIn(branch, encoded)
+
+    def test_n8n_http_stages_branch_on_application_failures(self) -> None:
+        for filename in (
+            "toss-trader-market-scan.json",
+            "toss-trader-intraday-paper.json",
+            "toss-trader-daily.json",
+        ):
+            workflow = json.loads((ROOT / "automation" / "n8n" / filename).read_text())
+            http_nodes = [
+                node
+                for node in workflow["nodes"]
+                if node["type"] == "n8n-nodes-base.httpRequest"
+                and "/workflow/report-failure" not in node["parameters"]["url"]
+            ]
+            self.assertTrue(
+                all(
+                    node["parameters"].get("options", {})
+                    .get("response", {})
+                    .get("response", {})
+                    .get("neverError")
+                    for node in http_nodes
+                )
+            )
+            self.assertTrue(
+                any(
+                    node["type"] == "n8n-nodes-base.if"
+                    for node in workflow["nodes"]
+                )
+            )
 
     def test_n8n_workflows_use_shared_failure_reporter(self) -> None:
         for filename in (

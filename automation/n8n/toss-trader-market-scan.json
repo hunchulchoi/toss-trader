@@ -5,17 +5,30 @@
   "nodes": [
     {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "30 8 * * 1-5"}]}}, "id": "schedule", "name": "평일 08:30 KST", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0]},
     {"parameters": {}, "id": "manual", "name": "수동 시장 스캔", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 180]},
-    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/market-scan", "sendBody": true, "specifyBody": "json", "jsonBody": "{}", "options": {"timeout": 600000}}, "id": "scan", "name": "시장 수치와 후보 계산", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [300, 80]},
-    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/hermes-market", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"scan\": $json } }}", "options": {"timeout": 600000}}, "id": "hermes", "name": "Hermes 시장 의견", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [560, 80]},
-    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/report-market", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"result\": $json } }}", "options": {"timeout": 30000}}, "id": "report", "name": "시장 리포트 Telegram", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [820, 80]}
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/market-scan", "sendBody": true, "specifyBody": "json", "jsonBody": "{}", "options": {"response": {"response": {"neverError": true}}, "timeout": 600000}}, "id": "scan", "name": "시장 수치와 후보 계산", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [280, 80]},
+    {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "scan-ok-condition", "leftValue": "={{ $json.exitCode ?? 1 }}", "rightValue": 0, "operator": {"type": "number", "operation": "equals"}}], "combinator": "and"}, "options": {}}, "id": "scan-ok", "name": "시장 스캔 정상?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [520, 80]},
+    {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "candidate-condition", "leftValue": "={{ $json.scan?.candidates?.length ?? 0 }}", "rightValue": 0, "operator": {"type": "number", "operation": "gt"}}], "combinator": "and"}, "options": {}}, "id": "candidates", "name": "발굴 후보 있음?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [760, 20]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/report-failure", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"workflow\": \"market-scan\", \"stage\": \"rule-scan\", \"response\": $json } }}", "options": {"timeout": 30000}}, "id": "scan-failure", "name": "시장 스캔 실패 Telegram", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [760, 220]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/hermes-market", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"scan\": $json } }}", "options": {"response": {"response": {"neverError": true}}, "timeout": 600000}}, "id": "hermes", "name": "Hermes 시장 의견", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1000, 20]},
+    {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "hermes-ok-condition", "leftValue": "={{ $json.ok ? 1 : 0 }}", "rightValue": 1, "operator": {"type": "number", "operation": "equals"}}], "combinator": "and"}, "options": {}}, "id": "hermes-ok", "name": "Hermes 의견 정상?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [1240, 20]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/report-failure", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"workflow\": \"market-scan\", \"stage\": \"hermes-opinion\", \"response\": $json } }}", "options": {"timeout": 30000}}, "id": "hermes-failure", "name": "Hermes 의견 실패 Telegram", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1480, 180]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/report-market", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"result\": $json } }}", "options": {"response": {"response": {"neverError": true}}, "timeout": 30000}}, "id": "report", "name": "시장 리포트 Telegram", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1480, -40]},
+    {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "report-ok-condition", "leftValue": "={{ $json.accepted ? 1 : 0 }}", "rightValue": 1, "operator": {"type": "number", "operation": "equals"}}], "combinator": "and"}, "options": {}}, "id": "report-ok", "name": "Telegram 전송 정상?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [1720, -40]},
+    {"parameters": {"jsCode": "return items;"}, "id": "done", "name": "시장 리포트 완료", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1960, -100]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/report-failure", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"workflow\": \"market-scan\", \"stage\": \"telegram-report\", \"response\": $json } }}", "options": {"timeout": 30000}}, "id": "report-failure", "name": "Telegram 실패 기록", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1960, 60]}
   ],
   "connections": {
     "평일 08:30 KST": {"main": [[{"node": "시장 수치와 후보 계산", "type": "main", "index": 0}]]},
     "수동 시장 스캔": {"main": [[{"node": "시장 수치와 후보 계산", "type": "main", "index": 0}]]},
-    "시장 수치와 후보 계산": {"main": [[{"node": "Hermes 시장 의견", "type": "main", "index": 0}]]},
-    "Hermes 시장 의견": {"main": [[{"node": "시장 리포트 Telegram", "type": "main", "index": 0}]]}
+    "시장 수치와 후보 계산": {"main": [[{"node": "시장 스캔 정상?", "type": "main", "index": 0}]]},
+    "시장 스캔 정상?": {"main": [[{"node": "발굴 후보 있음?", "type": "main", "index": 0}], [{"node": "시장 스캔 실패 Telegram", "type": "main", "index": 0}]]},
+    "발굴 후보 있음?": {"main": [[{"node": "Hermes 시장 의견", "type": "main", "index": 0}], [{"node": "Hermes 시장 의견", "type": "main", "index": 0}]]},
+    "Hermes 시장 의견": {"main": [[{"node": "Hermes 의견 정상?", "type": "main", "index": 0}]]},
+    "Hermes 의견 정상?": {"main": [[{"node": "시장 리포트 Telegram", "type": "main", "index": 0}], [{"node": "Hermes 의견 실패 Telegram", "type": "main", "index": 0}]]},
+    "시장 리포트 Telegram": {"main": [[{"node": "Telegram 전송 정상?", "type": "main", "index": 0}]]},
+    "Telegram 전송 정상?": {"main": [[{"node": "시장 리포트 완료", "type": "main", "index": 0}], [{"node": "Telegram 실패 기록", "type": "main", "index": 0}]]}
   },
   "settings": {"executionOrder": "v1", "timezone": "Asia/Seoul", "errorWorkflow": "toss-trader-workflow-error"},
   "pinData": {},
-  "versionId": "22222222-fd93-4c61-ad10-9454335bfbe7"
+  "versionId": "66666666-fd93-4c61-ad10-9454335bfbe7"
 }

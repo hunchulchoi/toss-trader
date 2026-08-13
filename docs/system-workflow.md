@@ -85,24 +85,29 @@ RiskManager의 주요 제한:
 ## 시장분석·Hermes workflow
 
 ```mermaid
-sequenceDiagram
-    participant N as n8n
-    participant A as automation
-    participant T as Toss API
-    participant H as Hermes sidecar
-    participant DB as PostgreSQL
-    participant AM as Alertmanager
-    participant TG as Telegram
-    N->>A: POST /run-market-scan
-    A->>T: benchmarks/candidates daily candles
-    T-->>A: market scan data
-    A->>H: bearer + market-analysis JSON only
-    H-->>A: Korean opinion + token usage
-    A->>DB: automation_run_logs
-    A->>AM: formatted report with newlines
-    AM->>TG: topic message
-    Note over A,TG: Hermes 실패 시 기계적 의견 없이 실패 사실 전송
+flowchart LR
+    START[08:30 또는 수동] --> SCAN[시장 수치와 후보 계산]
+    SCAN --> SCAN_OK{시장 스캔 정상?}
+    SCAN_OK -->|아니오| FAIL[실패 Telegram]
+    SCAN_OK -->|예| CANDIDATES{발굴 후보 있음?}
+    CANDIDATES -->|있음/없음| HERMES[Hermes 시장 의견]
+    HERMES --> HERMES_OK{Hermes 의견 정상?}
+    HERMES_OK -->|아니오| FAIL
+    HERMES_OK -->|예| REPORT[시장 리포트 Telegram]
+    REPORT --> REPORT_OK{Telegram 전송 정상?}
+    REPORT_OK -->|예| DONE[완료]
+    REPORT_OK -->|아니오| FAIL
 ```
+
+장중·마감 workflow도 `Rule 정상 → Rule 체결 유무 → Hermes 정상 → Hermes
+체결 유무`를 독립 분기로 표시한다. 양쪽 체결 유무 경로는 동일한 Hermes 비교
+단계로 다시 합쳐져 universe와 진입 신호가 달라지지 않는다. 마감 workflow는
+비교 병합 뒤 `Hermes 마감 분석 정상?`과 `마감 Telegram 정상?`을 추가 확인한다.
+HTTP 응답 오류는 해당 단계 실패 Telegram으로, network/timeout처럼 응답 자체가
+없는 오류는 공통 `Toss Trader Workflow Error Reporter`로 전달한다.
+
+Hermes에는 automation 서비스가 만든 시장분석 또는 비교 JSON만 전달한다.
+Hermes 실패 시 기계적 의견을 만들지 않고 실패 경로로 종료한다.
 
 ## PostgreSQL ERD
 
