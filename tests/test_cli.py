@@ -18,6 +18,56 @@ from toss_trader.risk import RiskLimits, RiskManager
 
 
 class MetricsCliTest(unittest.TestCase):
+    def test_walk_forward_supports_csv_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            market_path = str(Path(directory) / "market.db")
+            repository = SqliteMarketRepository(market_path)
+            started_at = datetime(2026, 1, 1, tzinfo=UTC)
+            repository.upsert_candles(
+                [
+                    Candle(
+                        symbol="005930",
+                        interval="1d",
+                        timestamp=started_at.replace(day=index + 1),
+                        open_price=Decimal(100 + index),
+                        high_price=Decimal(100 + index),
+                        low_price=Decimal(100 + index),
+                        close_price=Decimal(100 + index),
+                        volume=Decimal(1000),
+                        currency="KRW",
+                    )
+                    for index in range(20)
+                ]
+            )
+            repository.close()
+            output = io.StringIO()
+            with (
+                patch.dict("os.environ", {"MARKET_DB_PATH": market_path}, clear=True),
+                redirect_stdout(output),
+            ):
+                exit_code = main(
+                    [
+                        "walk-forward-ma",
+                        "005930",
+                        "--count",
+                        "20",
+                        "--short-windows",
+                        "2",
+                        "3",
+                        "--long-windows",
+                        "4",
+                        "--train-ratio",
+                        "0.6",
+                        "--format",
+                        "csv",
+                    ]
+                )
+
+        lines = output.getvalue().splitlines()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("validation_excess_return_rate", lines[0])
+        self.assertEqual(len(lines), 3)
+
     def test_backtests_stored_candles_without_writing_paper_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             market_path = str(Path(directory) / "market.db")

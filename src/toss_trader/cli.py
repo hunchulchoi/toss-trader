@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -38,6 +39,7 @@ from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
 from .screening import MarketScanner, market_scan_to_dict
 from .strategy import ma_crossover_signal
 from .universe import DynamicUniverseSelector, open_universe_store
+from .walk_forward import WalkForwardResult, run_ma_walk_forward
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -95,6 +97,26 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--short-window", type=int, default=20)
     backtest.add_argument("--long-window", type=int, default=60)
     backtest.add_argument("--slippage-bps", type=Decimal, default=Decimal(0))
+
+    walk_forward = subparsers.add_parser(
+        "walk-forward-ma", help="rank MA parameters on train and holdout data"
+    )
+    walk_forward.add_argument("symbol")
+    walk_forward.add_argument("--interval", choices=("1m", "1d"), default="1d")
+    walk_forward.add_argument("--count", type=int, default=1000)
+    walk_forward.add_argument(
+        "--short-windows", nargs="+", type=int, default=(5, 10, 20)
+    )
+    walk_forward.add_argument(
+        "--long-windows", nargs="+", type=int, default=(20, 40, 60)
+    )
+    walk_forward.add_argument("--train-ratio", type=Decimal, default=Decimal("0.7"))
+    walk_forward.add_argument("--quantity", type=Decimal, default=Decimal(1))
+    walk_forward.add_argument("--initial-cash", type=Decimal)
+    walk_forward.add_argument("--slippage-bps", type=Decimal, default=Decimal(0))
+    walk_forward.add_argument(
+        "--format", choices=("json", "csv"), default="json", dest="output_format"
+    )
 
     strategy = subparsers.add_parser("ma-signal", help="evaluate MA crossover")
     strategy.add_argument("symbol")
@@ -249,6 +271,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _scan_ma(settings, args)
         if args.command == "backtest-ma":
             return _backtest_ma(settings, args)
+        if args.command == "walk-forward-ma":
+            return _walk_forward_ma(settings, args)
         if args.command == "ma-signal":
             result = ma_crossover_signal(
                 symbol=args.symbol,
@@ -429,6 +453,92 @@ def _backtest_ma(settings: Settings, args: argparse.Namespace) -> int:
         slippage_rate=args.slippage_bps / Decimal(10000),
     )
     return _emit(asdict(result))
+
+
+def _walk_forward_ma(settings: Settings, args: argparse.Namespace) -> int:
+    if args.count <= 0:
+        raise ValueError("count must be positive")
+    repository = open_market_repository(
+        postgres_parameters=settings.postgres_connection_parameters(),
+        sqlite_path=settings.market_db_path,
+    )
+    try:
+        candles = repository.latest_candles(
+            args.symbol.upper(), args.interval, limit=args.count
+        )
+    finally:
+        repository.close()
+    result = run_ma_walk_forward(
+        candles=candles,
+        short_windows=args.short_windows,
+        long_windows=args.long_windows,
+        train_ratio=args.train_ratio,
+        quantity=args.quantity,
+        initial_cash=args.initial_cash or settings.paper_initial_cash,
+        slippage_rate=args.slippage_bps / Decimal(10000),
+    )
+    if args.output_format == "csv":
+        return _emit_walk_forward_csv(result)
+    return _emit(asdict(result))
+
+
+def _emit_walk_forward_csv(result: WalkForwardResult) -> int:
+    fieldnames = (
+        "symbol",
+        "interval",
+        "selected",
+        "short_window",
+        "long_window",
+        "train_rank",
+        "validation_rank",
+        "overfit_warning",
+        "train_return_rate",
+        "train_excess_return_rate",
+        "train_max_drawdown_rate",
+        "train_completed_trades",
+        "train_win_rate",
+        "train_total_costs",
+        "validation_return_rate",
+        "validation_excess_return_rate",
+        "validation_max_drawdown_rate",
+        "validation_completed_trades",
+        "validation_win_rate",
+        "validation_total_costs",
+    )
+    writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, lineterminator="\n")
+    writer.writeheader()
+    for candidate in result.candidates:
+        writer.writerow(
+            {
+                "symbol": result.symbol,
+                "interval": result.interval,
+                "selected": candidate.train_rank == 1,
+                "short_window": candidate.short_window,
+                "long_window": candidate.long_window,
+                "train_rank": candidate.train_rank,
+                "validation_rank": candidate.validation_rank,
+                "overfit_warning": candidate.overfit_warning,
+                "train_return_rate": candidate.train.total_return_rate,
+                "train_excess_return_rate": candidate.train.excess_return_rate,
+                "train_max_drawdown_rate": candidate.train.max_drawdown_rate,
+                "train_completed_trades": candidate.train.completed_trades,
+                "train_win_rate": candidate.train.win_rate,
+                "train_total_costs": candidate.train.total_costs,
+                "validation_return_rate": candidate.validation.total_return_rate,
+                "validation_excess_return_rate": (
+                    candidate.validation.excess_return_rate
+                ),
+                "validation_max_drawdown_rate": (
+                    candidate.validation.max_drawdown_rate
+                ),
+                "validation_completed_trades": (
+                    candidate.validation.completed_trades
+                ),
+                "validation_win_rate": candidate.validation.win_rate,
+                "validation_total_costs": candidate.validation.total_costs,
+            }
+        )
+    return 0
 
 
 def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:

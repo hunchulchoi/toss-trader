@@ -103,6 +103,14 @@ PYTHONPATH=src python3 -m toss_trader backtest-ma 005930 \
 신호 다음 캔들 시가에 체결하고 Buy & Hold 대비 초과수익률도 출력한다.
 체결 가정과 결과 필드는 [MA 백테스트](docs/backtesting.md)를 참고한다.
 
+MA 조합 학습/검증:
+
+```bash
+PYTHONPATH=src python3 -m toss_trader walk-forward-ma 005930 \
+  --count 1000 --short-windows 5 10 20 --long-windows 20 40 60 \
+  --train-ratio 0.7 --slippage-bps 5 --format csv
+```
+
 paper 주문:
 
 ```bash

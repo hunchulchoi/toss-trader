@@ -50,3 +50,40 @@ PostgreSQL을 사용할 때는 `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`
 | `win_rate` | 이익으로 끝난 완료 매매 / 전체 완료 매매 |
 | `slippage_rate` | 체결가에 적용한 불리한 방향의 슬리피지 비율 |
 | `trades` | 체결 시각·방향·가격·수량·비용·실현손익 |
+
+## 파라미터 검증
+
+여러 MA 조합을 학습 구간과 이후 검증 구간으로 나눠 비교한다.
+
+```bash
+PYTHONPATH=src python3 -m toss_trader walk-forward-ma 005930 \
+  --interval 1d --count 1000 \
+  --short-windows 5 10 20 \
+  --long-windows 20 40 60 \
+  --train-ratio 0.7 \
+  --quantity 1 --slippage-bps 5
+```
+
+학습 순위는 초과수익률 내림차순, MDD 오름차순, 총수익률 내림차순으로 정한다.
+`selected_short_window`와 `selected_long_window`는 검증 결과를 보지 않고 학습
+1위로 선택한다. 각 조합에는 별도의 `validation_rank`도 제공한다.
+
+`overfit_warning`은 다음 중 하나면 `true`다.
+
+- 학습 초과수익이 양수였지만 검증 초과수익이 0 이하
+- 학습 또는 검증 구간의 완료 매매가 0건
+
+두 구간은 독립적으로 시작하며 포지션을 넘기지 않는다. 검증 구간 앞부분의
+`long_window + 1`개 캔들은 이동평균 준비에 사용되며 다음 캔들부터 체결할 수 있다.
+
+JSON/CSV 파일 저장:
+
+```bash
+PYTHONPATH=src python3 -m toss_trader walk-forward-ma 005930 \
+  --short-windows 5 10 20 --long-windows 20 40 60 \
+  --format json > walk-forward.json
+
+PYTHONPATH=src python3 -m toss_trader walk-forward-ma 005930 \
+  --short-windows 5 10 20 --long-windows 20 40 60 \
+  --format csv > walk-forward.csv
+```
