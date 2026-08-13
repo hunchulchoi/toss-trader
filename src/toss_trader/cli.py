@@ -118,10 +118,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     automation_runs.add_argument("--limit", type=int, default=100)
     automation_runs.add_argument(
-        "--type", choices=("all", "daily", "market_scan"), default="all"
+        "--type",
+        choices=("all", "daily", "market_scan", "hermes_trade", "n8n_flow"),
+        default="all",
     )
     automation_runs.add_argument(
-        "--status", choices=("all", "succeeded", "failed"), default="all"
+        "--status",
+        choices=("all", "succeeded", "failed", "skipped"),
+        default="all",
     )
 
     cycle = subparsers.add_parser(

@@ -127,8 +127,18 @@ class PaperLedger:
             )
             """
         )
-        _sqlite_add_column(self._connection, "paper_fills", "portfolio_id", "TEXT NOT NULL DEFAULT 'legacy'")
-        _sqlite_add_column(self._connection, "paper_risk_decisions", "portfolio_id", "TEXT NOT NULL DEFAULT 'legacy'")
+        _sqlite_add_column(
+            self._connection,
+            "paper_fills",
+            "portfolio_id",
+            "TEXT NOT NULL DEFAULT 'legacy'",
+        )
+        _sqlite_add_column(
+            self._connection,
+            "paper_risk_decisions",
+            "portfolio_id",
+            "TEXT NOT NULL DEFAULT 'legacy'",
+        )
         self._connection.execute(
             """
             CREATE INDEX IF NOT EXISTS paper_risk_decisions_time_idx
@@ -438,9 +448,7 @@ class PaperLedger:
         ).fetchall()
         cash_change = sum(
             (
-                -Decimal(notional)
-                if side == Side.BUY.value
-                else Decimal(notional)
+                -Decimal(notional) if side == Side.BUY.value else Decimal(notional)
                 for side, notional in rows
             ),
             start=Decimal(0),
@@ -573,8 +581,12 @@ class PostgresPaperLedger:
             cursor.execute(POSTGRES_PAPER_INDEX)
             cursor.execute(POSTGRES_RISK_DECISION_SCHEMA)
             cursor.execute(POSTGRES_RISK_DECISION_INDEX)
-            cursor.execute("ALTER TABLE paper_fills ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'")
-            cursor.execute("ALTER TABLE paper_risk_decisions ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'")
+            cursor.execute(
+                "ALTER TABLE paper_fills ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
+            )
+            cursor.execute(
+                "ALTER TABLE paper_risk_decisions ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
+            )
             cursor.execute(POSTGRES_AUTOMATION_RUN_SCHEMA)
             cursor.execute(POSTGRES_AUTOMATION_RUN_INDEX)
             cursor.execute(POSTGRES_PORTFOLIO_SCHEMA)
@@ -855,8 +867,8 @@ class PostgresPaperLedger:
                 HAVING COALESCE(SUM(
                     CASE WHEN side = 'BUY' THEN quantity ELSE -quantity END
                 ), 0) <> 0
-                """
-                , (self._portfolio_id,)
+                """,
+                (self._portfolio_id,),
             )
             rows = cursor.fetchall()
         return {str(symbol): Decimal(quantity) for symbol, quantity in rows}
@@ -870,8 +882,8 @@ class PostgresPaperLedger:
                 ), 0)
                 FROM paper_fills
                 WHERE portfolio_id = %s
-                """
-                , (self._portfolio_id,)
+                """,
+                (self._portfolio_id,),
             )
             row = cursor.fetchone()
         return initial_cash + (Decimal(row[0]) if row else Decimal(0))
@@ -956,9 +968,9 @@ def _automation_run_values(
     error: str | None,
     details: Mapping[str, object] | None,
 ) -> tuple[object, ...]:
-    if run_type not in {"daily", "market_scan", "hermes_trade"}:
+    if run_type not in {"daily", "market_scan", "hermes_trade", "n8n_flow"}:
         raise ValueError("unknown automation run type")
-    if status not in {"succeeded", "failed"}:
+    if status not in {"succeeded", "failed", "skipped"}:
         raise ValueError("unknown automation run status")
     if not stage.strip():
         raise ValueError("automation run stage must not be empty")
@@ -1003,9 +1015,14 @@ def _validate_automation_query(
 ) -> None:
     if not 1 <= limit <= 1000:
         raise ValueError("automation run limit must be between 1 and 1000")
-    if run_type is not None and run_type not in {"daily", "market_scan", "hermes_trade"}:
+    if run_type is not None and run_type not in {
+        "daily",
+        "market_scan",
+        "hermes_trade",
+        "n8n_flow",
+    }:
         raise ValueError("unknown automation run type")
-    if status is not None and status not in {"succeeded", "failed"}:
+    if status is not None and status not in {"succeeded", "failed", "skipped"}:
         raise ValueError("unknown automation run status")
 
 
@@ -1048,7 +1065,9 @@ def _risk_decision_row(row: Sequence[object]) -> dict[str, object]:
         "marketCloseAt": (
             values[17].isoformat()
             if isinstance(values[17], datetime)
-            else str(values[17]) if values[17] is not None else None
+            else str(values[17])
+            if values[17] is not None
+            else None
         ),
         "evaluatedAt": (
             values[18].isoformat()
@@ -1062,9 +1081,7 @@ def _automation_run_row(row: Sequence[object]) -> dict[str, object]:
     values = tuple(row)
     raw_details = values[11]
     details = (
-        json.loads(raw_details)
-        if isinstance(raw_details, str)
-        else dict(raw_details)
+        json.loads(raw_details) if isinstance(raw_details, str) else dict(raw_details)
     )
     return {
         "runId": str(values[0]),

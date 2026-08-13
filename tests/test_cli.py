@@ -170,5 +170,33 @@ class MetricsCliTest(unittest.TestCase):
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["runs"][0]["totalTokens"], 120)
 
+    def test_queries_n8n_flow_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = str(Path(directory) / "paper.db")
+            ledger = PaperLedger(database_path)
+            ledger.record_automation_run(
+                run_type="n8n_flow",
+                status="skipped",
+                stage="telegram-report",
+                started_at=datetime(2026, 8, 13, 7, 0, tzinfo=UTC),
+                finished_at=datetime(2026, 8, 13, 7, 0, 1, tzinfo=UTC),
+                details={"executionId": "77"},
+            )
+            ledger.close()
+            output = io.StringIO()
+            with (
+                patch.dict("os.environ", {"PAPER_DB_PATH": database_path}, clear=True),
+                redirect_stdout(output),
+            ):
+                exit_code = main(
+                    ["automation-runs", "--type", "n8n_flow", "--status", "skipped"]
+                )
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["runs"][0]["details"]["executionId"], "77")
+
+
 if __name__ == "__main__":
     unittest.main()
