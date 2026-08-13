@@ -179,6 +179,25 @@ class PaperCycleRunnerTest(unittest.TestCase):
         assert result.items[0].signal is not None
         self.assertEqual(result.items[0].signal.reason, "MA2/MA3 trend entry")
 
+    def test_ignores_sell_signal_without_position(self) -> None:
+        client = WatchlistCandleClient(
+            {"035420": [Decimal(10), Decimal(12), Decimal(12), Decimal(5)]}
+        )
+
+        result = self._runner(client).run(
+            symbols=("035420",),
+            interval="1d",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(client.calendar_calls, [])
+        self.assertEqual(self.paper_ledger.recent_risk_decisions(), [])
+
     def test_isolates_symbol_failure_and_continues(self) -> None:
         client = WatchlistCandleClient(
             {"AAPL": [Decimal(10), Decimal(11), Decimal(12), Decimal(13)]}

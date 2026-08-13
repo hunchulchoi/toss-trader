@@ -10,7 +10,7 @@ from .cycle_state import CycleStateStore
 from .errors import TossApiError
 from .execution import PaperExecutionResult, PaperTradingService
 from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
-from .models import PaperFill, TradeSignal
+from .models import PaperFill, Side, TradeSignal
 from .portfolio import DailyPortfolioPerformance, PortfolioPerformance
 from .risk import RiskDecision
 
@@ -198,6 +198,12 @@ class PaperCycleRunner:
                     allow_trend_entry=symbol in trend_entry_symbols,
                     entry_key=trend_entry_key,
                 )
+                if (
+                    signals[index] is not None
+                    and signals[index].side is Side.SELL
+                    and not self._trading.has_position(symbol)
+                ):
+                    signals[index] = None
                 if signals[index] is not None and signal_namespace is not None:
                     signals[index] = replace(
                         signals[index],

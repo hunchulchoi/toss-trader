@@ -43,6 +43,9 @@ class PaperTradingService:
         self._initial_cash = initial_cash
         self._advisor = advisor
 
+    def has_position(self, symbol: str) -> bool:
+        return self._ledger.position_quantity(symbol) > 0
+
     def submit(
         self,
         signal: TradeSignal,
