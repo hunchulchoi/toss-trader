@@ -59,6 +59,15 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertEqual(cycle_panel["type"], "timeseries")
         self.assertEqual(cycle_panel["targets"][0]["format"], "time_series")
         self.assertIn('AS "Duration (ms)"', cycle_panel["targets"][0]["rawSql"])
+        symbol_panel = next(
+            panel
+            for panel in dashboard["panels"]
+            if panel["title"].startswith("Queried Symbols")
+        )
+        self.assertEqual(symbol_panel["type"], "timeseries")
+        self.assertEqual(symbol_panel["fieldConfig"]["defaults"]["unit"], "percent")
+        self.assertIn("market_candles", symbol_panel["targets"][0]["rawSql"])
+        self.assertIn("interval = '1m'", symbol_panel["targets"][0]["rawSql"])
         self.assertIn("Recent Paper Fills", titles)
         self.assertIn("Hermes Automation Run Log", titles)
         self.assertNotIn("DS_PROMETHEUS", dashboard)
