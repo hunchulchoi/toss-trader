@@ -20,6 +20,7 @@ from .automation import (
     create_workflow_task_service_from_env,
     serve_automation,
 )
+from .backtest import run_ma_backtest
 from .calendar import MarketCalendarService
 from .client import TossClient
 from .config import Settings
@@ -82,6 +83,17 @@ def build_parser() -> argparse.ArgumentParser:
     stored_strategy.add_argument("--quantity", type=Decimal, default=Decimal(1))
     stored_strategy.add_argument("--short-window", type=int, default=20)
     stored_strategy.add_argument("--long-window", type=int, default=60)
+
+    backtest = subparsers.add_parser(
+        "backtest-ma", help="backtest MA crossover from stored candles"
+    )
+    backtest.add_argument("symbol")
+    backtest.add_argument("--interval", choices=("1m", "1d"), default="1d")
+    backtest.add_argument("--count", type=int, default=1000)
+    backtest.add_argument("--quantity", type=Decimal, default=Decimal(1))
+    backtest.add_argument("--initial-cash", type=Decimal)
+    backtest.add_argument("--short-window", type=int, default=20)
+    backtest.add_argument("--long-window", type=int, default=60)
 
     strategy = subparsers.add_parser("ma-signal", help="evaluate MA crossover")
     strategy.add_argument("symbol")
@@ -234,6 +246,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _collect_candles(settings, args)
         if args.command == "scan-ma":
             return _scan_ma(settings, args)
+        if args.command == "backtest-ma":
+            return _backtest_ma(settings, args)
         if args.command == "ma-signal":
             result = ma_crossover_signal(
                 symbol=args.symbol,
@@ -390,6 +404,29 @@ def _scan_ma(settings: Settings, args: argparse.Namespace) -> int:
         return _emit(asdict(result) if result else {"signal": None})
     finally:
         repository.close()
+
+
+def _backtest_ma(settings: Settings, args: argparse.Namespace) -> int:
+    if args.count <= 0:
+        raise ValueError("count must be positive")
+    repository = open_market_repository(
+        postgres_parameters=settings.postgres_connection_parameters(),
+        sqlite_path=settings.market_db_path,
+    )
+    try:
+        candles = repository.latest_candles(
+            args.symbol.upper(), args.interval, limit=args.count
+        )
+    finally:
+        repository.close()
+    result = run_ma_backtest(
+        candles=candles,
+        quantity=args.quantity,
+        initial_cash=args.initial_cash or settings.paper_initial_cash,
+        short_window=args.short_window,
+        long_window=args.long_window,
+    )
+    return _emit(asdict(result))
 
 
 def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:

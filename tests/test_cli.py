@@ -11,12 +11,67 @@ from unittest.mock import patch
 from toss_trader.cli import build_parser, main
 from toss_trader.cycle_state import SqliteCycleStateStore
 from toss_trader.execution import PaperTradingService
-from toss_trader.models import Side, TradeSignal
+from toss_trader.models import Candle, Side, TradeSignal
 from toss_trader.paper import PaperLedger
+from toss_trader.repository import SqliteMarketRepository
 from toss_trader.risk import RiskLimits, RiskManager
 
 
 class MetricsCliTest(unittest.TestCase):
+    def test_backtests_stored_candles_without_writing_paper_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            market_path = str(Path(directory) / "market.db")
+            repository = SqliteMarketRepository(market_path)
+            started_at = datetime(2026, 1, 1, tzinfo=UTC)
+            repository.upsert_candles(
+                [
+                    Candle(
+                        symbol="005930",
+                        interval="1d",
+                        timestamp=started_at.replace(day=index + 1),
+                        open_price=Decimal(close),
+                        high_price=Decimal(close),
+                        low_price=Decimal(close),
+                        close_price=Decimal(close),
+                        volume=Decimal(1000),
+                        currency="KRW",
+                    )
+                    for index, close in enumerate(
+                        [10000, 10000, 10000, 12000, 12000, 12000, 8000]
+                    )
+                ]
+            )
+            repository.close()
+            output = io.StringIO()
+            with (
+                patch.dict(
+                    "os.environ",
+                    {"MARKET_DB_PATH": market_path, "PAPER_INITIAL_CASH": "1000000"},
+                    clear=True,
+                ),
+                redirect_stdout(output),
+            ):
+                exit_code = main(
+                    [
+                        "backtest-ma",
+                        "005930",
+                        "--count",
+                        "7",
+                        "--quantity",
+                        "10",
+                        "--short-window",
+                        "2",
+                        "--long-window",
+                        "3",
+                    ]
+                )
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["final_equity"], "959810")
+        self.assertEqual(payload["total_costs"], "190")
+        self.assertEqual(len(payload["trades"]), 2)
+
     def test_metrics_command_renders_from_read_only_sqlite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database_path = str(Path(directory) / "paper.db")
