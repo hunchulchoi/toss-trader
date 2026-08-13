@@ -7,19 +7,22 @@ flowchart TB
     OP[운영자] -->|인증된 수동 Webhook| N8N
     SCHED[평일 스케줄] --> N8N
 
-    subgraph NET[openclaw-net 내부망]
-        N8N[n8n orchestration]
+    subgraph COMPOSE[toss-trader Docker Compose]
         AUTO[toss-trader-automation]
-        HERMES[Hermes analysis sidecar]
         AM[Alertmanager]
-        DB[(Toss Trader PostgreSQL)]
         METRICS[toss-trader-metrics]
         PROM[Prometheus]
+    end
+
+    subgraph OPENCLAW[외부 Docker network: openclaw-net]
+        N8N[n8n orchestration]
+        HERMES[Hermes analysis sidecar]
     end
 
     N8N -->|내부 HTTP| AUTO
     N8N -->|Bearer 인증 /v1/chat/completions| HERMES
     AUTO -->|OAuth2 API| TOSS[Toss Open API]
+    AUTO -->|SQL| DB[(외부 Toss Trader PostgreSQL)]
     AUTO -->|paper 장부·감사 로그| DB
     AUTO -->|알림 이벤트| AM
     AM -->|Bot API| TELEGRAM[Telegram topic]
@@ -35,6 +38,59 @@ flowchart TB
 - 실제 주문 코드는 없고 모든 서비스에서 `TRADING_ENABLED=false`를 유지한다.
 - 관측용 Grafana·Prometheus·metrics·Alertmanager는 운영망에서 조회할 수 있다.
   automation과 Hermes는 host port를 publish하지 않는다.
+
+## Docker Compose 구성도
+
+```mermaid
+flowchart TB
+    subgraph HOST[Docker host]
+        subgraph DEFAULT[toss-trader_default]
+            TRADER[trader\n수동 CLI]
+            AUTO[automation\n:8088 expose only]
+            METRICS[metrics\n:9108]
+            PROM[prometheus\n:9090]
+            ALERT[alertmanager\n:9093]
+            AUTO -->|POST /api/v2/alerts| ALERT
+            METRICS -->|scrape| PROM
+        end
+
+        subgraph OPENCLAW[external openclaw-net]
+            N8N[n8n\n별도 운영 container]
+            HERMES[hermes-analysis\n:8642 expose only]
+        end
+
+        AUTO <-->|내부 HTTP| N8N
+        N8N -->|Bearer| HERMES
+        AUTO -->|Bearer| HERMES
+
+        PAPER[(paper-data)] --- TRADER
+        PAPER --- AUTO
+        PAPER -. read-only .-> METRICS
+        HDATA[(hermes-analysis-data)] --- HERMES
+        PDATA[(prometheus-data)] --- PROM
+        ADATA[(alertmanager-data)] --- ALERT
+    end
+
+    METRICS -->|Tailscale bind :9108| OPS[운영 조회]
+    PROM -->|Tailscale bind :19090| OPS
+    ALERT -->|Tailscale bind :19093| OPS
+    AUTO -->|SQL| PG[(외부 PostgreSQL)]
+    ALERT -->|Bot API| TG[Telegram]
+```
+
+| 서비스 | network | volume | host publish | 역할 |
+|---|---|---|---|---|
+| `trader` | default | `paper-data` read/write | 없음 | 수동 CLI·개발용 one-shot 실행 |
+| `automation` | default + `openclaw-net` | `paper-data` read/write | 없음 (`8088` expose) | n8n task, paper cycle, RiskManager callback, 알림 감사 |
+| `hermes-analysis` | `openclaw-net`만 | `hermes-analysis-data` | 없음 (`8642` expose) | zero-tool 분석 전용 LLM API |
+| `metrics` | default | `paper-data` read-only | Tailscale `:9108` | Prometheus 지표·health |
+| `prometheus` | default | `prometheus-data` | Tailscale `:19090` | metrics scrape·alert rule 평가 |
+| `alertmanager` | default | `alertmanager-data` | Tailscale `:19093` | Telegram topic 전달·실패 counter |
+
+n8n, PostgreSQL, Grafana는 이 compose가 생성하지 않는 기존 운영 구성이다. Grafana는
+현재 운영 container에서 Prometheus·PostgreSQL을 datasource로 조회한다. compose의
+`automation`은 두 network에 붙는 유일한 bridge이며, Hermes에는 Docker socket·host
+port·tool/plugin/MCP/context tool이 없다.
 
 ## 스케줄
 

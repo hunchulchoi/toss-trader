@@ -146,6 +146,26 @@ Toss candle 요청은 성공했지만 저장 이력이 61개보다 적으면 오
 종목 결과에 `skipReason`을 남기고 `failed_count`와 API 오류 streak는 증가시키지
 않는다. 이력이 쌓이면 자동으로 평가 대상에 복귀한다.
 
+### n8n workflow failure 알림
+
+Telegram에는 원본 cycle JSON·shared snapshot·캔들 목록을 보내지 않는다. 다음처럼
+짧은 운영 요약만 보낸다.
+
+```text
+n8n workflow 실패
+workflow: toss-trader-daily / execution: 162
+단계: rule-cycle (rule · 1d)
+cycle 종료 코드: 3
+종목 처리 실패: 1/17
+487400 오류: <원인>
+```
+
+`exitCode=3`은 일부 종목만 실패한 partial cycle이므로 Telegram severity는 `warning`이다.
+그 외 workflow 실패는 `critical`이다. 어느 경우든 후속 단계는 성공으로 위장하지 않고
+실패 분기에서 종료한다. n8n execution에는 원본 응답이 남고,
+`automation_run_logs.details.failure`에는 stage, 종료 코드, summary, 최대 5개 종목
+오류를 구조화해 남긴다.
+
 ## 2026-08-13 마감 검증 기록
 
 - n8n execution: `224`, `success`
