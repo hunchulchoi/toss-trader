@@ -632,8 +632,11 @@ class AlertmanagerReporter:
         requested_severity = result.get("severity")
         if requested_severity in {"info", "warning", "critical"}:
             severity = str(requested_severity)
+        analysis = result.get("analysis")
         if ok:
             description = str(result.get("analysis", ""))
+        elif isinstance(analysis, str) and analysis.strip():
+            description = analysis
         elif result.get("stage") == "hermes":
             description = f"Hermes 분석 실패\n{result.get('error', 'failed')}"
         else:

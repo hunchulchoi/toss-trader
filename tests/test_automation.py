@@ -453,6 +453,38 @@ class AlertmanagerReporterTest(unittest.TestCase):
         self.assertIn("Hermes 분석 실패", description)
         self.assertIn("Hermes API request failed", description)
 
+    def test_cycle_failure_preserves_generated_analysis(self) -> None:
+        transport: list[dict[str, object]] = []
+
+        class Response:
+            def __enter__(self) -> Self:
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b""
+
+        def open_request(request, timeout):
+            del timeout
+            transport.extend(json.loads(request.data))
+            return Response()
+
+        reporter = AlertmanagerReporter(url="http://alertmanager")
+        with patch("urllib.request.urlopen", side_effect=open_request):
+            reporter.report(
+                {
+                    "ok": False,
+                    "analysis": "종목 처리 실패: 15/15\n487400 오류: 일봉 부족",
+                }
+            )
+
+        description = transport[0]["annotations"]["description"]
+        self.assertIn("종목 처리 실패: 15/15", description)
+        self.assertIn("487400 오류: 일봉 부족", description)
+        self.assertNotIn("unknown: failed", description)
+
     def test_uses_explicit_notice_severity(self) -> None:
         captured: list[list[dict[str, object]]] = []
 

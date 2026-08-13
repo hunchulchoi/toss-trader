@@ -8,10 +8,17 @@ from toss_trader.portfolio import PortfolioPerformance
 from toss_trader.repository import SqliteMarketRepository
 
 
-def candle(symbol: str, close: Decimal, *, day: int, currency: str) -> Candle:
+def candle(
+    symbol: str,
+    close: Decimal,
+    *,
+    day: int,
+    currency: str,
+    interval: str = "1d",
+) -> Candle:
     return Candle(
         symbol=symbol,
-        interval="1d",
+        interval=interval,
         timestamp=datetime(2026, 8, day, tzinfo=UTC),
         open_price=close,
         high_price=close,
@@ -91,16 +98,27 @@ class PortfolioPerformanceTest(unittest.TestCase):
         self.assertEqual(result.currency_returns["USD"], Decimal("-0.04"))
         self.assertEqual(result.daily_return_rate, Decimal("-0.04"))
 
-    def test_requires_two_daily_marks_for_each_open_position(self) -> None:
+    def test_uses_fill_cost_and_latest_minute_for_new_position(self) -> None:
         self._buy("005930", Decimal(100), Decimal(1))
         self.market.upsert_candles(
-            [candle("005930", Decimal(100), day=12, currency="KRW")]
+            [
+                candle("005930", Decimal(100), day=12, currency="KRW"),
+                candle(
+                    "005930",
+                    Decimal(97),
+                    day=13,
+                    currency="KRW",
+                    interval="1m",
+                ),
+            ]
         )
 
-        with self.assertRaisesRegex(ValueError, "two daily candles"):
-            PortfolioPerformance(
-                ledger=self.ledger, market_repository=self.market
-            ).daily()
+        result = PortfolioPerformance(
+            ledger=self.ledger, market_repository=self.market
+        ).daily()
+
+        self.assertEqual(result.currency_returns, {"KRW": Decimal("-0.03")})
+        self.assertEqual(result.daily_return_rate, Decimal("-0.03"))
 
 
 if __name__ == "__main__":

@@ -234,12 +234,16 @@ paper cycle 실행 로그, 가상 체결, Hermes token 사용량과 자동화 �
 |---|---|
 | Toss 랭킹 오류 | 동적 universe 실패 기록, 보유 종목만 추적, 신규 BUY 거부 |
 | Toss 인증/시세 오류 | 종목 실패 기록, 오류 streak 증가, 나머지 종목 계속 |
+| 신규 보유종목의 이전 일봉 없음 | paper 체결 원가와 최신 1분봉으로 당일 손익 평가 |
 | 시장 일정 조회 실패 | 해당 국가 신호 실행 금지 |
 | RiskManager 거부 | 체결 없음, 위반 코드 기록 |
 | paper cycle 비정상 종료 | Hermes 단계 생략, 실패 alert 시도 |
 | Hermes 오류/timeout | 기계적 의견으로 대체하지 않고 `hermes` 단계 실패 alert 전송 |
 | Alertmanager 오류 | API가 `502` 반환, n8n execution 실패 기록 |
 | 중복 실행 | 두 번째 요청 `409` 반환 |
+
+장중 cycle 실패 알림은 생성된 종목별 원인을 Alertmanager에 그대로 전달한다.
+상세 분석이 있는 실패를 `unknown: failed`로 대체하지 않는다.
 
 ## 필요한 Infisical 키
 
