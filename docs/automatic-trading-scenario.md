@@ -23,7 +23,9 @@ Telegram 장전 리포트
 
 평일 09:00~15:20 KST n8n (5분 간격)
   -> POST /run-paper-cycle
-  -> 1분봉 MA20/MA60 + RiskManager + paper 체결
+  -> 1분봉 MA20/MA60 + 일정·포트폴리오 조회
+  -> RiskManager 판단 감사 + paper 체결 + cycle 상태 저장
+  -> 체결·거부·오류만 Telegram
 
 평일 15:40 KST n8n
         │
@@ -50,8 +52,11 @@ Telegram 지정 topic
 
 n8n workflow는
 [`automation/n8n/toss-trader-market-scan.json`](../automation/n8n/toss-trader-market-scan.json)과
+[`automation/n8n/toss-trader-intraday-paper.json`](../automation/n8n/toss-trader-intraday-paper.json),
 [`automation/n8n/toss-trader-daily.json`](../automation/n8n/toss-trader-daily.json)에
-있다. 각 workflow의 평일 스케줄과 수동 trigger가 같은 내부 API를 호출한다.
+있다. 저장소 JSON의 `active=false`는 import 안전 기본값이며 운영 n8n에서는
+세 workflow가 publish되어 활성 상태다. 각 workflow의 평일 스케줄과 수동
+trigger가 같은 내부 API를 호출한다.
 
 ## 일일 실행 시나리오
 
@@ -76,14 +81,28 @@ n8n workflow는
 `DISCOVERY_TOP_N`개를 보낸다. 현재 구현은 KRX 전체 자동 열거가 아니라 명시된
 discovery universe 안에서 발굴한다.
 
-### 2. 마감 n8n 실행
+### 2. 장중 paper cycle
+
+- 평일 `09:00~15:20 KST`, 5분 간격 실행
+- `POST /run-paper-cycle`; host port 없이 `openclaw-net` 내부에서만 접근
+- automation process가 `run-paper-cycle --interval 1m`을 실행
+- 종목별 최근 1분봉 61개로 MA20/MA60 교차 계산
+- Hermes를 호출하지 않음
+- 정상 무신호는 Telegram을 보내지 않음
+- 체결, 의미 있는 RiskManager 거부, 종목/API 오류만 즉시 보고
+- 동일 cycle 중복 요청은 `409`, 동일 캔들 신호는 `duplicate-signal`로 차단
+
+장 마감 10분 전부터 신규 매수는 RiskManager가 거부한다. 매도는 허용하지만
+휴장일에는 stale candle 체결을 방지하기 위해 양 방향 모두 거부한다.
+
+### 3. 마감 n8n 실행
 
 - 평일 `15:40 KST` 실행
 - HTTP timeout: 10분
 - 같은 작업이 이미 실행 중이면 automation API가 `409` 반환
 - endpoint는 host port로 공개하지 않고 `openclaw-net`에만 노출
 
-### 3. Toss paper cycle
+### 4. Toss paper cycle
 
 automation service가 별도 프로세스로 `run-paper-cycle`을 실행한다. 자식
 프로세스에도 `TRADING_ENABLED=false`를 강제로 넣는다.
@@ -91,7 +110,7 @@ automation service가 별도 프로세스로 `run-paper-cycle`을 실행한다. 
 종목별 처리:
 
 1. Toss OAuth 토큰 획득 또는 캐시 토큰 재사용
-2. `long_window + 1`개 캔들 수집. 기본값은 일봉 61개
+2. `long_window + 1`개 캔들 수집. 장중은 1분봉 61개, 마감은 기본 일봉 61개
 3. 저장된 종가로 이전·현재 MA20/MA60 계산
 4. 골든크로스면 `BUY`, 데드크로스면 `SELL`, 교차 없으면 신호 없음
 5. 신호가 있으면 국가별 정규장 일정과 시장 휴장 여부 조회
@@ -103,7 +122,11 @@ automation service가 별도 프로세스로 `run-paper-cycle`을 실행한다. 
 `partial_failure`, 전부 실패는 `failed`로 저장된다. 같은 캔들에서 생성된
 동일 `signal_id`는 다시 체결되지 않는다.
 
-### 4. 리스크 검사
+RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저장이 실패하면
+승인된 신호여도 paper fill을 만들지 않는 fail-closed 방식이다. cycle 실행
+상태는 `paper_cycle_runs`, 가상 체결은 `paper_fills`에 저장한다.
+
+### 5. 리스크 검사
 
 기본 제한:
 
@@ -114,7 +137,7 @@ automation service가 별도 프로세스로 `run-paper-cycle`을 실행한다. 
 | 일일 신규 매수 | 5회 | `max-daily-buys` |
 | 일일 수익률 | -3% 이하 중단 | `daily-loss-limit` |
 | 연속 API 오류 | 5회 이상 중단 | `api-error-kill-switch` |
-| 휴장일 신규 매수 | 금지 | `market-closed` |
+| 휴장일 매수·매도 | 금지 | `market-closed` |
 | 장 마감 전 신규 매수 | 10분 전부터 금지 | `market-close-window` |
 | 동일 신호 | 재체결 금지 | `duplicate-signal` |
 | 보유량 초과 매도 | 금지 | `insufficient-position` |
@@ -122,7 +145,7 @@ automation service가 별도 프로세스로 `run-paper-cycle`을 실행한다. 
 일일 손실은 통화별 수익률을 합산하지 않고 가장 나쁜 통화 구간 수익률로
 판정한다. 매도는 보유 수량 안에서만 허용한다.
 
-### 5. Hermes 분석
+### 6. Hermes 분석
 
 일일 보고에는 paper cycle JSON만, 시장분석 보고에는 규칙 기반 시장분석 JSON만
 전달한다. 인증정보, 환경변수, 파일, 이전 대화는 전달하지 않는다. Hermes 역할:
@@ -151,7 +174,10 @@ Docker socket을 가진 기존 공용 Hermes 컨테이너와 그 credential은 �
 않는다. system prompt의 “도구를 호출하지 마라” 문구는 보안 경계로 간주하지
 않는다.
 
-### 6. Telegram 보고
+장중 5분 cycle은 Hermes를 호출하지 않는다. Hermes token 사용량은 장전·마감
+자동화 실행별로 `automation_run_logs`에 저장한다.
+
+### 7. Telegram 보고
 
 성공 시 Hermes 요약을 `TossTraderDailyReport` alert로 Alertmanager에 보낸다.
 실패 시 실패 stage(`cycle`, `hermes`, `report`)를 보고한다.
@@ -191,6 +217,10 @@ Grafana는 Tailscale 주소로만 접근한다. 현재 기본 port:
 | Prometheus | `19090` |
 | Alertmanager | `19093` |
 | Grafana (공용) | `3001` |
+
+공용 Grafana `Trading / Toss Trader` dashboard에는 최근 RiskManager 판단,
+Hermes token 사용량, 자동화 실행 로그가 있다. `toss-postgres` datasource는
+두 감사 테이블에 대한 SELECT만 허용된 전용 read-only 계정을 사용한다.
 
 ## 장애 처리
 

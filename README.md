@@ -14,7 +14,9 @@
 - SQLite/PostgreSQL paper trading ledger
 - 멱등 캔들 collector와 저장 데이터 기반 MA scanner
 - watchlist 수집·MA 스캔·RiskManager·paper 체결 단일 사이클
+- 평일 장중 5분 간격 1분봉 MA20/MA60 paper cycle
 - 장전 benchmark 시장 상태 분석과 설정 universe 종목 발굴
+- RiskManager 판단·자동화 실행·Hermes token 감사 장부
 - 시장 데이터 SQLite 저장 및 공유 PostgreSQL 선택 지원
 - 실주문 API와 실주문 CLI는 **없음**
 
@@ -102,7 +104,11 @@ watchlist paper 자동 실행 사이클:
 
 ```bash
 infisical run --env=prod --path=/ -- \
-  uv run toss-trader run-paper-cycle
+  env PYTHONPATH=src python3 -m toss_trader run-paper-cycle
+
+# 운영 장중 endpoint와 동일한 1분봉 실행
+infisical run --env=prod --path=/ -- \
+  env PYTHONPATH=src python3 -m toss_trader run-paper-cycle --interval 1m
 ```
 
 기본 설정:
@@ -113,13 +119,17 @@ STRATEGY_INTERVAL=1d
 STRATEGY_SHORT_WINDOW=20
 STRATEGY_LONG_WINDOW=60
 PAPER_ORDER_QUANTITY=1
+PAPER_INITIAL_CASH=1000000
 ```
+
+`STRATEGY_INTERVAL=1d`는 수동 실행과 15:40 마감 cycle의 기본값이다. 장중
+`/run-paper-cycle` endpoint는 환경값과 관계없이 `--interval 1m`을 강제한다.
 
 장전 시장분석·종목발굴:
 
 ```bash
 infisical run --env=prod --path=/ -- \
-  uv run toss-trader run-market-scan
+  env PYTHONPATH=src python3 -m toss_trader run-market-scan
 ```
 
 ```dotenv
@@ -163,12 +173,17 @@ Tailscale 접속 포트는 metrics `9108`, Prometheus `19090`, Alertmanager
 `19093`입니다. dashboard는 공용 Grafana `3001`의 `Trading` 폴더를 사용한다.
 Telegram 비밀값으로 생성한 Alertmanager 설정은 container tmpfs에만 저장됩니다.
 
-n8n은 평일 `08:30 KST`에 장전 시장분석·종목발굴 리포트, 국내 장 마감 뒤
-`15:40 KST`에 paper cycle·마감 리포트를 실행한다.
+운영 스케줄:
 
-장중에는 평일 `09:00~15:20 KST`에 5분마다 1분봉 MA20/MA60 paper cycle을
-실행한다. 신호는 RiskManager 승인 후에만 100만원 가상 장부에 반영하며 실제
-주문은 실행하지 않는다. 정상 무신호 cycle은 Telegram을 보내지 않는다.
+| 시각(KST) | 작업 | Hermes | Telegram |
+|---|---|---|---|
+| 평일 08:30 | 시장분석·종목발굴 | 시장 의견 생성 | 리포트 전송 |
+| 평일 09:00~15:20, 5분 간격 | 1분봉 MA20/MA60 paper cycle | 호출 안 함 | 특이사항만 전송 |
+| 평일 15:40 | 일봉 paper cycle·마감 분석 | 일일 분석 생성 | 마감 리포트 전송 |
+
+장중 신호는 RiskManager 승인 후에만 100만원 가상 장부에 반영한다. 휴장일에는
+매수·매도를 모두 거부하며, 실제 주문은 실행하지 않는다. 정상 무신호 cycle은
+Telegram을 보내지 않는다.
 
 paper cycle에서 체결, RiskManager 거부, 종목 처리 실패, Toss API 연속 오류,
 일일 손실 한도가 감지되면 `TossTraderPaperCycleNotice`로 즉시 Telegram에
@@ -178,10 +193,14 @@ paper cycle에서 체결, RiskManager 거부, 종목 처리 실패, Toss API 연
 ```bash
 infisical run --env=prod --path=/ -- docker compose run --rm trader \
   run-paper-cycle
+
+# 판단·실행·Hermes token 조회
+docker exec toss-trader-automation-1 toss-trader risk-decisions --limit 20
+docker exec toss-trader-automation-1 toss-trader automation-runs --limit 20
 ```
 
-`STRATEGY_INTERVAL=1m` 전략만 1분 주기를 사용하세요. 반복 수집해도 candle
-primary key와 signal ID 때문에 중복 저장·중복 paper 체결되지 않습니다.
+장중 endpoint는 항상 1분봉을 사용한다. 반복 수집해도 candle primary key와
+signal ID 때문에 중복 저장·중복 paper 체결되지 않는다.
 
 ## 검증
 
@@ -195,5 +214,5 @@ docker compose run --rm trader config
 
 1. Infisical `WATCHLIST_SYMBOLS`에 paper 대상 종목 추가
 2. n8n scheduler로 2~4주 paper 성과·장애 데이터 축적
-3. Prometheus metrics와 Grafana dashboard 추가
-4. 별도 승인 후 micro-live executor 구현
+3. 공용 Grafana에서 Risk 판단·가상 체결·token 추이 검토
+4. 실주문은 별도 설계·검증·명시적 승인 전까지 구현하지 않음
