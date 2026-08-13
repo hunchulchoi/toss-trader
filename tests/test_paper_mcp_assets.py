@@ -13,6 +13,10 @@ class PaperMcpAssetsTest(unittest.TestCase):
 
         self.assertIn('command: ["serve-paper-mcp"]', block)
         self.assertIn('POSTGRES_PORT: ${POSTGRES_PORT:-5431}', block)
+        self.assertIn(
+            'POSTGRES_USER: ${TOSS_MCP_POSTGRES_USER:-toss_mcp_reader}', block
+        )
+        self.assertIn("TOSS_MCP_POSTGRES_PASSWORD", block)
         self.assertIn('PAPER_INITIAL_CASH: ${PAPER_INITIAL_CASH:-1000000}', block)
         self.assertIn('aliases:\n          - toss-trader-paper-mcp', block)
         self.assertIn('expose:\n      - "8090"', block)
@@ -26,6 +30,18 @@ class PaperMcpAssetsTest(unittest.TestCase):
         config = (ROOT / "automation" / "hermes-analysis" / "config.yaml").read_text()
 
         self.assertIn("mcp_servers: {}", config)
+
+    def test_reader_migration_enforces_select_only_role(self) -> None:
+        migration = (ROOT / "db" / "paper_mcp_reader.sql").read_text()
+
+        self.assertIn("CREATE ROLE toss_mcp_reader", migration)
+        self.assertIn("NOINHERIT", migration)
+        self.assertIn("default_transaction_read_only", migration)
+        self.assertIn("GRANT SELECT ON ALL TABLES", migration)
+        self.assertIn("ALTER DEFAULT PRIVILEGES FOR ROLE toss_trader", migration)
+        self.assertNotIn("GRANT INSERT", migration)
+        self.assertNotIn("GRANT UPDATE", migration)
+        self.assertNotIn("GRANT DELETE", migration)
 
     def test_docs_keep_paper_mcp_on_public_hermes_only(self) -> None:
         paper_mcp = (ROOT / "docs" / "paper-mcp.md").read_text()

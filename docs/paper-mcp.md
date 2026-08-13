@@ -29,6 +29,8 @@ Alertmanager Telegram은 리포트·장애를 **밀어 넣는** 경로다. 이 M
 ## 격리
 
 - `paper-mcp` 컨테이너에는 Toss client ID, secret, 계좌번호를 주입하지 않는다.
+- DB 로그인은 전용 `toss_mcp_reader`를 사용하며 모든 public table에 `SELECT`만
+  허용한다. 새 테이블에도 default privilege로 `SELECT`만 상속한다.
 - PostgreSQL 세션은 `default_transaction_read_only=on`, statement/idle timeout 5초다.
 - 운영 Toss DB는 `common-postgres` 호스트 포트 `5431`의 `rule`, `hermes`만 본다.
 - MCP port `8090`은 publish하지 않고 `openclaw-net` 내부 alias
@@ -36,6 +38,25 @@ Alertmanager Telegram은 리포트·장애를 **밀어 넣는** 경로다. 이 M
 - 컨테이너는 read-only root filesystem, 전체 capability drop으로 실행한다.
 
 ## 배포와 Hermes 등록
+
+Infisical `prod` `/`에 전용 자격증명을 저장한다.
+
+```dotenv
+TOSS_MCP_POSTGRES_USER=toss_mcp_reader
+TOSS_MCP_POSTGRES_PASSWORD=<random secret>
+```
+
+role migration은 비밀번호를 출력하거나 shell argument에 넣지 않는다.
+
+```bash
+docker cp db/paper_mcp_reader.sql \
+  common-postgres:/tmp/toss_trader_paper_mcp_reader.sql
+
+infisical run --env=prod --path=/ -- \
+  docker exec -e TOSS_MCP_POSTGRES_PASSWORD common-postgres \
+  psql -U postgres -d toss_trader \
+  -f /tmp/toss_trader_paper_mcp_reader.sql
+```
 
 Infisical 환경으로 MCP만 재생성한다.
 
