@@ -37,14 +37,15 @@ toss-trader automation-runs --type market_scan --status failed --limit 100
 | 장전·마감 분석 | n8n이 Hermes API를 직접 호출하고, automation의 `hermes-*-result` endpoint가 응답·token을 검증·기록 | `automation_run_logs`의 `market_scan`·`daily`, token panel |
 | RiskManager | 신호 또는 universe 후보마다 승인/거부를 먼저 저장. 승인된 trade만 fill 생성 | `Dynamic Universe Risk Decisions`, 최근 `paper_risk_decisions`, `Recent Paper Fills` |
 
-공용 Grafana `Toss Trader` dashboard는 `toss-postgres` read-only datasource로만
-조회한다.
+공용 Grafana `Toss Trader` dashboard는 장부·상세 패널에 `toss-postgres` read-only
+datasource를, 상단 상태 패널(`Last Cycle`, `Daily Return`, `API Error Streak` 등)에
+`toss-prometheus` datasource를 사용한다.
 
 | 패널 | 표시 내용 | 데이터 기준 |
 |---|---|---|
 | `n8n Flow Review Log` | 같은 execution의 stage, 소요시간, token, Telegram 결과, RiskManager decision ID | `automation_run_logs`의 workflow/execution metadata |
 | `Dynamic Universe Risk Decisions` | 후보별 점수, RiskManager 판단, 최종 선정 여부 | `dynamic_universe_runs`, `dynamic_universe_decisions` |
-| `Queried Symbols` | 수집 1분봉의 조회 구간 시작 대비 정규화 등락률, 회사명·코드 | `market_candles`, `market_symbols`; 선정 종목과 보유 종목 포함 가능 |
+| `Symbols (1m, BUY/SELL Marked · $trade_filter)` | 수집 1분봉의 조회 구간 시작 대비 정규화 등락률, 회사명·코드, BUY/SELL mark | `market_candles`, `market_symbols`, `paper_fills`; filter에 따라 체결 종목 또는 전체 조회 종목 |
 | `Recent Paper Fills` | BUY/SELL, 수량·가격·금액, 전략 근거 `reason` | `paper_fills`, `market_symbols` |
 | `Paper Cycle Run Log` | rule/Hermes 포트폴리오별 cycle 상태, 신호·체결·실패·제외 수 | `paper_cycle_runs` |
 | `Hermes Automation Run Log` | 장전·마감 분석 token 및 신호가 발생한 장중 Hermes advisor token | `automation_run_logs`의 `market_scan`, `daily`, `hermes_trade` |

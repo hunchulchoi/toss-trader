@@ -166,22 +166,8 @@ cycle 종료 코드: 3
 `automation_run_logs.details.failure`에는 stage, 종료 코드, summary, 최대 5개 종목
 오류를 구조화해 남긴다.
 
-## 2026-08-13 마감 검증 기록
-
-- n8n execution: `224`, `success`
-- 소요 시간: 약 11.6초
-- rule: 17종목, 신호 0, 체결 0, 제외 1, 실패 0
-- Hermes: 17종목, 신호 0, 체결 0, 제외 1, 실패 0
-- 제외 종목: `487400`, 일봉 1개로 61개 미달
-- rule 일일 수익률: `+2.8425%`
-- Hermes 일일 수익률: `+3.7269%`
-- Hermes token: prompt 5,293 / completion 189 / total 5,482
-- Telegram: accepted, Alertmanager Telegram failure counter 0
-- Toss API 연속 오류: 0
-- PostgreSQL lock·idle transaction: 0
-- `TRADING_ENABLED=false`
-
-이 기록은 특정 종목 매매 권고가 아니라 자동화 운영 검증 결과다.
+과거 검증 수치·execution ID는 절차서가 아니라
+[`validation-history.md`](validation-history.md)에 보관한다.
 
 ## 배포 전후 검증
 

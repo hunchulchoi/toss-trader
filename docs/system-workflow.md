@@ -415,7 +415,8 @@ n8n Community license에는 native External Secrets entitlement가 없으므로
 credential ID만 저장한다.
 
 - `toss-trader-hermes-auth`: Hermes bearer Header Auth
-- `toss-trader-toss-oauth2`: Toss Client Credentials OAuth2, body authentication
+- `toss-trader-toss-oauth2`: Toss Client Credentials OAuth2. 동기화는 하지만 현재
+  workflow JSON의 HTTP node가 직접 사용하지 않는 예약 credential
 - `toss-trader-risk-manager-auth`: RiskManager webhook bearer Header Auth
 - `toss-trader-manual-trigger-auth`: 수동 workflow 실행용 bearer Header Auth
 
@@ -466,6 +467,7 @@ erDiagram
     DYNAMIC_UNIVERSE_DECISIONS {
         uuid decision_id PK
         uuid run_id FK
+        timestamptz evaluated_at
         text symbol
         numeric score
         int amount_rank
@@ -516,12 +518,17 @@ erDiagram
         numeric quantity
         numeric reference_price
         numeric notional
+        text signal_reason
         boolean approved
         jsonb violations
+        numeric position_notional
+        numeric position_quantity
         numeric available_cash
         int daily_buy_count
         numeric daily_return_rate
         int consecutive_api_errors
+        boolean market_is_business_day
+        timestamptz market_close_at
         timestamptz evaluated_at
     }
     PAPER_FILLS {
@@ -541,6 +548,8 @@ erDiagram
         text run_type
         text status
         text stage
+        timestamptz started_at
+        timestamptz finished_at
         bigint duration_ms
         bigint prompt_tokens
         bigint completion_tokens
@@ -553,6 +562,21 @@ erDiagram
 DB에서 강제하는 FK는 `dynamic_universe_decisions.run_id` 하나다. `symbol`과
 `signal_id` 선은 Grafana 조회와 감사 추적에 사용하는 논리 관계다.
 `paper_cycle_runs`와 `automation_run_logs`는 실행 단위 독립 장부다.
+`automation_run_logs.details` JSONB에는 `workflowId`, `executionId`, `trigger`,
+`portfolioId`, `interval`, `parentExecutionId`, `telegramAccepted`, `riskDecisionIds` 등
+workflow 감사 메타데이터가 들어가며, 별도 DB column이나 FK가 아니다.
+
+### n8n workflow ID mapping
+
+| 구분 | n8n DB `workflowId` | `automation_run_logs.details.workflowId` |
+|---|---|---|
+| 장전 시장분석 | `toss-trader-market-scan` | `toss-trader-market-scan` |
+| 장중 paper 비교 | `toss-trader-intraday-paper` | `toss-trader-intraday-paper` |
+| 마감 paper/Hermes | `toss-trader-daily-paper-hermes` | `toss-trader-daily` |
+| RiskManager sub-workflow | `toss-trader-risk-manager` | `toss-trader-risk-manager` |
+
+마감 workflow만 n8n 저장 ID와 automation audit ID가 다르다. n8n 실행 조회는 전자를,
+Grafana `n8n Flow Review Log` 조회는 후자를 사용한다.
 
 ## 파일 구조
 
@@ -560,12 +584,20 @@ DB에서 강제하는 FK는 `dynamic_universe_decisions.run_id` 하나다. `symb
 toss-trader/
 ├── automation/
 │   ├── hermes-analysis/       # zero-tool Hermes sidecar image/config
-│   └── n8n/                   # 08:30, 장중 5분, 15:40 workflow JSON
+│   └── n8n/
+│       ├── toss-trader-market-scan.json
+│       ├── toss-trader-intraday-paper.json
+│       ├── toss-trader-daily.json
+│       ├── toss-trader-risk-manager.json
+│       ├── toss-trader-error.json
+│       ├── sync-infisical-credentials.sh
+│       └── run-daily-webhook.sh
 ├── docs/
 │   ├── audit-ledgers.md       # 감사 장부와 조회 원칙
 │   ├── automatic-trading-scenario.md
 │   ├── operations-runbook.md  # 수동 실행·장애 대응·운영 검증
-│   └── system-workflow.md     # 현재 문서
+│   ├── system-workflow.md     # 현재 문서
+│   └── validation-history.md  # 과거 검증 snapshot
 ├── monitoring/
 │   ├── alertmanager/          # Telegram receiver 설정
 │   ├── grafana/               # Toss Trader dashboard/provisioning
@@ -579,6 +611,7 @@ toss-trader/
 │   ├── config.py              # 환경 설정 검증
 │   ├── cycle.py               # paper cycle orchestration
 │   ├── cycle_state.py         # paper_cycle_runs
+│   ├── errors.py              # Toss API 오류 model
 │   ├── execution.py           # Risk 판단 후 paper 체결
 │   ├── market_data.py         # candle 수집과 저장 전략 adapter
 │   ├── metrics.py             # PostgreSQL/SQLite → Prometheus

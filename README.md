@@ -34,12 +34,12 @@ executor를 추가하더라도 이 kill switch, 명시적 실행 플래그, 멱�
 
 실제 자격증명은 `.env`에 저장하지 말고 Infisical에서 프로세스 환경으로
 주입하세요. 변수명은 [.env.example](.env.example)에 정리되어 있습니다.
-이 저장소는 Infisical `toss` 프로젝트에 연결되어 있으며 기본 환경은 `prod`,
-secret path는 루트 `/`입니다. `TOSS_ACCOUNT_SEQ` 값은 현재 계좌의 `1`입니다.
+기본 운영 환경은 Infisical `prod`, secret path는 루트 `/`입니다.
+`TOSS_ACCOUNT_SEQ`는 대상 계좌에 맞는 환경값으로 주입합니다.
 
-Toss WTS의 `설정 → Open API → 허용 IP 관리`에는 실행 서버의 외부 IPv4도
+Toss WTS의 `설정 → Open API → 허용 IP 관리`에는 실행 서버의 현재 외부 IPv4를
 등록해야 합니다. 미등록 IP는 OAuth token 발급 후에도 데이터 API가 `403`으로
-차단됩니다. 현재 N100의 확인된 외부 IPv4는 `122.202.132.246`입니다.
+차단됩니다. IP는 배포·장애 시점에 서버와 WTS 설정에서 다시 확인합니다.
 
 ## 실행
 
@@ -191,7 +191,7 @@ Telegram 비밀값으로 생성한 Alertmanager 설정은 container tmpfs에만 
 | 시각(KST) | 작업 | Hermes | Telegram |
 |---|---|---|---|
 | 평일 08:30 | 시장분석·종목발굴 | 시장 의견 생성 | 리포트 전송 |
-| 평일 09:00~15:20, 5분 간격 | 1분봉 MA20/MA60 paper cycle | 호출 안 함 | 특이사항만 전송 |
+| 평일 09:00~15:20, 5분 간격 | 1분봉 MA20/MA60 rule/Hermes 비교 cycle | Hermes 포트폴리오 신호 발생 시 advisor 호출 | 특이사항만 전송 |
 | 평일 15:40 | 일봉 paper cycle·마감 분석 | 일일 분석 생성 | 마감 리포트 전송 |
 
 장중 신호는 RiskManager 승인 후에만 100만원 가상 장부에 반영한다. 휴장일에는

@@ -62,16 +62,18 @@ n8n이 전체 자동화의 단계 순서와 실패 전파를 담당한다. workf
 관련 workflow가 publish되어 활성 상태다. 각 workflow의 평일 스케줄과 수동
 trigger가 같은 내부 API를 호출한다.
 
-automation API는 원자 작업만 제공한다. n8n은 secret 없이 `openclaw-net`에서
-다음 단계를 조립한다.
+automation API는 원자 작업만 제공한다. workflow JSON에는 credential ID만 있고,
+n8n encrypted credential DB에는 Hermes bearer·RiskManager bearer·수동 webhook bearer가
+저장된다. n8n은 `openclaw-net`에서 다음 단계를 조립한다.
 
-- 장전: `market-scan` → `hermes-market` → `report-market`
+- 장전: `market-scan` → Hermes 직접 호출 → `hermes-market-result` → `report-market`
 - 장중: `paper-rule-1m` → `paper-hermes-1m` → 병합 → `report-paper`
-- 마감: `paper-rule-1d` → `paper-hermes-1d` → 병합 → `hermes-daily` → `report-daily`
+- 마감: `paper-rule-1d` → `paper-hermes-1d` → Hermes 직접 호출 → `hermes-daily-result` → `report-daily`
 - 실패: Error Trigger → `report-failure`
 
-Toss/Hermes/Alertmanager credential은 automation 컨테이너의 Infisical 주입값으로만
-사용한다. workflow JSON과 n8n에는 secret을 저장하지 않는다.
+Toss·Alertmanager credential은 automation의 Infisical 주입값을 사용한다. Hermes
+bearer는 n8n이 직접 호출하므로 n8n encrypted credential에도 저장된다. 어느 경우든
+workflow JSON과 Git에는 secret을 저장하지 않는다.
 
 ## 일일 실행 시나리오
 
@@ -129,9 +131,9 @@ n8n의 각 task 호출마다 automation service가 별도 프로세스로
 `paper_portfolios`가 표시 이름·mode·초기자금을 저장하고, `paper_fills`,
 `paper_risk_decisions`, `paper_cycle_runs`는 `portfolio_id`로 격리한다.
 
-Hermes에는 주문 신호와 RiskContext JSON만 전달한다. 응답은 승인 여부와 한국어
+Hermes advisor에는 주문 신호와 RiskContext JSON만 전달한다. 응답은 승인 여부와 한국어
 근거를 담은 JSON이어야 한다. 호출·파싱 장애는 기계적 판단으로 대체하지 않고
-`hermes-unavailable`로 RiskManager가 거부한다. 승인/거부 근거와 token 사용량은
+`Hermes 분석 실패: 응답을 받지 못해 체결 차단`으로 RiskManager가 거부한다. 승인/거부 근거와 token 사용량은
 `automation_run_logs`의 `hermes_trade` 실행으로 조회한다.
 
 종목별 처리:
@@ -160,14 +162,20 @@ RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저�
 | 검사 | 제한 | 위반 코드 |
 |---|---:|---|
 | 1회 주문 금액 | 300,000원 | `max-order-notional` |
+| paper 가용 현금 | 주문 금액 초과 금지 | `insufficient-paper-cash` |
 | 종목별 보유 금액 | 1,000,000원 | `max-position-notional` |
 | 일일 신규 매수 | 5회 | `max-daily-buys` |
+| 동시 신규 포지션 | 5종목 | `max-open-positions` |
 | 일일 수익률 | -3% 이하 중단 | `daily-loss-limit` |
 | 연속 API 오류 | 5회 이상 중단 | `api-error-kill-switch` |
+| universe 갱신 실패 | 신규 BUY 금지, 보유 SELL 허용 | `universe-refresh-failed` |
 | 휴장일 매수·매도 | 금지 | `market-closed` |
 | 장 마감 전 신규 매수 | 10분 전부터 금지 | `market-close-window` |
 | 동일 신호 | 재체결 금지 | `duplicate-signal` |
 | 보유량 초과 매도 | 금지 | `insufficient-position` |
+| RiskManager webhook 오류 | 체결 금지 | `risk-manager-workflow-unavailable` |
+| Hermes advisor 거부 | 체결 금지 | `Hermes 거부: <근거>` |
+| Hermes advisor 오류 | 체결 금지 | `Hermes 분석 실패: 응답을 받지 못해 체결 차단` |
 
 일일 손실은 통화별 수익률을 합산하지 않고 가장 나쁜 통화 구간 수익률로
 판정한다. 매도는 보유 수량 안에서만 허용한다.
@@ -195,7 +203,7 @@ token으로 같이 사용한다. 별도 Hermes 키는 필요 없다.
 - Docker socket과 host filesystem mount 없음
 - `platform_toolsets.api_server`, plugin, MCP, context tool 모두 0개
 - 인증된 `/v1/toolsets` 응답의 enabled/resolved tool이 모두 0개인지 검증
-- 전용 named volume에는 별도로 승인한 OAuth credential만 저장
+- 전용 named volume은 Hermes runtime data용이며 OAuth credential을 저장하지 않음
 
 Docker socket을 가진 기존 공용 Hermes 컨테이너와 그 credential은 공유하지
 않는다. system prompt의 “도구를 호출하지 마라” 문구는 보안 경계로 간주하지
@@ -248,13 +256,14 @@ Grafana는 Tailscale 주소로만 접근한다. 현재 기본 port:
 
 공용 Grafana `Trading / Toss Trader` dashboard에는 최근 RiskManager 판단,
 paper cycle 실행 로그, 가상 체결, Hermes token 사용량과 자동화 실행 로그가
-있다. `Queried Symbols`는 수집된 1분봉을 심볼별 정규화 그래프로 보여주며,
+있다. `Symbols (1m, BUY/SELL Marked · $trade_filter)`는 수집된 1분봉을 심볼별 정규화 그래프로 보여주며,
 장전 scan에서 Toss 종목 기본정보 API로 갱신한 `market_symbols` 기준정보를
 조인해 회사명과 종목코드를 함께 표시한다.
 `Paper Cycle Run Log`는 장중 cycle마다 갱신되며 `Hermes Automation Run Log`는
-장전·마감 Hermes 실행만 기록한다. `toss-postgres` datasource는 네 장부 테이블,
-`market_candles`, `market_symbols`에 대한 SELECT만 허용된 전용 read-only 계정을
-사용한다.
+장전·마감 분석과 신호가 발생한 장중 Hermes advisor 실행을 기록한다. 실행 상태
+stat 패널은 `toss-prometheus`, 장부·그래프 패널은 `toss-postgres` datasource를
+사용한다. `toss-postgres`는 장부 테이블, `market_candles`, `market_symbols`에 대한
+SELECT만 허용된 전용 read-only 계정이다.
 
 ## 장애 처리
 
@@ -332,9 +341,9 @@ OAuth token 발급과 별개로 Toss WTS의 `설정 → Open API → 허용 IP �
 실행 서버의 외부 IPv4를 등록해야 한다. 미등록 IP에서 데이터 API를 호출하면
 `403 edge-blocked`가 발생한다.
 
-현재 N100의 확인된 외부 IPv4는 `122.202.132.246`이다. 회선의 공인 IP가
-바뀌면 WTS 허용 IP도 갱신해야 한다. Tailscale IP나 내부 LAN IP를 등록하는
-것이 아니다.
+회선의 공인 IP가 바뀌면 WTS 허용 IP도 갱신해야 한다. 특정 IP를 문서에 고정하지
+않고 배포·장애 시점에 실행 서버와 WTS 설정에서 현재 값을 확인한다. Tailscale IP나
+내부 LAN IP를 등록하는 것이 아니다.
 
 ## 실주문 전환 조건
 
