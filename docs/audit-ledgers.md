@@ -28,24 +28,31 @@ toss-trader risk-decisions --symbol 005930 --limit 20
 toss-trader automation-runs --type market_scan --status failed --limit 100
 ```
 
-장중 `/run-paper-cycle`은 Hermes를 호출하지 않으므로 `automation_run_logs`에
-token 행을 만들지 않는다. 실행 상태는 `paper_cycle_runs`, 신호가 발생한 경우
-Risk 판단은 `paper_risk_decisions`, 승인된 가상 체결은 `paper_fills`에서 본다.
+## 실행·Grafana 조회 기준
 
-공용 Grafana의 `Toss Trader` dashboard는 `toss-postgres` read-only datasource로
-최근 판단, paper cycle 실행, 가상 체결, Hermes token 사용량과 자동화 실행
-로그를 조회한다. `n8n Flow Review Log`는 같은 execution의 stage를 묶어 보여준다.
+| 구분 | 실제 흐름 | 확인 장부·패널 |
+|---|---|---|
+| legacy 장중 endpoint | `/run-paper-cycle`은 호환용 직접 endpoint이며 Hermes 비교 task를 호출하지 않음 | `paper_cycle_runs`, `paper_risk_decisions`, `paper_fills` |
+| 운영 장중 workflow | n8n이 `/workflow/paper-rule-1m` 뒤 `/workflow/paper-hermes-1m`을 호출. Hermes는 Hermes 포트폴리오에서 신호가 있을 때만 advisor로 호출 | `Paper Cycle Run Log`, `Hermes Automation Run Log`, `n8n Flow Review Log` |
+| 장전·마감 분석 | n8n이 Hermes API를 직접 호출하고, automation의 `hermes-*-result` endpoint가 응답·token을 검증·기록 | `automation_run_logs`의 `market_scan`·`daily`, token panel |
+| RiskManager | 신호 또는 universe 후보마다 승인/거부를 먼저 저장. 승인된 trade만 fill 생성 | `Dynamic Universe Risk Decisions`, 최근 `paper_risk_decisions`, `Recent Paper Fills` |
+
+공용 Grafana `Toss Trader` dashboard는 `toss-postgres` read-only datasource로만
+조회한다.
+
+| 패널 | 표시 내용 | 데이터 기준 |
+|---|---|---|
+| `n8n Flow Review Log` | 같은 execution의 stage, 소요시간, token, Telegram 결과, RiskManager decision ID | `automation_run_logs`의 workflow/execution metadata |
+| `Dynamic Universe Risk Decisions` | 후보별 점수, RiskManager 판단, 최종 선정 여부 | `dynamic_universe_runs`, `dynamic_universe_decisions` |
+| `Queried Symbols` | 수집 1분봉의 조회 구간 시작 대비 정규화 등락률, 회사명·코드 | `market_candles`, `market_symbols`; 선정 종목과 보유 종목 포함 가능 |
+| `Recent Paper Fills` | BUY/SELL, 수량·가격·금액, 전략 근거 `reason` | `paper_fills`, `market_symbols` |
+| `Paper Cycle Run Log` | rule/Hermes 포트폴리오별 cycle 상태, 신호·체결·실패·제외 수 | `paper_cycle_runs` |
+| `Hermes Automation Run Log` | 장전·마감 분석 token 및 신호가 발생한 장중 Hermes advisor token | `automation_run_logs`의 `market_scan`, `daily`, `hermes_trade` |
+
+장전 scan과 dynamic universe refresh는 Toss 종목 기본정보를 batch 조회해 회사명을
+`market_symbols`에 갱신한다. Grafana는 이를 조인해 `회사명 (코드)`로 표시한다.
 request body와 인증정보는 저장하지 않고 허용된 메타데이터와 집계값만 남긴다.
-`Dynamic Universe Risk Decisions`는 후보별 RiskManager 판단과
-선정 결과를 표시한다. `Queried Symbols`는 수집한 1분봉을 조회 구간 시작 대비
-등락률로 정규화해 15개 심볼을 함께 표시한다. 장전 scan은 Toss
-`GET /api/v1/stocks`를 한 번 호출해 회사명을 `market_symbols` 기준정보 테이블에
-갱신하고, Grafana의 종목 표시는 `회사명 (코드)` 형식으로 이 테이블을 조회한다.
-`Recent Paper Fills`는 BUY/SELL, 수량·가격·금액과 전략 근거 `reason`을 함께
-표시한다. `Paper Cycle Run Log`는 장중
-5분마다 갱신되고 `Hermes Automation Run Log`는 Hermes를 호출하는 장전·마감
-실행에만 행이 추가된다.
-장부에는 API key, bearer token, OAuth credential, 전체 Hermes prompt/response를
+API key, bearer token, OAuth credential, 전체 Hermes prompt/response도 장부에
 저장하지 않는다.
 
 MA 계산에 필요한 candle 이력이 부족한 종목은 cycle 결과와
