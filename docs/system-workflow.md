@@ -130,6 +130,48 @@ RiskManager의 주요 제한:
 - 휴장일과 장 마감 10분 전 BUY 차단
 - universe 갱신 실패 시 신규 BUY 차단, 보유 종목 SELL만 허용
 
+## RiskManager process
+
+```mermaid
+flowchart TD
+    START[동적 universe 후보 또는 MA 신호] --> KIND{판단 종류}
+
+    KIND -->|universe| UIN[후보 종목·기준가·종목 상태\n수량·가용 현금·손익·API 오류]
+    KIND -->|trade| TIN[BUY/SELL 신호·보유 수량/금액\n현금·일일 BUY·장 상태·Hermes 판단]
+    UIN --> REQUEST
+    TIN --> REQUEST
+
+    REQUEST[automation N8nRiskManager\nPOST n8n RiskManager webhook\n전용 bearer] --> AUTH{n8n Header Auth}
+    AUTH -->|실패| CLOSED[거부\nrisk-manager-workflow-unavailable]
+    AUTH -->|통과| EVAL[POST /workflow/risk-manager-evaluate]
+    EVAL --> POLICY[RiskManager 정책 계산]
+    POLICY --> DECISION{위반 0건?}
+
+    DECISION -->|아니오| REJECT[approved=false\nviolations 반환]
+    DECISION -->|예| APPROVE[approved=true 반환]
+    CLOSED --> RETURN
+    REJECT --> RETURN[automation에 결정 반환]
+    APPROVE --> RETURN
+
+    RETURN --> TYPE{판단 종류}
+    TYPE -->|universe| ULEDGER[(dynamic_universe_runs\ndynamic_universe_decisions)]
+    TYPE -->|trade| RLEDGER[(paper_risk_decisions)]
+    ULEDGER --> SELECT[승인 후보 상위 15종목만 선정]
+    RLEDGER --> FILL{승인?}
+    FILL -->|예| PAPER[(paper_fills)]
+    FILL -->|아니오| NOFILL[paper 체결 없음]
+```
+
+| 구분 | 평가 입력 | 거부 조건 | 기록 결과 |
+|---|---|---|---|
+| `universe` | 종목 유형·보통주 여부·거래 상태·정지 여부·기준가, 가용 현금, 당일 손익, API 오류 연속 횟수 | 비주식/우선주, 비활성·정지, 가격 오류, 주문 한도·현금 초과, 손실·API kill switch | `dynamic_universe_decisions`에 후보별 승인·위반·선정 여부 |
+| `trade` | 신호 ID·BUY/SELL·수량·기준가·근거, 포지션·현금·일일 BUY·장 상태·Hermes 판단 | 중복 신호, universe 실패 신규 BUY, Hermes 거부/장애, 주문·포지션·현금·보유수량 한도, 손실·API kill switch, 휴장·마감 10분 전 BUY | `paper_risk_decisions`에 모든 승인·거부 판단, 승인만 `paper_fills` |
+
+RiskManager는 매매 추천이나 실제 주문을 수행하지 않는다. 호출 timeout·network 오류·인증
+실패·응답 JSON 오류는 모두 `risk-manager-workflow-unavailable`으로 처리해 체결을
+차단한다. n8n child execution ID, parent execution ID, portfolio, interval과 최종
+`decision_id`는 `automation_run_logs`에서 함께 조회한다.
+
 ## 시장분석·Hermes workflow
 
 ```mermaid
