@@ -249,6 +249,8 @@ class WorkflowTaskServiceTest(unittest.TestCase):
         self.assertEqual(result["violations"], ["insufficient-position"])
 
     def test_audits_n8n_risk_manager_decision_without_recalculating(self) -> None:
+        audits: list[AutomationRunLog] = []
+
         class Stub:
             def report(self, _: dict[str, object]) -> dict[str, object]:
                 return {}
@@ -262,6 +264,7 @@ class WorkflowTaskServiceTest(unittest.TestCase):
             paper_reporter=Stub(),  # type: ignore[arg-type]
             daily_reporter=Stub(),  # type: ignore[arg-type]
             failure_reporter=Stub(),  # type: ignore[arg-type]
+            audit=lambda run: audits.append(run) or "risk-audit-1",
         )
 
         result = service.run(
@@ -271,6 +274,11 @@ class WorkflowTaskServiceTest(unittest.TestCase):
                 "approved": False,
                 "violations": ["max-order-notional"],
                 "symbol": "005930",
+                "_workflow": {
+                    "workflowId": "toss-trader-risk-manager",
+                    "executionId": "229",
+                    "stage": "risk-manager-evaluate",
+                },
             },
         )
 
@@ -278,6 +286,7 @@ class WorkflowTaskServiceTest(unittest.TestCase):
             result,
             {"approved": False, "violations": ["max-order-notional"]},
         )
+        self.assertEqual(audits[0].details["symbol"], "005930")
 
 
 class DailyAutomationTest(unittest.TestCase):

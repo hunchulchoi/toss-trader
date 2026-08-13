@@ -1615,6 +1615,8 @@ def _flow_audit_details(
         entity = payload.get("signal") if kind == "trade" else payload.get("candidate")
         if isinstance(entity, dict) and isinstance(entity.get("symbol"), str):
             details["symbol"] = entity["symbol"]
+        elif isinstance(payload.get("symbol"), str):
+            details["symbol"] = payload["symbol"]
     if path == "/workflow/report-failure":
         details["failure"] = _workflow_failure(payload)["details"]
     return details
