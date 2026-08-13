@@ -97,7 +97,9 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         self.assertTrue(first.refreshed)
         self.assertTrue(first.new_buys_allowed)
         self.assertEqual(first.symbols, ("005930", "000660"))
+        self.assertEqual(first.entry_symbols, ("005930", "000660"))
         self.assertFalse(second.refreshed)
+        self.assertEqual(second.entry_symbols, ())
         self.assertEqual(second.symbols, ("005930", "000660", "035420"))
         self.assertEqual(len(client.ranking_calls), 2)
         rows = self.store._connection.execute(

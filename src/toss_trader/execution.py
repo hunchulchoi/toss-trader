@@ -51,6 +51,7 @@ class PaperTradingService:
             position_quantity=self._ledger.position_quantity(signal.symbol),
             available_cash=self._ledger.cash_balance(self._initial_cash),
             daily_buy_count=self._ledger.daily_buy_count(now.date()),
+            open_position_count=len(self._ledger.position_quantities()),
             daily_return_rate=daily_return_rate,
             consecutive_api_errors=consecutive_api_errors,
             seen_signal_ids=self._ledger.seen_signal_ids(),

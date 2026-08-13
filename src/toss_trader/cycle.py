@@ -86,6 +86,8 @@ class PaperCycleRunner:
         quantity: Decimal,
         now: datetime,
         new_buys_allowed: bool = True,
+        trend_entry_symbols: tuple[str, ...] = (),
+        trend_entry_key: str | None = None,
     ) -> PaperCycleResult:
         if not symbols:
             raise ValueError("watchlist must not be empty")
@@ -106,6 +108,8 @@ class PaperCycleRunner:
                 now=now,
                 previous_api_errors=previous_api_errors,
                 new_buys_allowed=new_buys_allowed,
+                trend_entry_symbols=frozenset(trend_entry_symbols),
+                trend_entry_key=trend_entry_key,
             )
         except Exception as error:
             self._state.finish_run(
@@ -146,6 +150,8 @@ class PaperCycleRunner:
         now: datetime,
         previous_api_errors: int,
         new_buys_allowed: bool,
+        trend_entry_symbols: frozenset[str],
+        trend_entry_key: str | None,
     ) -> PaperCycleResult:
         size = len(symbols)
         collections: list[CollectionResult | None] = [None] * size
@@ -186,6 +192,8 @@ class PaperCycleRunner:
                     quantity=quantity,
                     short_window=short_window,
                     long_window=long_window,
+                    allow_trend_entry=symbol in trend_entry_symbols,
+                    entry_key=trend_entry_key,
                 )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)

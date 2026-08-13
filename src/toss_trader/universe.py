@@ -38,6 +38,7 @@ class UniverseRefreshResult:
     refreshed: bool
     symbols: tuple[str, ...]
     new_buys_allowed: bool
+    entry_symbols: tuple[str, ...] = ()
 
 
 class RankingClient(Protocol):
@@ -172,6 +173,7 @@ class DynamicUniverseSelector:
                 refreshed=False,
                 symbols=_with_held(cached, held_symbols),
                 new_buys_allowed=True,
+                entry_symbols=(),
             )
         run_id = str(uuid4())
         try:
@@ -190,6 +192,7 @@ class DynamicUniverseSelector:
                 refreshed=True,
                 symbols=_with_held(selected, held_symbols),
                 new_buys_allowed=True,
+                entry_symbols=selected,
             )
         except Exception as error:
             self._store.record_failure(
@@ -201,6 +204,7 @@ class DynamicUniverseSelector:
                     refreshed=True,
                     symbols=tuple(dict.fromkeys(held_symbols)),
                     new_buys_allowed=False,
+                    entry_symbols=(),
                 )
             raise
 

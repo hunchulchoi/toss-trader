@@ -157,6 +157,14 @@ class RiskManagerTest(unittest.TestCase):
         self.assertIn("universe-refresh-failed", buy.violations)
         self.assertTrue(sell.approved)
 
+    def test_rejects_new_position_when_portfolio_is_full(self) -> None:
+        decision = self.manager.evaluate(
+            signal(), RiskContext(now=NOW, open_position_count=5)
+        )
+
+        self.assertFalse(decision.approved)
+        self.assertIn("max-open-positions", decision.violations)
+
 
 if __name__ == "__main__":
     unittest.main()

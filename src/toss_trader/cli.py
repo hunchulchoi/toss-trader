@@ -484,6 +484,12 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 if universe_result is not None
                 else True
             ),
+            trend_entry_symbols=(
+                universe_result.entry_symbols if universe_result is not None else ()
+            ),
+            trend_entry_key=(
+                universe_result.run_id if universe_result is not None else None
+            ),
         )
         cash_balance = paper_ledger.cash_balance(settings.paper_initial_cash)
     _emit(
@@ -503,6 +509,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                     "refreshed": universe_result.refreshed,
                     "symbols": list(universe_result.symbols),
                     "newBuysAllowed": universe_result.new_buys_allowed,
+                    "entrySymbols": list(universe_result.entry_symbols),
                 }
                 if universe_result is not None
                 else {"source": "explicit", "symbols": list(symbols)}

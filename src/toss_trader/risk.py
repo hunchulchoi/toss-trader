@@ -12,6 +12,7 @@ class RiskLimits:
     max_order_notional: Decimal = Decimal(300000)
     max_position_notional: Decimal = Decimal(1000000)
     max_daily_buy_count: int = 5
+    max_open_positions: int = 5
     daily_loss_limit: Decimal = Decimal("-0.03")
     max_consecutive_api_errors: int = 5
     block_new_buys_before_close: timedelta = timedelta(minutes=10)
@@ -26,6 +27,7 @@ class RiskContext:
     position_quantity: Decimal = Decimal(0)
     available_cash: Decimal | None = None
     daily_buy_count: int = 0
+    open_position_count: int = 0
     daily_return_rate: Decimal = Decimal(0)
     consecutive_api_errors: int = 0
     seen_signal_ids: frozenset[str] = field(default_factory=frozenset)
@@ -88,6 +90,12 @@ class RiskManager:
             and context.daily_buy_count >= self._limits.max_daily_buy_count
         ):
             violations.append("max-daily-buys")
+        if (
+            signal.side is Side.BUY
+            and context.position_quantity <= 0
+            and context.open_position_count >= self._limits.max_open_positions
+        ):
+            violations.append("max-open-positions")
         if context.daily_return_rate <= self._limits.daily_loss_limit:
             violations.append("daily-loss-limit")
         if context.consecutive_api_errors >= self._limits.max_consecutive_api_errors:

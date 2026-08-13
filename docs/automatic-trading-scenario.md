@@ -282,6 +282,10 @@ CANDLE_REQUEST_INTERVAL_SECONDS=0.25
 RiskManager가 보통주·거래 상태·거래정지·가격·주문 한도·가용 현금·일일 손실·
 API 오류 streak를 검사한 뒤 승인 상위 15개와 기존 보유 종목을 추적한다.
 판단은 `dynamic_universe_runs`, `dynamic_universe_decisions`에 저장한다.
+universe가 갱신된 시점에는 선정 종목 중 `MA20 > MA60`인 기존 상승 추세도
+최초 BUY 신호를 만들 수 있다. 같은 universe run의 신호 ID는 고정해 중복 체결을
+막는다. 이후에는 새 골든크로스/데드크로스만 신호로 사용한다. RiskManager는
+하루 BUY 5건과 동시 보유 5종목을 상한으로 적용하고 모든 승인을 장부에 남긴다.
 
 선정 종목의 `/candles`는 종목별 순차 조회한다. 호출 사이에는 기본 0.25초를
 두고, Toss의 `X-RateLimit-*`와 `Retry-After` 응답에 따라 대기를 늘린다.

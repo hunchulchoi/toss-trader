@@ -109,6 +109,8 @@ class StoredMaStrategy:
         quantity: Decimal,
         short_window: int = 20,
         long_window: int = 60,
+        allow_trend_entry: bool = False,
+        entry_key: str | None = None,
     ) -> TradeSignal | None:
         candles = self._repository.latest_candles(
             symbol, interval, limit=long_window + 1
@@ -122,6 +124,8 @@ class StoredMaStrategy:
             quantity=quantity,
             short_window=short_window,
             long_window=long_window,
+            allow_trend_entry=allow_trend_entry,
+            entry_key=entry_key,
         )
 
 

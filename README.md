@@ -129,6 +129,9 @@ DYNAMIC_UNIVERSE_SIZE=15
 `/run-paper-cycle` endpoint는 환경값과 관계없이 `--interval 1m`을 강제한다.
 종목은 고정 watchlist가 아니라 30분마다 Toss 시장 거래대금 상위 30개와
 1일 상승률 상위 30개를 합산 점수화해 RiskManager가 승인한 상위 15개를 쓴다.
+universe 갱신 시 이미 `MA20 > MA60`인 종목은 최초 trend entry를 허용한다.
+이후에는 새 MA20/MA60 교차만 매매하며, 하루 최대 매수와 동시 보유는 각각
+5종목으로 제한한다.
 보유 종목은 순위에서 빠져도 계속 추적한다. 랭킹 장애 시 보유 종목만 추적하고
 신규 BUY는 `universe-refresh-failed`로 거부한다. `/candles`는 기본 0.25초 간격과
 Toss rate-limit 응답 헤더에 따라 더 느리게 호출한다.

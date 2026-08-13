@@ -15,6 +15,8 @@ def ma_crossover_signal(
     quantity: Decimal,
     short_window: int = 20,
     long_window: int = 60,
+    allow_trend_entry: bool = False,
+    entry_key: str | None = None,
 ) -> TradeSignal | None:
     if short_window <= 0 or long_window <= 0 or short_window >= long_window:
         raise ValueError("windows must satisfy 0 < short_window < long_window")
@@ -37,12 +39,16 @@ def ma_crossover_signal(
     elif previous_short >= previous_long and current_short < current_long:
         side = Side.SELL
         label = "crossed below"
+    elif allow_trend_entry and current_short > current_long:
+        side = Side.BUY
+        label = "trend entry"
     if side is None or label is None:
         return None
 
     strategy_name = f"MA{short_window}/MA{long_window}"
+    signal_key = entry_key if label == "trend entry" and entry_key else as_of.isoformat()
     return TradeSignal(
-        signal_id=f"ma-{short_window}-{long_window}-{symbol}-{as_of.isoformat()}",
+        signal_id=f"ma-{short_window}-{long_window}-{symbol}-{signal_key}",
         symbol=symbol,
         side=side,
         reference_price=closes[-1],

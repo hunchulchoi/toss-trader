@@ -158,6 +158,27 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(latest.status, "succeeded")
         self.assertEqual(latest.fill_count, 1)
 
+    def test_enters_existing_uptrend_only_on_universe_refresh(self) -> None:
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(11), Decimal(12), Decimal(13)]}
+        )
+
+        result = self._runner(client).run(
+            symbols=("005930",),
+            interval="1d",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+            trend_entry_symbols=("005930",),
+            trend_entry_key="universe-run-1",
+        )
+
+        self.assertEqual(result.signal_count, 1)
+        self.assertEqual(result.fill_count, 1)
+        assert result.items[0].signal is not None
+        self.assertEqual(result.items[0].signal.reason, "MA2/MA3 trend entry")
+
     def test_isolates_symbol_failure_and_continues(self) -> None:
         client = WatchlistCandleClient(
             {"AAPL": [Decimal(10), Decimal(11), Decimal(12), Decimal(13)]}
