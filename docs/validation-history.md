@@ -17,4 +17,5 @@
 | PostgreSQL lock·idle transaction | 0 |
 | trading | `TRADING_ENABLED=false` |
 
-수익률은 보유 전체 MTM. 오늘 체결 성과 아님. 매매 권고 아님.
+이 기록은 비용 반영 총자산 손익 엔진 도입 전 검증값이다. 당시 수익률은 보유
+전체 MTM이며 오늘 체결 성과가 아니다. 매매 권고 아님.

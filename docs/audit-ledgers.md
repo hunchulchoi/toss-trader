@@ -8,7 +8,9 @@ SQLite 개발 모드에서도 같은 인터페이스와 필드를 제공한다.
 | `paper_risk_decisions` | 승인·거부, 위반 규칙, 신호, 포지션, 가용 현금, 일일 수익률, Toss API 오류 연속 횟수, 장 상태, 판단 시각 | 신호별 RiskManager 판단 직후 | 체결 허용/차단 근거 확인 |
 | `automation_run_logs` | daily/market scan과 n8n HTTP stage의 성공·실패·skip, `workflowId`, n8n `executionId`, trigger, portfolio/interval, 소요 시간, Hermes prompt/completion/total token, Telegram 결과, RiskManager `decision_id` 목록 | 각 automation/n8n 단계 완료 또는 실패 시 | execution 단위 흐름·token·Telegram 결과 사후 검토 |
 | `paper_cycle_runs` | 장중·마감 cycle의 interval, 성공 여부, 신호·체결·실패 수, API 오류 연속 횟수, 일일 수익률 | 포트폴리오 cycle 시작·종료 시 | cycle 상태·실패 추이·성과 확인 |
-| `paper_fills` | 승인 신호의 가상 체결, BUY/SELL, 수량·가격·금액·근거·체결 시각 | RiskManager 승인 및 판단 장부 저장 후 | paper 포지션·현금·체결 근거 확인. 실제 주문 내역 아님 |
+| `paper_fills` | 승인 신호의 가상 체결, BUY/SELL, 수량·가격·금액·수수료·세금·근거·체결 시각 | RiskManager 승인 및 판단 장부 저장 후 | 이동평균 원가·실현손익·현금의 원천 장부. 실제 주문 내역 아님 |
+| `paper_portfolio_daily_baselines` | 포트폴리오별 UTC 일자 시작 총자산 | 해당 일자 첫 손익 계산 시 | `daily_return_rate` 분모 고정 |
+| `paper_portfolio_snapshots` | 총자산, 실현손익, 미실현손익, 누적 수수료·세금 | cycle 손익 계산 시. 체결 후 같은 시각 값 갱신 | cycle별 순손익·비용 추이 확인 |
 | `dynamic_universe_runs` | 30분 단위 동적 종목군 갱신 성공·실패, 후보·승인·선정 수 | universe refresh 시 | 후보 발굴 정상 여부와 규모 확인 |
 | `dynamic_universe_decisions` | 후보별 랭킹 점수, 가격, RiskManager 승인·거부, 위반 규칙, 최종 선정 여부 | 각 universe 후보 평가 시 | 왜 특정 종목이 선정/제외됐는지 추적 |
 
@@ -42,7 +44,7 @@ Grafana `Toss Trader`: 장부 `toss-postgres`(ro), 상태 패널 `toss-prometheu
 
 | 패널 | 표시 내용 | 데이터 기준 |
 |---|---|---|
-| `Rule vs Hermes 평가금액 · 손익` | 현금+보유 1분 MTM, 시작현금 대비 손익(원) | `paper_cycle_runs` 시점의 `paper_fills`·`market_candles`·`paper_portfolios.initial_cash` |
+| `Rule vs Hermes 평가금액 · 손익` | 비용 반영 총자산과 시작현금 대비 손익(원) | `paper_portfolio_snapshots`, `paper_portfolios.initial_cash` |
 | `n8n Flow Review Log` | 같은 execution의 stage, 소요시간, token, Telegram 결과, RiskManager decision ID | `automation_run_logs`의 workflow/execution metadata |
 | `Dynamic Universe Risk Decisions` | 후보별 점수, RiskManager 판단, 최종 선정 여부 | `dynamic_universe_runs`, `dynamic_universe_decisions` |
 | `Rule Trades (1m)` / `Hermes Trades (1m)` | 각 포트폴리오가 기간 내 체결한 종목 1분 등락률과 BUY/SELL 시점 | `market_candles`, `market_symbols`, `paper_fills` (`portfolio_id` 필터) |
@@ -54,7 +56,9 @@ Grafana `Toss Trader`: 장부 `toss-postgres`(ro), 상태 패널 `toss-prometheu
 회사명은 `market_symbols` 조인. body·secret·전체 Hermes prompt/response 미저장.
 
 candle 이력 부족은 `skipped`. `failed_count`·API streak 불변. `partial_failure`는 종목 `error`. 합치지 말 것.
-`daily_return_rate`는 보유 전체 MTM. 오늘 체결 성과 아님.
+단일 통화 `daily_return_rate`는 UTC 일자 시작 총자산 대비 비용 반영 총자산
+수익률이다. 다중통화는 환율 기준이 없어 통화별 MTM 수익률 중 최저값을 쓴다.
+상세 계산은 [`pnl-engine.md`](pnl-engine.md)를 따른다.
 한도 거부: `risk-decisions --status rejected`. advisor: `automation-runs --type hermes_trade`.
 수동 마감·장애는 [`operations-runbook.md`](operations-runbook.md).
 
