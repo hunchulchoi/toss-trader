@@ -170,6 +170,7 @@ class WorkflowTaskServiceTest(unittest.TestCase):
         self.assertIn("종목 처리 실패: 1/17", message)
         self.assertIn("487400 오류: daily candles unavailable", message)
         self.assertNotIn('"sharedSnapshot"', message)
+        self.assertEqual(reports[0]["severity"], "warning")
         self.assertEqual(audits[0].details["failure"]["errors"][0]["symbol"], "487400")  # type: ignore[index]
 
     def test_rejects_direct_hermes_response_without_content(self) -> None:

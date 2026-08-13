@@ -982,6 +982,7 @@ class WorkflowTaskService:
                     "ok": False,
                     "stage": "n8n-workflow",
                     "analysis": failure["message"],
+                    "severity": failure["severity"],
                 }
             )
         if path == "/workflow/risk-manager-evaluate":
@@ -1663,7 +1664,12 @@ def _workflow_failure(payload: dict[str, Any]) -> dict[str, object]:
     else:
         lines.append("상세 원인: n8n execution 및 automation_run_logs 확인")
 
-    return {"message": "\n".join(lines), "details": details}
+    severity = "warning" if exit_code == 3 else "critical"
+    return {
+        "message": "\n".join(lines),
+        "details": details,
+        "severity": severity,
+    }
 
 
 def _workflow_failure_errors(
