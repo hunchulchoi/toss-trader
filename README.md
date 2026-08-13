@@ -165,6 +165,12 @@ paper 체결 비용은 2026-08 토스증권 Open API 일반 요율을 따른다.
 체결 모델에 거래소·상품유형이 없으므로 NXT 0.014%, 국내 ETF 거래세 면제,
 계정별 프로모션 요율은 지원하지 않는다.
 
+포지션 원가는 체결 순서의 이동평균법으로 계산한다. 부분매도 시 매도 수량에
+해당하는 평균원가를 제거하고 수수료·세금을 차감한 실현손익을 기록한다.
+각 cycle은 `paper_portfolio_snapshots`에 총자산·실현손익·미실현손익·누적비용을
+저장한다. `daily-loss-limit`은 UTC 일자별 `paper_portfolio_daily_baselines`의
+시작 총자산 대비 현재 총자산 수익률을 사용한다.
+
 Docker + Infisical:
 
 ```bash

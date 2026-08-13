@@ -32,7 +32,7 @@ class PaperLedgerTest(unittest.TestCase):
         self.assertEqual(fill.tax, Decimal(0))
         self.assertEqual(fill.total_cost, Decimal(21))
         self.assertEqual(self.ledger.daily_buy_count(executed_at.date()), 1)
-        self.assertEqual(self.ledger.position_notional("005930"), Decimal(142000))
+        self.assertEqual(self.ledger.position_notional("005930"), Decimal(142021))
         self.assertEqual(
             self.ledger.cash_balance(Decimal(1000000)), Decimal(857979)
         )
@@ -101,6 +101,57 @@ class PaperLedgerTest(unittest.TestCase):
 
         self.assertEqual(fill.commission, Decimal(0))
         self.assertEqual(fill.tax, Decimal(0))
+
+    def test_average_cost_tracks_partial_sale_and_net_realized_pnl(self) -> None:
+        when = datetime(2026, 8, 13, 1, 0, tzinfo=UTC)
+        for signal_id, side, price, quantity in (
+            ("avg-buy-1", Side.BUY, Decimal(10000), Decimal(10)),
+            ("avg-buy-2", Side.BUY, Decimal(12000), Decimal(10)),
+            ("avg-sell", Side.SELL, Decimal(15000), Decimal(5)),
+        ):
+            self.ledger.execute(
+                TradeSignal(
+                    signal_id=signal_id,
+                    symbol="005930",
+                    side=side,
+                    reference_price=price,
+                    quantity=quantity,
+                    reason="accounting test",
+                ),
+                executed_at=when,
+            )
+
+        accounting = self.ledger.position_accounting("005930")
+
+        self.assertEqual(accounting.quantity, Decimal(15))
+        self.assertEqual(accounting.cost_basis, Decimal("165024.75"))
+        self.assertEqual(accounting.realized_pnl, Decimal("19830.75"))
+        self.assertEqual(accounting.commission, Decimal(44))
+        self.assertEqual(accounting.tax, Decimal(150))
+
+    def test_round_trip_clears_cost_basis(self) -> None:
+        when = datetime(2026, 8, 13, 1, 0, tzinfo=UTC)
+        for signal_id, side, price in (
+            ("round-buy", Side.BUY, Decimal(10000)),
+            ("round-sell", Side.SELL, Decimal(11000)),
+        ):
+            self.ledger.execute(
+                TradeSignal(
+                    signal_id=signal_id,
+                    symbol="005930",
+                    side=side,
+                    reference_price=price,
+                    quantity=Decimal(10),
+                    reason="round trip",
+                ),
+                executed_at=when,
+            )
+
+        accounting = self.ledger.position_accounting("005930")
+
+        self.assertEqual(accounting.quantity, Decimal(0))
+        self.assertEqual(accounting.cost_basis, Decimal(0))
+        self.assertEqual(accounting.realized_pnl, Decimal(9749))
 
     def test_records_and_queries_automation_run_tokens(self) -> None:
         started_at = datetime(2026, 8, 12, 8, 30, tzinfo=UTC)

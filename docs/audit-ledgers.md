@@ -42,8 +42,10 @@ Grafana `Toss Trader`: 장부 `toss-postgres`(ro), 상태 패널 `toss-prometheu
 
 | 패널 | 표시 내용 | 데이터 기준 |
 |---|---|---|
+| `Rule vs Hermes 평가금액 · 손익` | 현금+보유 1분 MTM, 시작현금 대비 손익(원) | `paper_cycle_runs` 시점의 `paper_fills`·`market_candles`·`paper_portfolios.initial_cash` |
 | `n8n Flow Review Log` | 같은 execution의 stage, 소요시간, token, Telegram 결과, RiskManager decision ID | `automation_run_logs`의 workflow/execution metadata |
 | `Dynamic Universe Risk Decisions` | 후보별 점수, RiskManager 판단, 최종 선정 여부 | `dynamic_universe_runs`, `dynamic_universe_decisions` |
+| `Rule Trades (1m)` / `Hermes Trades (1m)` | 각 포트폴리오가 기간 내 체결한 종목 1분 등락률과 BUY/SELL 시점 | `market_candles`, `market_symbols`, `paper_fills` (`portfolio_id` 필터) |
 | `Symbols (1m, BUY/SELL Marked · $trade_filter)` | 수집 1분봉의 조회 구간 시작 대비 정규화 등락률, 회사명·코드, BUY/SELL mark | `market_candles`, `market_symbols`, `paper_fills`; filter에 따라 체결 종목 또는 전체 조회 종목 |
 | `Recent Paper Fills` | BUY/SELL, 수량·가격·금액, 전략 근거 `reason` | `paper_fills`, `market_symbols` |
 | `Paper Cycle Run Log` | rule/Hermes 포트폴리오별 cycle 상태, 신호·체결·실패·제외 수 | `paper_cycle_runs` |

@@ -176,8 +176,10 @@ RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저�
 | Hermes advisor 거부 | 한도 통과 후 | `Hermes 거부: <근거>` |
 | Hermes advisor 오류 | 한도 통과 후 | `Hermes 분석 실패: 응답을 받지 못해 체결 차단` |
 
-위 세 줄 제외가 hard preflight. 일손실은 최악 통화 구간. 매도는 보유 수량 안.
-`daily_return_rate`는 보유 MTM. 오늘 체결 성과 아님.
+위 세 줄 제외가 hard preflight. 매도는 보유 수량 안. 단일 통화 포트폴리오의
+`daily_return_rate`는 UTC 일자 시작 총자산 대비 현재 총자산 변화이며, 체결
+수수료·세금과 실현손익을 포함한다. 여러 통화가 동시에 열려 있으면 환율 변환
+기준이 없으므로 기존처럼 통화별 보유 MTM 중 최저 수익률을 사용한다.
 
 ### 6. Hermes 분석
 

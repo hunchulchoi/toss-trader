@@ -28,6 +28,20 @@ class TradeCosts:
         return self.commission + self.tax
 
 
+@dataclass(frozen=True, slots=True)
+class PositionAccounting:
+    symbol: str
+    quantity: Decimal
+    cost_basis: Decimal
+    realized_pnl: Decimal
+    commission: Decimal
+    tax: Decimal
+
+    @property
+    def total_costs(self) -> Decimal:
+        return self.commission + self.tax
+
+
 TOSS_KRX_COMMISSION_RATE = Decimal("0.00015")
 TOSS_US_COMMISSION_RATE = Decimal("0.001")
 KOREAN_STOCK_SELL_TAX_RATE_2026 = Decimal("0.002")
@@ -127,6 +141,26 @@ class PaperLedgerStore(Protocol):
 
     def position_quantities(self) -> dict[str, Decimal]: ...
 
+    def position_accounting(self, symbol: str) -> PositionAccounting: ...
+
+    def position_accountings(self) -> dict[str, PositionAccounting]: ...
+
+    def daily_equity_baseline(self, captured_at: datetime) -> Decimal | None: ...
+
+    def record_daily_equity_baseline(
+        self, *, captured_at: datetime, equity: Decimal
+    ) -> None: ...
+
+    def record_portfolio_snapshot(
+        self,
+        *,
+        captured_at: datetime,
+        equity: Decimal,
+        realized_pnl: Decimal,
+        unrealized_pnl: Decimal,
+        total_costs: Decimal,
+    ) -> str: ...
+
     def cash_balance(self, initial_cash: Decimal) -> Decimal: ...
 
     def seen_signal_ids(self) -> frozenset[str]: ...
@@ -214,6 +248,30 @@ class PaperLedger:
                 mode TEXT NOT NULL,
                 initial_cash TEXT NOT NULL,
                 created_at TEXT NOT NULL
+            )
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS paper_portfolio_snapshots (
+                snapshot_id TEXT PRIMARY KEY,
+                portfolio_id TEXT NOT NULL DEFAULT 'legacy',
+                captured_at TEXT NOT NULL,
+                equity TEXT NOT NULL,
+                realized_pnl TEXT NOT NULL,
+                unrealized_pnl TEXT NOT NULL,
+                total_costs TEXT NOT NULL,
+                UNIQUE (portfolio_id, captured_at)
+            )
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS paper_portfolio_daily_baselines (
+                portfolio_id TEXT NOT NULL DEFAULT 'legacy',
+                trading_day TEXT NOT NULL,
+                equity TEXT NOT NULL,
+                PRIMARY KEY (portfolio_id, trading_day)
             )
             """
         )
@@ -465,21 +523,7 @@ class PaperLedger:
         self, symbol: str, *, mark_price: Decimal | None = None
     ) -> Decimal:
         if mark_price is None:
-            row = self._connection.execute(
-                """
-                SELECT side, notional
-                FROM paper_fills
-                WHERE symbol = ? AND portfolio_id = ?
-                """,
-                (symbol, self._portfolio_id),
-            ).fetchall()
-            return sum(
-                (
-                    Decimal(notional) if side == Side.BUY.value else -Decimal(notional)
-                    for side, notional in row
-                ),
-                start=Decimal(0),
-            )
+            return self.position_accounting(symbol).cost_basis
         return self.position_quantity(symbol) * mark_price
 
     def position_quantity(self, symbol: str) -> Decimal:
@@ -510,6 +554,94 @@ class PaperLedger:
             positions[str(symbol)] = positions.get(str(symbol), Decimal(0)) + signed
         return {symbol: quantity for symbol, quantity in positions.items() if quantity}
 
+    def position_accounting(self, symbol: str) -> PositionAccounting:
+        return self.position_accountings().get(
+            symbol,
+            PositionAccounting(
+                symbol=symbol,
+                quantity=Decimal(0),
+                cost_basis=Decimal(0),
+                realized_pnl=Decimal(0),
+                commission=Decimal(0),
+                tax=Decimal(0),
+            ),
+        )
+
+    def position_accountings(self) -> dict[str, PositionAccounting]:
+        rows = self._connection.execute(
+            """
+            SELECT symbol, side, quantity, notional, commission, tax
+            FROM paper_fills
+            WHERE portfolio_id = ?
+            ORDER BY executed_at, rowid
+            """,
+            (self._portfolio_id,),
+        ).fetchall()
+        return _position_accountings(rows)
+
+    def daily_equity_baseline(self, captured_at: datetime) -> Decimal | None:
+        row = self._connection.execute(
+            """
+            SELECT equity FROM paper_portfolio_daily_baselines
+            WHERE portfolio_id = ? AND trading_day = ?
+            """,
+            (self._portfolio_id, _utc_trading_day(captured_at).isoformat()),
+        ).fetchone()
+        return Decimal(row[0]) if row else None
+
+    def record_daily_equity_baseline(
+        self, *, captured_at: datetime, equity: Decimal
+    ) -> None:
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT OR IGNORE INTO paper_portfolio_daily_baselines (
+                    portfolio_id, trading_day, equity
+                ) VALUES (?, ?, ?)
+                """,
+                (
+                    self._portfolio_id,
+                    _utc_trading_day(captured_at).isoformat(),
+                    str(equity),
+                ),
+            )
+
+    def record_portfolio_snapshot(
+        self,
+        *,
+        captured_at: datetime,
+        equity: Decimal,
+        realized_pnl: Decimal,
+        unrealized_pnl: Decimal,
+        total_costs: Decimal,
+    ) -> str:
+        snapshot_id = str(uuid4())
+        captured = _aware_utc(captured_at)
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO paper_portfolio_snapshots (
+                    snapshot_id, portfolio_id, captured_at, equity,
+                    realized_pnl, unrealized_pnl, total_costs
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (portfolio_id, captured_at) DO UPDATE SET
+                    equity = excluded.equity,
+                    realized_pnl = excluded.realized_pnl,
+                    unrealized_pnl = excluded.unrealized_pnl,
+                    total_costs = excluded.total_costs
+                """,
+                (
+                    snapshot_id,
+                    self._portfolio_id,
+                    captured.isoformat(),
+                    str(equity),
+                    str(realized_pnl),
+                    str(unrealized_pnl),
+                    str(total_costs),
+                ),
+            )
+        return snapshot_id
+
     def cash_balance(self, initial_cash: Decimal) -> Decimal:
         rows = self._connection.execute(
             "SELECT side, notional, commission, tax FROM paper_fills WHERE portfolio_id = ?",
@@ -537,6 +669,7 @@ class PaperLedger:
 POSTGRES_PAPER_SCHEMA = """
 CREATE TABLE IF NOT EXISTS paper_fills (
     fill_id UUID PRIMARY KEY,
+    fill_sequence BIGSERIAL UNIQUE,
     portfolio_id TEXT NOT NULL DEFAULT 'legacy',
     signal_id TEXT NOT NULL UNIQUE,
     symbol TEXT NOT NULL,
@@ -613,6 +746,28 @@ CREATE TABLE IF NOT EXISTS paper_portfolios (
 )
 """
 
+POSTGRES_PORTFOLIO_SNAPSHOT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS paper_portfolio_snapshots (
+    snapshot_id UUID PRIMARY KEY,
+    portfolio_id TEXT NOT NULL DEFAULT 'legacy',
+    captured_at TIMESTAMPTZ NOT NULL,
+    equity NUMERIC NOT NULL,
+    realized_pnl NUMERIC NOT NULL,
+    unrealized_pnl NUMERIC NOT NULL,
+    total_costs NUMERIC NOT NULL,
+    UNIQUE (portfolio_id, captured_at)
+)
+"""
+
+POSTGRES_PORTFOLIO_DAILY_BASELINE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS paper_portfolio_daily_baselines (
+    portfolio_id TEXT NOT NULL DEFAULT 'legacy',
+    trading_day DATE NOT NULL,
+    equity NUMERIC NOT NULL,
+    PRIMARY KEY (portfolio_id, trading_day)
+)
+"""
+
 POSTGRES_AUTOMATION_RUN_INDEX = """
 CREATE INDEX IF NOT EXISTS automation_run_logs_time_idx
 ON automation_run_logs (finished_at DESC)
@@ -660,6 +815,9 @@ class PostgresPaperLedger:
                     "ALTER TABLE paper_fills ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
                 )
                 cursor.execute(
+                    "ALTER TABLE paper_fills ADD COLUMN IF NOT EXISTS fill_sequence BIGSERIAL"
+                )
+                cursor.execute(
                     "ALTER TABLE paper_fills ADD COLUMN IF NOT EXISTS commission NUMERIC NOT NULL DEFAULT 0"
                 )
                 cursor.execute(
@@ -671,6 +829,8 @@ class PostgresPaperLedger:
                 cursor.execute(POSTGRES_AUTOMATION_RUN_SCHEMA)
                 cursor.execute(POSTGRES_AUTOMATION_RUN_INDEX)
                 cursor.execute(POSTGRES_PORTFOLIO_SCHEMA)
+                cursor.execute(POSTGRES_PORTFOLIO_SNAPSHOT_SCHEMA)
+                cursor.execute(POSTGRES_PORTFOLIO_DAILY_BASELINE_SCHEMA)
                 if self._portfolio_id in {"rule", "hermes"}:
                     cursor.execute(
                         """
@@ -918,18 +1078,7 @@ class PostgresPaperLedger:
     ) -> Decimal:
         if mark_price is not None:
             return self.position_quantity(symbol) * mark_price
-        with self._connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT COALESCE(SUM(
-                    CASE WHEN side = 'BUY' THEN notional ELSE -notional END
-                ), 0)
-                FROM paper_fills WHERE symbol = %s AND portfolio_id = %s
-                """,
-                (symbol, self._portfolio_id),
-            )
-            row = cursor.fetchone()
-        return Decimal(row[0]) if row else Decimal(0)
+        return self.position_accounting(symbol).cost_basis
 
     def position_quantity(self, symbol: str) -> Decimal:
         with self._connection.cursor() as cursor:
@@ -963,6 +1112,97 @@ class PostgresPaperLedger:
             )
             rows = cursor.fetchall()
         return {str(symbol): Decimal(quantity) for symbol, quantity in rows}
+
+    def position_accounting(self, symbol: str) -> PositionAccounting:
+        return self.position_accountings().get(
+            symbol,
+            PositionAccounting(
+                symbol=symbol,
+                quantity=Decimal(0),
+                cost_basis=Decimal(0),
+                realized_pnl=Decimal(0),
+                commission=Decimal(0),
+                tax=Decimal(0),
+            ),
+        )
+
+    def position_accountings(self) -> dict[str, PositionAccounting]:
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT symbol, side, quantity, notional, commission, tax
+                FROM paper_fills
+                WHERE portfolio_id = %s
+                ORDER BY executed_at, fill_sequence
+                """,
+                (self._portfolio_id,),
+            )
+            rows = cursor.fetchall()
+        return _position_accountings(rows)
+
+    def daily_equity_baseline(self, captured_at: datetime) -> Decimal | None:
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT equity FROM paper_portfolio_daily_baselines
+                WHERE portfolio_id = %s AND trading_day = %s
+                """,
+                (self._portfolio_id, _utc_trading_day(captured_at)),
+            )
+            row = cursor.fetchone()
+        return Decimal(row[0]) if row else None
+
+    def record_daily_equity_baseline(
+        self, *, captured_at: datetime, equity: Decimal
+    ) -> None:
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO paper_portfolio_daily_baselines (
+                    portfolio_id, trading_day, equity
+                ) VALUES (%s, %s, %s)
+                ON CONFLICT (portfolio_id, trading_day) DO NOTHING
+                """,
+                (self._portfolio_id, _utc_trading_day(captured_at), equity),
+            )
+        self._connection.commit()
+
+    def record_portfolio_snapshot(
+        self,
+        *,
+        captured_at: datetime,
+        equity: Decimal,
+        realized_pnl: Decimal,
+        unrealized_pnl: Decimal,
+        total_costs: Decimal,
+    ) -> str:
+        snapshot_id = str(uuid4())
+        captured = _aware_utc(captured_at)
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO paper_portfolio_snapshots (
+                    snapshot_id, portfolio_id, captured_at, equity,
+                    realized_pnl, unrealized_pnl, total_costs
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (portfolio_id, captured_at) DO UPDATE SET
+                    equity = EXCLUDED.equity,
+                    realized_pnl = EXCLUDED.realized_pnl,
+                    unrealized_pnl = EXCLUDED.unrealized_pnl,
+                    total_costs = EXCLUDED.total_costs
+                """,
+                (
+                    snapshot_id,
+                    self._portfolio_id,
+                    captured,
+                    equity,
+                    realized_pnl,
+                    unrealized_pnl,
+                    total_costs,
+                ),
+            )
+        self._connection.commit()
+        return snapshot_id
 
     def cash_balance(self, initial_cash: Decimal) -> Decimal:
         with self._connection.cursor() as cursor:
@@ -1011,6 +1251,57 @@ def _validate_portfolio_id(portfolio_id: str) -> str:
     if portfolio_id not in {"legacy", "rule", "hermes", "comparison"}:
         raise ValueError("invalid paper portfolio id")
     return portfolio_id
+
+
+def _position_accountings(
+    rows: Sequence[Sequence[object]],
+) -> dict[str, PositionAccounting]:
+    state: dict[str, list[Decimal]] = {}
+    for raw_symbol, raw_side, raw_quantity, raw_notional, raw_commission, raw_tax in rows:
+        symbol = str(raw_symbol)
+        side = Side(str(raw_side))
+        quantity = Decimal(raw_quantity)
+        notional = Decimal(raw_notional)
+        commission = Decimal(raw_commission)
+        tax = Decimal(raw_tax)
+        values = state.setdefault(symbol, [Decimal(0)] * 5)
+        held, basis, realized, commissions, taxes = values
+        commissions += commission
+        taxes += tax
+        if side is Side.BUY:
+            held += quantity
+            basis += notional + commission + tax
+        else:
+            if quantity > held:
+                raise ValueError(f"paper fills oversell position: {symbol}")
+            allocated_basis = basis * quantity / held
+            held -= quantity
+            basis -= allocated_basis
+            realized += notional - commission - tax - allocated_basis
+            if held == 0:
+                basis = Decimal(0)
+        state[symbol] = [held, basis, realized, commissions, taxes]
+    return {
+        symbol: PositionAccounting(
+            symbol=symbol,
+            quantity=values[0],
+            cost_basis=values[1],
+            realized_pnl=values[2],
+            commission=values[3],
+            tax=values[4],
+        )
+        for symbol, values in state.items()
+    }
+
+
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("portfolio snapshot time must include a timezone offset")
+    return value.astimezone(UTC)
+
+
+def _utc_trading_day(value: datetime) -> date:
+    return _aware_utc(value).date()
 
 
 def _sqlite_add_column(

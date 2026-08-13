@@ -58,6 +58,10 @@ class PaperCycleResult:
     consecutive_api_errors: int
     items: tuple[SymbolCycleResult, ...]
     snapshot: PaperCycleSnapshot
+    equity: Decimal = Decimal(0)
+    realized_pnl: Decimal = Decimal(0)
+    unrealized_pnl: Decimal = Decimal(0)
+    total_costs: Decimal = Decimal(0)
 
     @property
     def symbol_count(self) -> int:
@@ -261,6 +265,7 @@ class PaperCycleRunner:
             symbols=symbols,
             interval=interval,
             collection_errors=errors,
+            now=now,
         )
         api_failed = api_failed or mark_api_failed
         if performance_error is not None:
@@ -319,6 +324,9 @@ class PaperCycleRunner:
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
 
+        if any(execution and execution.fill for execution in executions):
+            performance = self._performance.daily(now=now)
+
         items = tuple(
             SymbolCycleResult(
                 symbol=symbol,
@@ -344,6 +352,10 @@ class PaperCycleRunner:
             consecutive_api_errors=consecutive_api_errors,
             items=items,
             snapshot=snapshot,
+            equity=performance.equity,
+            realized_pnl=performance.realized_pnl,
+            unrealized_pnl=performance.unrealized_pnl,
+            total_costs=performance.total_costs,
         )
 
     def _performance_for_cycle(
@@ -352,6 +364,7 @@ class PaperCycleRunner:
         symbols: tuple[str, ...],
         interval: str,
         collection_errors: list[str | None],
+        now: datetime,
     ) -> tuple[DailyPortfolioPerformance, str | None, bool]:
         empty = DailyPortfolioPerformance(
             daily_return_rate=Decimal(0), currency_returns={}
@@ -372,7 +385,7 @@ class PaperCycleRunner:
             except HANDLED_CYCLE_ERRORS as error:
                 return empty, str(error), True
         try:
-            return self._performance.daily(), None, False
+            return self._performance.daily(now=now), None, False
         except HANDLED_CYCLE_ERRORS as error:
             return empty, str(error), True
 

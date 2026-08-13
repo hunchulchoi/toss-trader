@@ -63,6 +63,47 @@ class MonitoringAssetsTest(unittest.TestCase):
         )
         self.assertTrue(any("prompt_tokens" in query for query in sql_queries))
         titles = {panel["title"] for panel in panels}
+        self.assertNotIn("Rule vs Hermes Daily Return", titles)
+        self.assertNotIn("Rule vs Hermes Available Cash", titles)
+        equity_panel = next(
+            panel
+            for panel in panels
+            if panel["title"] == "Rule vs Hermes 평가금액 · 손익"
+        )
+        self.assertEqual(equity_panel["gridPos"]["w"], 24)
+        self.assertEqual(equity_panel["fieldConfig"]["defaults"]["unit"], "currencyKRW")
+        equity_sql = equity_panel["targets"][0]["rawSql"]
+        self.assertIn("평가금액", equity_sql)
+        self.assertIn("손익", equity_sql)
+        self.assertIn("paper_fills", equity_sql)
+        self.assertIn("initial_cash", equity_sql)
+        self.assertIn("notional", equity_sql)
+        self.assertIn("market_candles", equity_sql)
+        self.assertNotIn("daily_return_rate * 100", equity_sql)
+        rule_trades = next(panel for panel in panels if panel["title"] == "Rule Trades (1m)")
+        hermes_trades = next(
+            panel for panel in panels if panel["title"] == "Hermes Trades (1m)"
+        )
+        for panel, portfolio in ((rule_trades, "rule"), (hermes_trades, "hermes")):
+            other = "hermes" if portfolio == "rule" else "rule"
+            self.assertEqual(panel["type"], "timeseries")
+            self.assertEqual(len(panel["targets"]), 2)
+            self.assertEqual(panel["fieldConfig"]["defaults"]["unit"], "percent")
+            self.assertIn("market_candles", panel["targets"][0]["rawSql"])
+            self.assertIn("interval = '1m'", panel["targets"][0]["rawSql"])
+            self.assertIn(f"portfolio_id = '{portfolio}'", panel["targets"][0]["rawSql"])
+            self.assertNotIn(
+                f"portfolio_id = '{other}'", panel["targets"][0]["rawSql"]
+            )
+            self.assertIn("paper_fills", panel["targets"][1]["rawSql"])
+            self.assertIn(f"portfolio_id = '{portfolio}'", panel["targets"][1]["rawSql"])
+            self.assertNotIn(
+                f"portfolio_id = '{other}'", panel["targets"][1]["rawSql"]
+            )
+            self.assertIn("f.side", panel["targets"][1]["rawSql"])
+            self.assertIn("${trade_symbol:sqlstring}", panel["targets"][0]["rawSql"])
+        self.assertEqual(rule_trades["gridPos"]["w"], 12)
+        self.assertEqual(hermes_trades["gridPos"]["x"], 12)
         self.assertIn("Paper Cycle Run Log", titles)
         cycle_panel = next(
             panel for panel in panels if panel["title"] == "Paper Cycle Run Log"

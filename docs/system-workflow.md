@@ -147,10 +147,10 @@ sequenceDiagram
     participant O as 운영자
     participant N as n8n
     participant A as automation
-    O->>N: POST /webhook/toss-trader-daily-run (Header Auth)
-    N-->>O: 200 Workflow was started
-    N->>A: POST /workflow/paper-rule-1d
-    N->>A: 이후 일일 flow 계속
+    O->>N: POST toss-trader-daily-run
+    N-->>O: 200 accepted
+    N->>A: POST paper-rule-1d
+    N->>A: daily flow continues
 ```
 
 Webhook은 접수만 비동기로 반환한다. 완료 여부는 n8n execution과 후속
@@ -164,23 +164,23 @@ sequenceDiagram
     participant A as automation
     participant H as Hermes
     participant AM as Alertmanager
-    N->>A: POST /workflow/market-scan
-    A-->>N: {exitCode, scan}
-    alt exitCode = 0
-        N->>H: POST /v1/chat/completions (scan JSON only)
-        H-->>N: {choices, usage}
-        N->>A: POST /workflow/hermes-market-result
-        A-->>N: {ok, analysis, hermesUsage}
-        alt ok = true
-            N->>A: POST /workflow/report-market
-            A->>AM: POST /api/v2/alerts
+    N->>A: POST market-scan
+    A-->>N: exitCode and scan
+    alt scan ok
+        N->>H: POST chat completions
+        H-->>N: choices and usage
+        N->>A: POST hermes-market-result
+        A-->>N: ok analysis usage
+        alt analysis ok
+            N->>A: POST report-market
+            A->>AM: POST alerts
             AM-->>A: HTTP 2xx
-            A-->>N: {accepted}
+            A-->>N: accepted
         else Hermes 응답 오류
-            N->>A: POST /workflow/report-failure
+            N->>A: POST report-failure
         end
     else scan 오류
-        N->>A: POST /workflow/report-failure
+        N->>A: POST report-failure
     end
 ```
 
@@ -191,27 +191,27 @@ sequenceDiagram
     participant N as n8n
     participant A as automation
     participant H as Hermes
-    participant R as RiskManager webhook
+    participant R as RiskManager
     participant AM as Alertmanager
-    N->>A: POST /workflow/paper-rule-1m
-    A-->>N: {exitCode, cycle, sharedSnapshot}
-    N->>A: POST /workflow/paper-hermes-1m (rule 결과)
-    alt 신호 + hard 한도 통과
-        A->>H: advisor 호출
+    N->>A: POST paper-rule-1m
+    A-->>N: cycle and sharedSnapshot
+    N->>A: POST paper-hermes-1m
+    alt 한도 통과 신호
+        A->>H: advisor
         A->>R: final RiskManager
-        R-->>A: {approved, violations}
-    else 신호 + hard 한도 거부
-        Note over A: 로컬 preflight 거부 기록. Hermes·n8n skip
+        R-->>A: approved and violations
+    else 한도 거부
+        Note over A: local preflight only. no Hermes, no n8n
     else 무신호
-        Note over A: Hermes 없음
+        Note over A: no Hermes
     end
-    A-->>N: {exitCode, cycle}
-    N->>A: POST /workflow/report-paper (rule + hermes)
-    alt 특이사항 있음
-        A->>AM: POST /api/v2/alerts
-        A-->>N: {accepted: true}
+    A-->>N: cycle
+    N->>A: POST report-paper
+    alt 특이사항
+        A->>AM: POST alerts
+        A-->>N: accepted
     else 정상 무신호
-        A-->>N: {accepted: false, skipped: true, reason: no-notice}
+        Note over A: skip Telegram
     end
 ```
 
@@ -225,17 +225,17 @@ sequenceDiagram
     participant A as automation
     participant H as Hermes
     participant AM as Alertmanager
-    N->>A: POST /workflow/paper-rule-1d
-    A-->>N: {exitCode, cycle, sharedSnapshot}
-    N->>A: POST /workflow/paper-hermes-1d (rule 결과)
-    A-->>N: {exitCode, cycle}
-    N->>H: POST /v1/chat/completions (rule/hermes 비교 JSON only)
-    H-->>N: {choices, usage}
-    N->>A: POST /workflow/hermes-daily-result
-    A-->>N: {ok, analysis, hermesUsage}
-    N->>A: POST /workflow/report-daily
-    A->>AM: POST /api/v2/alerts
-    A-->>N: {accepted}
+    N->>A: POST paper-rule-1d
+    A-->>N: cycle and sharedSnapshot
+    N->>A: POST paper-hermes-1d
+    A-->>N: cycle
+    N->>H: POST chat completions
+    H-->>N: choices and usage
+    N->>A: POST hermes-daily-result
+    A-->>N: ok analysis usage
+    N->>A: POST report-daily
+    A->>AM: POST alerts
+    A-->>N: accepted
 ```
 
 rule cycle, Hermes cycle, Hermes 응답 검증, Telegram 각 단계가 실패하면 다음 정상
@@ -245,19 +245,19 @@ rule cycle, Hermes cycle, Hermes 응답 검증, Telegram 각 단계가 실패하
 
 ```mermaid
 sequenceDiagram
-    participant A as automation subprocess
+    participant A as automation
     participant N as n8n
-    participant W as automation workflow service
+    participant W as workflow API
     participant DB as PostgreSQL
-    A->>N: POST /webhook/toss-trader-risk-manager (Bearer)
-    N->>W: POST /workflow/risk-manager-evaluate
-    W-->>N: {ok, approved, violations}
-    N-->>A: {approved, violations}
-    A->>DB: paper_risk_decisions 기록
+    A->>N: POST toss-trader-risk-manager
+    N->>W: POST risk-manager-evaluate
+    W-->>N: approved and violations
+    N-->>A: approved and violations
+    A->>DB: paper_risk_decisions
     alt approved
-        A->>DB: paper_fills 기록
-    else rejected 또는 호출 오류
-        Note over A: fill 없음; 호출 오류는 risk-manager-workflow-unavailable
+        A->>DB: paper_fills
+    else rejected or error
+        Note over A: no fill. error is risk-manager-workflow-unavailable
     end
 ```
 
@@ -343,13 +343,13 @@ flowchart TD
     TIN[BUY/SELL 신호·보유 수량/금액\n현금·일일 BUY·장 상태·Hermes 판단] --> REQUEST
 
     REQUEST[automation N8nRiskManager\nPOST n8n RiskManager webhook\n전용 bearer] --> AUTH{n8n Header Auth}
-    AUTH -->|실패| CLOSED[거부\nrisk-manager-workflow-unavailable]
-    AUTH -->|통과| EVAL[POST /workflow/risk-manager-evaluate]
+    AUTH -->|실패| CLOSED[거부 risk-manager-workflow-unavailable]
+    AUTH -->|통과| EVAL[POST risk-manager-evaluate]
     EVAL --> POLICY[RiskManager 정책 계산]
     POLICY --> DECISION{위반 0건?}
 
-    DECISION -->|아니오| REJECT[approved=false\nviolations 반환]
-    DECISION -->|예| APPROVE[approved=true 반환]
+    DECISION -->|아니오| REJECT[거부 violations]
+    DECISION -->|예| APPROVE[승인]
     CLOSED --> RETURN
     REJECT --> RETURN[automation에 결정 반환]
     APPROVE --> RETURN
@@ -368,10 +368,9 @@ flowchart TD
 | `universe` | 종목 유형·보통주 여부·거래 상태·정지 여부·기준가, 가용 현금, 당일 손익, API 오류 연속 횟수 | 비주식/우선주, 비활성·정지, 가격 오류, 주문 한도·현금 초과, 손실·API kill switch | `dynamic_universe_decisions`에 후보별 승인·위반·선정 여부 |
 | `trade` | 신호·포지션·현금·장 상태·Hermes | Hermes: 로컬 한도 먼저. 통과 후 advisor+n8n. Rule: n8n 1회 | 판단은 `paper_risk_decisions`. 승인만 fill. 한도 거부는 `hermes_trade` 없음 |
 
-RiskManager는 매매 추천이나 실제 주문을 수행하지 않는다. 호출 timeout·network 오류·인증
-실패·응답 JSON 오류는 모두 `risk-manager-workflow-unavailable`으로 처리해 체결을
-차단한다. n8n child execution ID, parent execution ID, portfolio, interval과 최종
-`decision_id`는 `automation_run_logs`에서 함께 조회한다.
+RiskManager는 추천·실주문을 하지 않는다. timeout·인증·JSON 오류는 모두
+`risk-manager-workflow-unavailable`로 체결 차단. parent/child execution ID와
+`decision_id`는 `automation_run_logs`에서 본다.
 
 ## 시장분석·Hermes workflow
 
@@ -390,23 +389,19 @@ flowchart LR
     REPORT_OK -->|아니오| FAIL
 ```
 
-장중·마감은 `Snapshot+Rule → Hermes`. candle·원시 신호는 1회. 포트폴리오별 판단·체결만 분리.
-Hermes advisor는 한도 통과 신호만. 15종목 candle은 15회.
+장중·마감: `Snapshot+Rule → Hermes`. candle·원시 신호 1회, 15종목이면 candle 15회.
+포트폴리오별 판단·체결만 분리. Hermes advisor는 한도 통과 신호만.
+마감은 병합 뒤 Hermes 분석·Telegram 성공을 추가로 본다.
+HTTP 응답 오류 → 해당 단계 실패 Telegram. timeout 등 무응답 → `Toss Trader Workflow Error Reporter`.
 
-각 automation HTTP node는 `_workflow`에 workflow ID, n8n execution ID, 실행 mode,
-stage, portfolio/interval을 전달한다. automation 서비스는 request body를 복제하지
-않고 이 메타데이터와 단계 결과 집계만 `automation_run_logs(run_type='n8n_flow')`에
-append한다. Grafana `n8n Flow Review Log`에서 같은 execution의 단계, 소요시간,
-token, Telegram 결과와 RiskManager decision ID를 사후 검토한다.
+`_workflow` 메타만 `automation_run_logs(run_type='n8n_flow')`에 남김. body 복제 없음.
+Grafana `n8n Flow Review Log`로 단계·token·Telegram·decision ID 조회.
 
-RiskManager는 n8n webhook → `/workflow/risk-manager-evaluate`. Header Auth 필수.
-오류는 `risk-manager-workflow-unavailable`, fail-closed. Hermes 한도 거부는 n8n child 없음.
+RiskManager: n8n webhook → `/workflow/risk-manager-evaluate`. Header Auth 필수.
+fail-closed. 오류 = `risk-manager-workflow-unavailable`. Hermes 한도 거부는 n8n child 없음.
 
-n8n HTTP Request node가 encrypted Header Auth credential로 Hermes sidecar를 직접
-호출한다. automation 서비스는 요청 경로에 없고, 응답 뒤에서 content 형식 검증,
-token audit, 리포트 조립만 수행한다. Hermes에는 automation 서비스가 만든
-시장분석 또는 비교 JSON만 전달한다. Hermes 실패 시 기계적 의견을 만들지 않고
-실패 경로로 종료한다.
+Hermes는 n8n이 sidecar 직접 호출. automation은 응답 검증·token audit·리포트만.
+실패 시 기계적 의견 없이 실패 경로로 종료.
 
 ### n8n credential과 Infisical
 
@@ -446,6 +441,8 @@ erDiagram
     PAPER_PORTFOLIOS ||--o{ PAPER_CYCLE_RUNS : owns
     PAPER_PORTFOLIOS ||--o{ PAPER_RISK_DECISIONS : owns
     PAPER_PORTFOLIOS ||--o{ PAPER_FILLS : owns
+    PAPER_PORTFOLIOS ||--o{ PAPER_PORTFOLIO_SNAPSHOTS : owns
+    PAPER_PORTFOLIOS ||--o{ PAPER_PORTFOLIO_DAILY_BASELINES : owns
 
     PAPER_PORTFOLIOS {
         text portfolio_id PK
@@ -546,6 +543,20 @@ erDiagram
         text reason
         timestamptz executed_at
     }
+    PAPER_PORTFOLIO_SNAPSHOTS {
+        uuid snapshot_id PK
+        text portfolio_id
+        timestamptz captured_at UK
+        numeric equity
+        numeric realized_pnl
+        numeric unrealized_pnl
+        numeric total_costs
+    }
+    PAPER_PORTFOLIO_DAILY_BASELINES {
+        text portfolio_id PK
+        date trading_day PK
+        numeric equity
+    }
     AUTOMATION_RUN_LOGS {
         uuid run_id PK
         text run_type
@@ -564,7 +575,8 @@ erDiagram
 
 DB에서 강제하는 FK는 `dynamic_universe_decisions.run_id` 하나다. `symbol`과
 `signal_id` 선은 Grafana 조회와 감사 추적에 사용하는 논리 관계다.
-`paper_cycle_runs`와 `automation_run_logs`는 독립 장부. `daily_return_rate`는 보유 MTM.
+`paper_cycle_runs`와 `automation_run_logs`는 독립 장부. 단일 통화
+`daily_return_rate`는 UTC 일자 시작 총자산 대비 비용 반영 총자산 수익률이다.
 `automation_run_logs.details` JSONB에는 `workflowId`, `executionId`, `trigger`,
 `portfolioId`, `interval`, `parentExecutionId`, `telegramAccepted`, `riskDecisionIds` 등
 workflow 감사 메타데이터가 들어가며, 별도 DB column이나 FK가 아니다.

@@ -596,7 +596,136 @@
           "custom": {
             "axisCenteredZero": true,
             "axisColorMode": "text",
-            "axisLabel": "Daily return (MTM)",
+            "axisLabel": "평가금액 (KRW)",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyKRW",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ · 손익$/"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "손익 (KRW)"
+              },
+              {
+                "id": "custom.axisCenteredZero",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH runs AS (SELECT r.started_at, r.portfolio_id, p.display_name, p.initial_cash FROM paper_cycle_runs r JOIN paper_portfolios p ON p.portfolio_id = r.portfolio_id WHERE r.portfolio_id IN ('rule', 'hermes') AND r.status <> 'running' AND $__timeFilter(r.started_at)), cash AS (SELECT runs.started_at, runs.portfolio_id, runs.display_name, runs.initial_cash, runs.initial_cash + COALESCE(SUM(CASE WHEN f.side = 'BUY' THEN -f.notional ELSE f.notional END), 0) AS cash FROM runs LEFT JOIN paper_fills f ON f.portfolio_id = runs.portfolio_id AND f.executed_at <= runs.started_at GROUP BY runs.started_at, runs.portfolio_id, runs.display_name, runs.initial_cash), pos AS (SELECT runs.started_at, runs.portfolio_id, f.symbol, SUM(CASE WHEN f.side = 'BUY' THEN f.quantity ELSE -f.quantity END) AS qty FROM runs JOIN paper_fills f ON f.portfolio_id = runs.portfolio_id AND f.executed_at <= runs.started_at GROUP BY runs.started_at, runs.portfolio_id, f.symbol HAVING SUM(CASE WHEN f.side = 'BUY' THEN f.quantity ELSE -f.quantity END) <> 0), marked AS (SELECT pos.started_at, pos.portfolio_id, SUM(pos.qty * c.close_price) AS mtm FROM pos LEFT JOIN LATERAL (SELECT m.close_price FROM market_candles m WHERE m.symbol = pos.symbol AND m.interval = '1m' AND m.timestamp <= pos.started_at ORDER BY m.timestamp DESC LIMIT 1) c ON TRUE GROUP BY pos.started_at, pos.portfolio_id) SELECT cash.started_at AS time, v.value::double precision AS value, cash.display_name || ' · ' || v.metric AS metric FROM cash LEFT JOIN marked ON marked.started_at = cash.started_at AND marked.portfolio_id = cash.portfolio_id CROSS JOIN LATERAL (VALUES ('평가금액', cash.cash + COALESCE(marked.mtm, 0)), ('손익', cash.cash + COALESCE(marked.mtm, 0) - cash.initial_cash)) v(metric, value) ORDER BY 1",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Rule vs Hermes 평가금액 · 손익",
+      "type": "timeseries",
+      "description": "평가금액=현금+보유 1분 MTM. 손익=평가금액-시작현금. 일일 % 아님."
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "toss-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": true,
+            "axisColorMode": "text",
+            "axisLabel": "Change from range start",
             "axisPlacement": "auto",
             "drawStyle": "line",
             "fillOpacity": 12,
@@ -634,15 +763,66 @@
           "unit": "percent",
           "decimals": 2
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ · (BUY|SELL)$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "always"
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 10
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ BUY$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ SELL$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 16,
+        "h": 10,
+        "w": 12,
         "x": 0,
-        "y": 10
+        "y": 18
       },
-      "id": 20,
+      "id": 22,
       "options": {
         "legend": {
           "calcs": [
@@ -666,8 +846,36 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT r.started_at AS time, (r.daily_return_rate * 100)::double precision AS value, p.display_name AS metric FROM paper_cycle_runs r JOIN paper_portfolios p ON p.portfolio_id = r.portfolio_id WHERE r.portfolio_id IN ('rule', 'hermes') AND r.status <> 'running' AND $__timeFilter(r.started_at) ORDER BY 1",
+          "rawSql": "WITH traded AS (SELECT DISTINCT symbol FROM paper_fills WHERE portfolio_id = 'rule' AND $__timeFilter(executed_at) AND symbol IN (${trade_symbol:sqlstring})), candles AS (SELECT timestamp AS time, symbol, close_price, FIRST_VALUE(close_price) OVER (PARTITION BY symbol ORDER BY timestamp) AS base_price FROM market_candles WHERE interval = '1m' AND symbol IN (SELECT symbol FROM traded) AND $__timeFilter(timestamp)) SELECT c.time, (((c.close_price / NULLIF(c.base_price, 0)) - 1) * 100)::double precision AS value, COALESCE(s.display_name || ' (' || c.symbol || ')', c.symbol) AS metric FROM candles c LEFT JOIN market_symbols s ON s.symbol = c.symbol ORDER BY c.time",
           "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH traded AS (SELECT DISTINCT symbol FROM paper_fills WHERE portfolio_id = 'rule' AND $__timeFilter(executed_at) AND symbol IN (${trade_symbol:sqlstring})), bases AS (SELECT symbol, (ARRAY_AGG(close_price ORDER BY timestamp))[1] AS base_price FROM market_candles WHERE interval = '1m' AND symbol IN (SELECT symbol FROM traded) AND $__timeFilter(timestamp) GROUP BY symbol) SELECT f.executed_at AS time, (((f.price / NULLIF(b.base_price, 0)) - 1) * 100)::double precision AS value, COALESCE(s.display_name || ' (' || f.symbol || ')', f.symbol) || ' · ' || f.side AS metric FROM paper_fills f JOIN bases b ON b.symbol = f.symbol LEFT JOIN market_symbols s ON s.symbol = f.symbol WHERE f.portfolio_id = 'rule' AND f.symbol IN (SELECT symbol FROM traded) AND $__timeFilter(f.executed_at) ORDER BY f.executed_at",
+          "refId": "B",
           "sql": {
             "columns": [
               {
@@ -687,9 +895,9 @@
           }
         }
       ],
-      "title": "Rule vs Hermes Daily Return",
+      "title": "Rule Trades (1m)",
       "type": "timeseries",
-      "description": "보유 전체 MTM. 오늘 체결 성과 아님."
+      "description": "이 포트폴리오가 기간 내 체결한 종목만. 선=1분 등락률, 점=BUY/SELL."
     },
     {
       "datasource": {
@@ -699,54 +907,122 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "continuous-GrYlRd"
+            "mode": "palette-classic"
           },
-          "decimals": 0,
+          "custom": {
+            "axisCenteredZero": true,
+            "axisColorMode": "text",
+            "axisLabel": "Change from range start",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 300000
-              },
-              {
                 "color": "green",
-                "value": 600000
+                "value": null
               }
             ]
           },
-          "unit": "currencyKRW"
+          "unit": "percent",
+          "decimals": 2
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ · (BUY|SELL)$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "always"
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 10
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ BUY$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ SELL$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 10
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 18
       },
-      "id": 21,
+      "id": 23,
       "options": {
-        "displayMode": "gradient",
-        "maxVizHeight": 300,
-        "minVizHeight": 16,
-        "minVizWidth": 8,
-        "namePlacement": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
+        "legend": {
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
-          "values": false
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
         },
-        "showUnfilled": true,
-        "sizing": "auto",
-        "valueMode": "color"
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
@@ -755,10 +1031,38 @@
             "uid": "toss-postgres"
           },
           "editorMode": "code",
-          "format": "table",
+          "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT p.display_name AS portfolio, (p.initial_cash + COALESCE(SUM(CASE WHEN f.side = 'BUY' THEN -f.notional ELSE f.notional END), 0))::double precision AS cash FROM paper_portfolios p LEFT JOIN paper_fills f ON f.portfolio_id = p.portfolio_id WHERE p.portfolio_id IN ('rule', 'hermes') GROUP BY p.portfolio_id, p.display_name, p.initial_cash ORDER BY p.display_name",
+          "rawSql": "WITH traded AS (SELECT DISTINCT symbol FROM paper_fills WHERE portfolio_id = 'hermes' AND $__timeFilter(executed_at) AND symbol IN (${trade_symbol:sqlstring})), candles AS (SELECT timestamp AS time, symbol, close_price, FIRST_VALUE(close_price) OVER (PARTITION BY symbol ORDER BY timestamp) AS base_price FROM market_candles WHERE interval = '1m' AND symbol IN (SELECT symbol FROM traded) AND $__timeFilter(timestamp)) SELECT c.time, (((c.close_price / NULLIF(c.base_price, 0)) - 1) * 100)::double precision AS value, COALESCE(s.display_name || ' (' || c.symbol || ')', c.symbol) AS metric FROM candles c LEFT JOIN market_symbols s ON s.symbol = c.symbol ORDER BY c.time",
           "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH traded AS (SELECT DISTINCT symbol FROM paper_fills WHERE portfolio_id = 'hermes' AND $__timeFilter(executed_at) AND symbol IN (${trade_symbol:sqlstring})), bases AS (SELECT symbol, (ARRAY_AGG(close_price ORDER BY timestamp))[1] AS base_price FROM market_candles WHERE interval = '1m' AND symbol IN (SELECT symbol FROM traded) AND $__timeFilter(timestamp) GROUP BY symbol) SELECT f.executed_at AS time, (((f.price / NULLIF(b.base_price, 0)) - 1) * 100)::double precision AS value, COALESCE(s.display_name || ' (' || f.symbol || ')', f.symbol) || ' · ' || f.side AS metric FROM paper_fills f JOIN bases b ON b.symbol = f.symbol LEFT JOIN market_symbols s ON s.symbol = f.symbol WHERE f.portfolio_id = 'hermes' AND f.symbol IN (SELECT symbol FROM traded) AND $__timeFilter(f.executed_at) ORDER BY f.executed_at",
+          "refId": "B",
           "sql": {
             "columns": [
               {
@@ -778,8 +1082,9 @@
           }
         }
       ],
-      "title": "Rule vs Hermes Available Cash",
-      "type": "bargauge"
+      "title": "Hermes Trades (1m)",
+      "type": "timeseries",
+      "description": "이 포트폴리오가 기간 내 체결한 종목만. 선=1분 등락률, 점=BUY/SELL."
     },
     {
       "datasource": {
@@ -809,7 +1114,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 18
+        "y": 28
       },
       "id": 8,
       "options": {
@@ -918,7 +1223,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 18
+        "y": 28
       },
       "id": 7,
       "options": {
@@ -952,7 +1257,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 35
       },
       "id": 102,
       "title": "체결 · 판단",
@@ -1012,7 +1317,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 36
       },
       "id": 16,
       "options": {
@@ -1168,7 +1473,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 44
       },
       "id": 12,
       "options": {
@@ -1229,7 +1534,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 53
       },
       "id": 103,
       "title": "1분 차트",
@@ -1343,7 +1648,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 44
+            "y": 54
           },
           "id": 17,
           "options": {
@@ -1429,7 +1734,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 54
       },
       "id": 104,
       "title": "Universe",
@@ -1477,7 +1782,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 55
+            "y": 65
           },
           "id": 18,
           "options": {
@@ -1539,7 +1844,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 45
+        "y": 55
       },
       "id": 105,
       "title": "자동화 · token",
@@ -1602,7 +1907,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 66
+            "y": 76
           },
           "id": 13,
           "options": {
@@ -1692,7 +1997,7 @@
             "h": 8,
             "w": 16,
             "x": 8,
-            "y": 66
+            "y": 76
           },
           "id": 14,
           "options": {
@@ -1825,7 +2130,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 74
+            "y": 84
           },
           "id": 22,
           "options": {
@@ -1957,7 +2262,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 82
+            "y": 92
           },
           "id": 15,
           "options": {
@@ -2083,6 +2388,6 @@
   "timezone": "Asia/Seoul",
   "title": "Toss Trader",
   "uid": "toss-trader",
-  "version": 10,
+  "version": 13,
   "weekStart": "monday"
 }

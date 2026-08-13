@@ -329,7 +329,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
                 signal_id="bootstrap-000660",
                 symbol="000660",
                 side=Side.BUY,
-                reference_price=Decimal(100),
+                reference_price=Decimal(1000000),
                 quantity=Decimal(1),
                 reason="bootstrap",
             ),
@@ -338,7 +338,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
         client = WatchlistCandleClient(
             {
                 "005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)],
-                "000660": [Decimal(100), Decimal(95)],
+                "000660": [Decimal(1000000), Decimal(950000)],
             }
         )
 
@@ -351,7 +351,10 @@ class PaperCycleRunnerTest(unittest.TestCase):
             now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
         )
 
-        self.assertEqual(result.daily_return_rate, Decimal("-0.05"))
+        self.assertEqual(
+            result.daily_return_rate,
+            Decimal(949850) / Decimal(999850) - Decimal(1),
+        )
         self.assertEqual(client.calls, [("005930", 4), ("000660", 2)])
         self.assertIsNotNone(result.items[0].decision)
         assert result.items[0].decision is not None

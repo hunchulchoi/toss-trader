@@ -442,6 +442,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
         performance = PortfolioPerformance(
             ledger=paper_ledger,
             market_repository=market_repository,
+            initial_cash=settings.paper_initial_cash,
         )
         universe_result = None
         if explicit_symbols is not None:
@@ -544,6 +545,10 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             "interval": result.interval,
             "dailyReturnRate": result.daily_return_rate,
             "currencyReturns": result.currency_returns,
+            "equity": result.equity,
+            "realizedPnl": result.realized_pnl,
+            "unrealizedPnl": result.unrealized_pnl,
+            "totalCosts": result.total_costs,
             "initialCash": settings.paper_initial_cash,
             "cashBalance": cash_balance,
             "consecutiveApiErrors": result.consecutive_api_errors,
