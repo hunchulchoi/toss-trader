@@ -324,6 +324,27 @@ class PaperCycleProcess:
             ]
             if portfolio_id == "hermes":
                 command.append("--hermes-advisor")
+                rule_cycle = portfolios.get("rule")
+                rule_universe = (
+                    rule_cycle.get("universe")
+                    if isinstance(rule_cycle, dict)
+                    else None
+                )
+                if isinstance(rule_universe, dict):
+                    symbols = rule_universe.get("symbols")
+                    entry_symbols = rule_universe.get("entrySymbols")
+                    run_id = rule_universe.get("runId")
+                    if isinstance(symbols, list) and symbols:
+                        command.extend(("--symbols", *(str(value) for value in symbols)))
+                    if isinstance(entry_symbols, list) and entry_symbols:
+                        command.extend(
+                            (
+                                "--trend-entry-symbols",
+                                *(str(value) for value in entry_symbols),
+                            )
+                        )
+                    if run_id:
+                        command.extend(("--trend-entry-key", str(run_id)))
             if self._interval is not None:
                 command.extend(("--interval", self._interval))
             completed = subprocess.run(

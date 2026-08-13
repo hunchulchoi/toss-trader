@@ -136,6 +136,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--portfolio", choices=("legacy", "rule", "hermes"), default="legacy"
     )
     cycle.add_argument("--hermes-advisor", action="store_true")
+    cycle.add_argument("--trend-entry-symbols", nargs="+")
+    cycle.add_argument("--trend-entry-key")
 
     market_scan = subparsers.add_parser(
         "run-market-scan",
@@ -506,10 +508,15 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 else True
             ),
             trend_entry_symbols=(
-                universe_result.entry_symbols if universe_result is not None else ()
+                tuple(args.trend_entry_symbols)
+                if args.trend_entry_symbols
+                else (
+                    universe_result.entry_symbols if universe_result is not None else ()
+                )
             ),
             trend_entry_key=(
-                universe_result.run_id if universe_result is not None else None
+                args.trend_entry_key
+                or (universe_result.run_id if universe_result is not None else None)
             ),
             signal_namespace=(
                 args.portfolio if args.portfolio in {"rule", "hermes"} else None
