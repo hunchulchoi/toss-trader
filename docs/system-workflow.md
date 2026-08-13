@@ -109,6 +109,12 @@ MA20/MA60 원시 신호를 한 번만 만들며, Hermes 포트폴리오는 같�
 HTTP 응답 오류는 해당 단계 실패 Telegram으로, network/timeout처럼 응답 자체가
 없는 오류는 공통 `Toss Trader Workflow Error Reporter`로 전달한다.
 
+각 automation HTTP node는 `_workflow`에 workflow ID, n8n execution ID, 실행 mode,
+stage, portfolio/interval을 전달한다. automation 서비스는 request body를 복제하지
+않고 이 메타데이터와 단계 결과 집계만 `automation_run_logs(run_type='n8n_flow')`에
+append한다. Grafana `n8n Flow Review Log`에서 같은 execution의 단계, 소요시간,
+token, Telegram 결과와 RiskManager decision ID를 사후 검토한다.
+
 n8n HTTP Request node가 encrypted Header Auth credential로 Hermes sidecar를 직접
 호출한다. automation 서비스는 요청 경로에 없고, 응답 뒤에서 content 형식 검증,
 token audit, 리포트 조립만 수행한다. Hermes에는 automation 서비스가 만든

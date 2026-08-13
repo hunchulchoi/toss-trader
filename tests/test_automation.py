@@ -70,6 +70,54 @@ class WorkflowTaskServiceTest(unittest.TestCase):
         self.assertEqual(result["hermesUsage"]["totalTokens"], 120)
         self.assertEqual(audits[0].run_type, "market_scan")
         self.assertEqual(audits[0].total_tokens, 120)
+        self.assertEqual(audits[1].run_type, "n8n_flow")
+        self.assertEqual(audits[1].stage, "hermes-market-result")
+        self.assertEqual(audits[1].total_tokens, 120)
+
+    def test_audits_n8n_stage_context_without_request_payload(self) -> None:
+        audits: list[AutomationRunLog] = []
+
+        class StubProcess:
+            def run(self) -> dict[str, object]:
+                return {
+                    "exitCode": 0,
+                    "scan": {"markets": [], "candidates": [], "errors": []},
+                }
+
+        class StubReporter:
+            def report(self, _: dict[str, object]) -> dict[str, object]:
+                return {"accepted": True}
+
+        service = WorkflowTaskService(
+            paper=None,  # type: ignore[arg-type]
+            market_scan=StubProcess(),  # type: ignore[arg-type]
+            market_analyzer=None,  # type: ignore[arg-type]
+            daily_analyzer=None,  # type: ignore[arg-type]
+            market_reporter=StubReporter(),  # type: ignore[arg-type]
+            paper_reporter=StubReporter(),  # type: ignore[arg-type]
+            daily_reporter=StubReporter(),  # type: ignore[arg-type]
+            failure_reporter=StubReporter(),  # type: ignore[arg-type]
+            audit=lambda run: audits.append(run) or "flow-audit-1",
+            clock=lambda: datetime(2026, 8, 13, 0, 0, tzinfo=UTC),
+        )
+
+        service.run(
+            "/workflow/market-scan",
+            {
+                "_workflow": {
+                    "workflowId": "toss-trader-market-scan",
+                    "executionId": "321",
+                    "trigger": "production",
+                    "stage": "market-scan",
+                },
+                "authorization": "must-not-be-audited",
+            },
+        )
+
+        self.assertEqual(audits[0].run_type, "n8n_flow")
+        self.assertEqual(audits[0].status, "succeeded")
+        self.assertEqual(audits[0].details["executionId"], "321")  # type: ignore[index]
+        self.assertNotIn("authorization", json.dumps(audits[0].details))
 
     def test_rejects_direct_hermes_response_without_content(self) -> None:
         class Stub:
@@ -287,6 +335,7 @@ class IntradayPaperAutomationTest(unittest.TestCase):
         self.assertEqual(submitted["interval"], "1m")
         self.assertEqual(result["exitCode"], 0)
 
+
 class DailyAutomationNoticeTest(unittest.TestCase):
     def test_reports_noteworthy_cycle_before_hermes(self) -> None:
         calls: list[tuple[str, object]] = []
@@ -311,8 +360,9 @@ class DailyAutomationNoticeTest(unittest.TestCase):
             run_cycle=lambda: calls.append(("cycle", None)) or cycle,
             analyze=lambda value: calls.append(("hermes", value)) or "체결 1건",
             report=lambda value: calls.append(("report", value)) or {"accepted": True},
-            report_notice=lambda value: calls.append(("notice", value))
-            or {"accepted": True},
+            report_notice=lambda value: (
+                calls.append(("notice", value)) or {"accepted": True}
+            ),
         )
 
         result = service.run()
@@ -390,9 +440,7 @@ class DailyAutomationNoticeTest(unittest.TestCase):
         self.assertEqual(calls, ["notice", "hermes", "report"])
         self.assertEqual(result["analysis"], "일일 분석")
         self.assertEqual(result["reported"], {"accepted": True})
-        self.assertEqual(
-            result["noticeReportError"], "Alertmanager notice failed"
-        )
+        self.assertEqual(result["noticeReportError"], "Alertmanager notice failed")
 
 
 class PaperCycleNoticeTest(unittest.TestCase):
@@ -452,6 +500,7 @@ class PaperCycleNoticeTest(unittest.TestCase):
         )
 
         self.assertIsNone(notice)
+
 
 class MarketScanAutomationTest(unittest.TestCase):
     def test_sends_only_market_scan_json_to_hermes(self) -> None:
@@ -632,6 +681,7 @@ class AlertmanagerReporterTest(unittest.TestCase):
         self.assertEqual(result["severity"], "critical")
         self.assertEqual(captured[0][0]["labels"]["severity"], "critical")
 
+
 class AutomationHttpTest(unittest.TestCase):
     def test_health_and_daily_run_routes(self) -> None:
         service = DailyAutomation(
@@ -671,7 +721,9 @@ class AutomationHttpTest(unittest.TestCase):
         self.assertNotIn("TOKEN", encoded)
 
     def test_market_scan_route_uses_llm_opinion(self) -> None:
-        daily = DailyAutomation(run_cycle=dict, analyze=lambda _: "ok", report=lambda _: {})
+        daily = DailyAutomation(
+            run_cycle=dict, analyze=lambda _: "ok", report=lambda _: {}
+        )
         calls: list[dict[str, object]] = []
         analyzed: list[dict[str, object]] = []
         market = MarketScanAutomation(
@@ -692,7 +744,9 @@ class AutomationHttpTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
     def test_intraday_route_runs_paper_only_service(self) -> None:
-        daily = DailyAutomation(run_cycle=dict, analyze=lambda _: "ok", report=lambda _: {})
+        daily = DailyAutomation(
+            run_cycle=dict, analyze=lambda _: "ok", report=lambda _: {}
+        )
         intraday = IntradayPaperAutomation(
             run_cycle=lambda: {
                 "exitCode": 0,
@@ -710,7 +764,9 @@ class AutomationHttpTest(unittest.TestCase):
         self.assertEqual(payload["cycle"]["cycle"]["interval"], "1m")
 
     def test_routes_n8n_workflow_task_with_json_payload(self) -> None:
-        daily = DailyAutomation(run_cycle=dict, analyze=lambda _: "ok", report=lambda _: {})
+        daily = DailyAutomation(
+            run_cycle=dict, analyze=lambda _: "ok", report=lambda _: {}
+        )
         calls: list[tuple[str, dict[str, object]]] = []
 
         class WorkflowStub:

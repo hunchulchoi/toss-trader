@@ -138,8 +138,7 @@ def paper_cycle_notice(job: dict[str, Any]) -> PaperCycleNotice | None:
                 lines.append(f"{symbol} RiskManager 거부: {', '.join(noteworthy)}")
                 target = (
                     "critical"
-                    if {"daily-loss-limit", "api-error-kill-switch"}
-                    & set(noteworthy)
+                    if {"daily-loss-limit", "api-error-kill-switch"} & set(noteworthy)
                     else "warning"
                 )
                 severity = _higher_severity(severity, target)
@@ -326,16 +325,16 @@ class PaperCycleProcess:
                 command.append("--hermes-advisor")
                 rule_cycle = portfolios.get("rule")
                 rule_universe = (
-                    rule_cycle.get("universe")
-                    if isinstance(rule_cycle, dict)
-                    else None
+                    rule_cycle.get("universe") if isinstance(rule_cycle, dict) else None
                 )
                 if isinstance(rule_universe, dict):
                     symbols = rule_universe.get("symbols")
                     entry_symbols = rule_universe.get("entrySymbols")
                     run_id = rule_universe.get("runId")
                     if isinstance(symbols, list) and symbols:
-                        command.extend(("--symbols", *(str(value) for value in symbols)))
+                        command.extend(
+                            ("--symbols", *(str(value) for value in symbols))
+                        )
                     if isinstance(entry_symbols, list) and entry_symbols:
                         command.extend(
                             (
@@ -446,7 +445,10 @@ class PaperPortfolioProcess:
         raw = completed.stdout.strip() or completed.stderr.strip()
         payload = _load_json(raw)
         if payload is None:
-            payload = {"ok": False, "error": (raw or "paper cycle produced no output")[:4000]}
+            payload = {
+                "ok": False,
+                "error": (raw or "paper cycle produced no output")[:4000],
+            }
         return {"exitCode": completed.returncode, "cycle": payload}
 
 
@@ -767,8 +769,7 @@ class AlertmanagerReporter:
             description = f"Hermes 분석 실패\n{result.get('error', 'failed')}"
         else:
             description = (
-                f"{result.get('stage', 'unknown')}: "
-                f"{result.get('error', 'failed')}"
+                f"{result.get('stage', 'unknown')}: {result.get('error', 'failed')}"
             )
         alert = [
             {
@@ -899,6 +900,16 @@ class WorkflowTaskService:
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def run(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        started_at = self._clock()
+        try:
+            result = self._dispatch(path, payload)
+        except Exception as error:
+            self._audit_flow(path, payload, started_at, error=error)
+            raise
+        self._audit_flow(path, payload, started_at, result=result)
+        return result
+
+    def _dispatch(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         if path == "/workflow/market-scan":
             return self._market_scan.run()
         if path == "/workflow/paper-rule-1m":
@@ -932,10 +943,43 @@ class WorkflowTaskService:
                 {
                     "ok": False,
                     "stage": "n8n-workflow",
-                    "error": json.dumps(payload, ensure_ascii=False, default=str)[:3500],
+                    "error": json.dumps(payload, ensure_ascii=False, default=str)[
+                        :3500
+                    ],
                 }
             )
         raise ValueError("unknown workflow task")
+
+    def _audit_flow(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        started_at: datetime,
+        *,
+        result: dict[str, Any] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        if self._audit is None:
+            return
+        context = payload.get("_workflow")
+        context = context if isinstance(context, dict) else {}
+        finished_at = self._clock()
+        status = "failed" if error is not None else _flow_status(context, result)
+        usage = _flow_usage(result)
+        self._audit(
+            AutomationRunLog(
+                run_type="n8n_flow",
+                status=status,
+                stage=str(context.get("stage") or path.removeprefix("/workflow/")),
+                started_at=started_at,
+                finished_at=finished_at,
+                prompt_tokens=usage[0],
+                completion_tokens=usage[1],
+                total_tokens=usage[2],
+                error=_safe_error(error) if error is not None else None,
+                details=_flow_audit_details(path, context, payload, result),
+            )
+        )
 
     def _analyze_market(self, payload: dict[str, Any]) -> dict[str, Any]:
         scan = payload.get("scan")
@@ -952,7 +996,9 @@ class WorkflowTaskService:
             "ok": True,
             "scan": payload["scan"],
             "opinion": usage.content,
-            "analysis": format_market_scan_report(payload["scan"], opinion=usage.content),
+            "analysis": format_market_scan_report(
+                payload["scan"], opinion=usage.content
+            ),
             "hermesUsage": _hermes_usage(usage),
             "finishedAt": self._clock().isoformat(),
         }
@@ -1115,9 +1161,14 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
     hermes = payload.get("hermes")
     if not isinstance(rule, dict) or not isinstance(hermes, dict):
         raise TypeError("comparison workflow requires rule and hermes JSON")
-    portfolios = {"rule": rule.get("cycle", rule), "hermes": hermes.get("cycle", hermes)}
+    portfolios = {
+        "rule": rule.get("cycle", rule),
+        "hermes": hermes.get("cycle", hermes),
+    }
     summaries = [
-        value.get("summary", {}) for value in portfolios.values() if isinstance(value, dict)
+        value.get("summary", {})
+        for value in portfolios.values()
+        if isinstance(value, dict)
     ]
     return {
         "exitCode": max(int(rule.get("exitCode", 1)), int(hermes.get("exitCode", 1))),
@@ -1286,6 +1337,90 @@ def _hermes_usage(analysis: HermesAnalysis) -> dict[str, int]:
         "completionTokens": analysis.completion_tokens,
         "totalTokens": analysis.total_tokens,
     }
+
+
+def _flow_status(context: dict[str, Any], result: dict[str, Any] | None) -> str:
+    requested = context.get("status")
+    if requested in {"failed", "skipped"}:
+        return str(requested)
+    if isinstance(result, dict) and result.get("skipped") is True:
+        return "skipped"
+    if isinstance(result, dict) and result.get("ok") is False:
+        return "failed"
+    return "succeeded"
+
+
+def _flow_usage(result: dict[str, Any] | None) -> tuple[int, int, int]:
+    usage = result.get("hermesUsage") if isinstance(result, dict) else None
+    usage = usage if isinstance(usage, dict) else {}
+    prompt = _token_count(usage.get("promptTokens"))
+    completion = _token_count(usage.get("completionTokens"))
+    total = max(_token_count(usage.get("totalTokens")), prompt + completion)
+    return prompt, completion, total
+
+
+def _flow_audit_details(
+    path: str,
+    context: dict[str, Any],
+    payload: dict[str, Any],
+    result: dict[str, Any] | None,
+) -> dict[str, object]:
+    details: dict[str, object] = {
+        "orchestrator": "n8n",
+        "endpoint": path,
+    }
+    for source, target in (
+        ("workflowId", "workflowId"),
+        ("executionId", "executionId"),
+        ("trigger", "trigger"),
+        ("portfolioId", "portfolioId"),
+        ("interval", "interval"),
+    ):
+        value = context.get(source)
+        if isinstance(value, (str, int, float, bool)):
+            details[target] = value
+    if isinstance(result, dict):
+        for source, target in (
+            ("exitCode", "exitCode"),
+            ("accepted", "telegramAccepted"),
+            ("skipped", "skipped"),
+            ("reason", "reason"),
+        ):
+            value = result.get(source)
+            if isinstance(value, (str, int, float, bool)):
+                details[target] = value
+        cycle = result.get("cycle")
+        cycle = cycle if isinstance(cycle, dict) else {}
+        summary = cycle.get("summary")
+        summary = summary if isinstance(summary, dict) else {}
+        for key in ("symbols", "signals", "fills", "failed"):
+            if key in summary:
+                details[key] = _non_negative_int(summary.get(key))
+        decisions = sorted(set(_collect_decision_ids(result)))
+        if decisions:
+            details["riskDecisionIds"] = decisions[:100]
+    if path == "/workflow/report-failure":
+        response = payload.get("response")
+        response = response if isinstance(response, dict) else payload
+        for key in ("statusCode", "httpCode", "executionId"):
+            value = response.get(key)
+            if isinstance(value, (str, int, float, bool)):
+                details[f"upstream{key[0].upper()}{key[1:]}"] = value
+    return details
+
+
+def _collect_decision_ids(value: object) -> list[str]:
+    found: list[str] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in {"decisionId", "riskDecisionId"} and isinstance(child, str):
+                found.append(child)
+            elif key not in {"analysis", "opinion"}:
+                found.extend(_collect_decision_ids(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.extend(_collect_decision_ids(child))
+    return found
 
 
 def _token_count(value: object) -> int:

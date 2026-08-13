@@ -5,8 +5,9 @@ SQLite 개발 모드에서도 같은 인터페이스와 필드를 제공한다.
 
 - `paper_risk_decisions`: 승인·거부 여부, 위반 규칙, 신호, 포지션, 가용 현금,
   일일 수익률, Toss API 오류 연속 횟수, 장 상태와 판단 시각
-- `automation_run_logs`: daily/market scan 성공·실패 단계, 소요 시간, Hermes
-  prompt/completion/total token, 오류와 건수 요약
+- `automation_run_logs`: daily/market scan과 모든 n8n HTTP stage의 성공·실패·skip,
+  `workflowId`, n8n `executionId`, trigger, portfolio/interval, 소요 시간, Hermes
+  prompt/completion/total token, Telegram 결과, RiskManager `decision_id` 목록
 - `paper_cycle_runs`: 장중·마감 cycle의 interval, 성공 여부, 신호·체결·실패 수,
   API 오류 연속 횟수와 일일 수익률
 - `paper_fills`: 승인된 신호의 가상 체결. 실제 주문 내역이 아님
@@ -32,7 +33,9 @@ Risk 판단은 `paper_risk_decisions`, 승인된 가상 체결은 `paper_fills`�
 
 공용 Grafana의 `Toss Trader` dashboard는 `toss-postgres` read-only datasource로
 최근 판단, paper cycle 실행, 가상 체결, Hermes token 사용량과 자동화 실행
-로그를 조회한다. `Dynamic Universe Risk Decisions`는 후보별 RiskManager 판단과
+로그를 조회한다. `n8n Flow Review Log`는 같은 execution의 stage를 묶어 보여준다.
+request body와 인증정보는 저장하지 않고 허용된 메타데이터와 집계값만 남긴다.
+`Dynamic Universe Risk Decisions`는 후보별 RiskManager 판단과
 선정 결과를 표시한다. `Queried Symbols`는 수집한 1분봉을 조회 구간 시작 대비
 등락률로 정규화해 15개 심볼을 함께 표시한다. 장전 scan은 Toss
 `GET /api/v1/stocks`를 한 번 호출해 회사명을 `market_symbols` 기준정보 테이블에
@@ -41,7 +44,8 @@ Risk 판단은 `paper_risk_decisions`, 승인된 가상 체결은 `paper_fills`�
 표시한다. `Paper Cycle Run Log`는 장중
 5분마다 갱신되고 `Hermes Automation Run Log`는 Hermes를 호출하는 장전·마감
 실행에만 행이 추가된다.
-장부에는 API key, bearer token, 전체 Hermes prompt/response를 저장하지 않는다.
+장부에는 API key, bearer token, OAuth credential, 전체 Hermes prompt/response를
+저장하지 않는다.
 
 운영 안전 경계:
 

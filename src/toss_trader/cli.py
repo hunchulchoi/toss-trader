@@ -322,11 +322,7 @@ def _risk_decisions(settings: Settings, args: argparse.Namespace) -> int:
         postgres_parameters=settings.postgres_connection_parameters(),
         sqlite_path=settings.paper_db_path,
     )
-    approved = (
-        None
-        if args.status == "all"
-        else args.status == "approved"
-    )
+    approved = None if args.status == "all" else args.status == "approved"
     try:
         decisions = ledger.recent_risk_decisions(
             limit=args.limit,
@@ -402,13 +398,13 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
         snapshot.symbols
         if snapshot is not None
         else (
-            tuple(symbol.upper() for symbol in args.symbols)
-            if args.symbols
-            else None
+            tuple(symbol.upper() for symbol in args.symbols) if args.symbols else None
         )
     )
-    interval = snapshot.interval if snapshot is not None else (
-        args.interval or settings.strategy_interval
+    interval = (
+        snapshot.interval
+        if snapshot is not None
+        else (args.interval or settings.strategy_interval)
     )
     short_window = args.short_window or settings.strategy_short_window
     long_window = args.long_window or settings.strategy_long_window
@@ -668,16 +664,13 @@ def _read_cycle_snapshot() -> PaperCycleSnapshot:
         )
         for item in signals
     )
-    parsed_errors = tuple(
-        None if error is None else str(error)
-        for error in errors
-    )
+    parsed_errors = tuple(None if error is None else str(error) for error in errors)
     api_failed = payload.get("apiFailed")
     if not isinstance(api_failed, bool):
-        raise ValueError("shared snapshot apiFailed must be boolean")
+        raise TypeError("shared snapshot apiFailed must be boolean")
     new_buys_allowed = payload.get("newBuysAllowed")
     if not isinstance(new_buys_allowed, bool):
-        raise ValueError("shared snapshot newBuysAllowed must be boolean")
+        raise TypeError("shared snapshot newBuysAllowed must be boolean")
     return PaperCycleSnapshot(
         evaluated_at=evaluated_at,
         symbols=tuple(symbol.upper() for symbol in symbols),
