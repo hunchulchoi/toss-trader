@@ -51,6 +51,12 @@ request body와 인증정보는 저장하지 않고 허용된 메타데이터와
 장부에는 API key, bearer token, OAuth credential, 전체 Hermes prompt/response를
 저장하지 않는다.
 
+MA 계산에 필요한 candle 이력이 부족한 종목은 cycle 결과와
+`automation_run_logs.details.skipped`에서 제외 수를 확인한다. 이 경우
+`paper_cycle_runs.failed_count`와 `consecutive_api_errors`는 증가하지 않는다.
+수동 마감 실행과 장애 대응 절차는
+[`operations-runbook.md`](operations-runbook.md)를 따른다.
+
 운영 안전 경계:
 
 - Risk 판단을 paper fill보다 먼저 저장; 저장 실패 시 체결 금지

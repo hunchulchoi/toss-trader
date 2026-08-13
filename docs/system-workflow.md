@@ -4,11 +4,11 @@
 
 ```mermaid
 flowchart LR
-    N[n8n scheduler] -->|internal HTTP| A[toss-trader-automation]
+    O[운영자] -->|authenticated async webhook| N[n8n orchestrator]
+    N -->|internal HTTP| A[toss-trader-automation]
     A --> C[Toss Open API]
     A --> P[(PostgreSQL)]
-    A --> H[Hermes analysis sidecar]
-    H -. bearer auth .-> A
+    N -->|bearer auth| H[Hermes analysis sidecar]
     A --> AM[Alertmanager]
     AM --> T[Telegram topic]
     P --> M[toss-trader-metrics]
@@ -285,6 +285,7 @@ toss-trader/
 ├── docs/
 │   ├── audit-ledgers.md       # 감사 장부와 조회 원칙
 │   ├── automatic-trading-scenario.md
+│   ├── operations-runbook.md  # 수동 실행·장애 대응·운영 검증
 │   └── system-workflow.md     # 현재 문서
 ├── monitoring/
 │   ├── alertmanager/          # Telegram receiver 설정

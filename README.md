@@ -224,8 +224,8 @@ Toss candle 조회는 성공했지만 MA20/MA60 계산 이력이 부족한 신�
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
-docker compose build
-docker compose run --rm trader config
+ruff check .
+infisical run --env=prod --path=/ -- docker compose config -q
 ```
 
 ## 다음 단계
@@ -236,3 +236,5 @@ docker compose run --rm trader config
 
 전체 실행 흐름, ERD, 파일별 책임은
 [`docs/system-workflow.md`](docs/system-workflow.md)에 정리되어 있다.
+수동 마감 리뷰, 배포 검증, 장애 대응은
+[`docs/operations-runbook.md`](docs/operations-runbook.md)를 따른다.

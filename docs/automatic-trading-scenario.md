@@ -59,7 +59,7 @@ n8n이 전체 자동화의 단계 순서와 실패 전파를 담당한다. workf
 있고 공통 실패 처리는
 [`automation/n8n/toss-trader-error.json`](../automation/n8n/toss-trader-error.json)이
 담당한다. 저장소 JSON의 `active=false`는 import 안전 기본값이며 운영 n8n에서는
-세 workflow가 publish되어 활성 상태다. 각 workflow의 평일 스케줄과 수동
+관련 workflow가 publish되어 활성 상태다. 각 workflow의 평일 스케줄과 수동
 trigger가 같은 내부 API를 호출한다.
 
 automation API는 원자 작업만 제공한다. n8n은 secret 없이 `openclaw-net`에서
@@ -295,6 +295,8 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 TELEGRAM_TOPIC=
 HERMES_API_KEY=
+N8N_RISK_MANAGER_TOKEN=
+N8N_MANUAL_TRIGGER_TOKEN=
 ```
 
 시장분석·발굴 설정은 비밀이 아니다. 값이 없으면 Compose 기본값을 사용한다.
