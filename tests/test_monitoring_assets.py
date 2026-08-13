@@ -6,21 +6,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _dashboard_panels(dashboard: dict) -> list[dict]:
+    panels: list[dict] = []
+    for panel in dashboard["panels"]:
+        if panel.get("type") == "row":
+            panels.extend(panel.get("panels") or [])
+        else:
+            panels.append(panel)
+    return panels
+
+
 class MonitoringAssetsTest(unittest.TestCase):
     def test_grafana_dashboard_queries_exported_metrics(self) -> None:
         dashboard_path = (
             ROOT / "monitoring" / "grafana" / "dashboards" / "toss-trader.json"
         )
         dashboard = json.loads(dashboard_path.read_text())
+        panels = _dashboard_panels(dashboard)
         expressions = {
             target["expr"]
-            for panel in dashboard["panels"]
+            for panel in panels
             for target in panel.get("targets", [])
             if "expr" in target
         }
         sql_queries = {
             target["rawSql"]
-            for panel in dashboard["panels"]
+            for panel in panels
             for target in panel.get("targets", [])
             if "rawSql" in target
         }
@@ -35,10 +46,13 @@ class MonitoringAssetsTest(unittest.TestCase):
 
         datasources = {
             panel["datasource"]["uid"]
-            for panel in dashboard["panels"]
+            for panel in panels
             if "datasource" in panel
         }
         self.assertEqual(datasources, {"toss-prometheus", "toss-postgres"})
+        self.assertGreaterEqual(
+            sum(1 for panel in dashboard["panels"] if panel.get("type") == "row"), 3
+        )
         self.assertTrue(any("paper_risk_decisions" in query for query in sql_queries))
         self.assertTrue(any("automation_run_logs" in query for query in sql_queries))
         self.assertTrue(any("paper_cycle_runs" in query for query in sql_queries))
@@ -48,12 +62,10 @@ class MonitoringAssetsTest(unittest.TestCase):
             any("dynamic_universe_decisions" in query for query in sql_queries)
         )
         self.assertTrue(any("prompt_tokens" in query for query in sql_queries))
-        titles = {panel["title"] for panel in dashboard["panels"]}
+        titles = {panel["title"] for panel in panels}
         self.assertIn("Paper Cycle Run Log", titles)
         cycle_panel = next(
-            panel
-            for panel in dashboard["panels"]
-            if panel["title"] == "Paper Cycle Run Log"
+            panel for panel in panels if panel["title"] == "Paper Cycle Run Log"
         )
         self.assertEqual(cycle_panel["type"], "timeseries")
         self.assertEqual(cycle_panel["targets"][0]["format"], "time_series")
@@ -62,9 +74,7 @@ class MonitoringAssetsTest(unittest.TestCase):
             "portfolio_id IN ('rule', 'hermes')", cycle_panel["targets"][0]["rawSql"]
         )
         symbol_panel = next(
-            panel
-            for panel in dashboard["panels"]
-            if panel["title"].startswith("Symbols (1m")
+            panel for panel in panels if panel["title"].startswith("Symbols (1m")
         )
         self.assertEqual(symbol_panel["type"], "timeseries")
         self.assertEqual(symbol_panel["fieldConfig"]["defaults"]["unit"], "percent")
@@ -98,29 +108,29 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("Recent Paper Fills", titles)
         self.assertIn("Dynamic Universe Risk Decisions", titles)
         positions_panel = next(
-            panel
-            for panel in dashboard["panels"]
-            if panel["title"] == "Open Paper Positions"
+            panel for panel in panels if panel["title"] == "Open Paper Positions"
         )
         self.assertIn("market_symbols", positions_panel["targets"][0]["rawSql"])
         self.assertIn("display_name", positions_panel["targets"][0]["rawSql"])
         risk_panel = next(
-            panel
-            for panel in dashboard["panels"]
-            if panel["title"] == "Recent RiskManager Decisions"
+            panel for panel in panels if panel["title"] == "Recent RiskManager Decisions"
         )
         self.assertIn("market_symbols", risk_panel["targets"][0]["rawSql"])
         self.assertIn("jsonb_array_elements_text", risk_panel["targets"][0]["rawSql"])
         self.assertIn('AS "판단 근거"', risk_panel["targets"][0]["rawSql"])
         fills_panel = next(
-            panel
-            for panel in dashboard["panels"]
-            if panel["title"] == "Recent Paper Fills"
+            panel for panel in panels if panel["title"] == "Recent Paper Fills"
         )
         self.assertIn("market_symbols", fills_panel["targets"][0]["rawSql"])
         self.assertIn("f.reason", fills_panel["targets"][0]["rawSql"])
         self.assertIn("Hermes Automation Run Log", titles)
         self.assertIn("n8n Flow Review Log", titles)
+        hermes_log = next(
+            panel for panel in panels if panel["title"] == "Hermes Automation Run Log"
+        )
+        self.assertIn("hermes_trade", hermes_log["targets"][0]["rawSql"])
+        self.assertIn("market_scan", hermes_log["targets"][0]["rawSql"])
+        self.assertNotIn("details::text", hermes_log["targets"][0]["rawSql"])
         self.assertNotIn("DS_PROMETHEUS", dashboard)
 
     def test_prometheus_assets_cover_outage_loss_and_stale_cycle(self) -> None:
@@ -365,6 +375,10 @@ class MonitoringAssetsTest(unittest.TestCase):
         )
         self.assertGreaterEqual(encoded.count("n8n-nodes-base.if"), 3)
         self.assertIn("/workflow/risk-manager-audit", encoded)
+        self.assertIn("input.limits", encoded)
+        self.assertNotIn("dec('300000'", encoded)
+        self.assertNotIn("dec('1000000'", encoded)
+        self.assertNotIn("dec('-0.03'", encoded)
         for violation in (
             "duplicate-signal",
             "universe-refresh-failed",

@@ -1,3 +1,4 @@
+import json
 import unittest
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -199,7 +200,21 @@ class N8nRiskManagerTest(unittest.TestCase):
         self.assertEqual(
             request.get_header("Authorization"), "Bearer risk-token-long-enough"
         )
-        self.assertIn(b'"kind":"trade"', request.data)
+        payload = json.loads(request.data)
+        self.assertEqual(payload["kind"], "trade")
+        self.assertEqual(
+            payload["limits"],
+            {
+                "policyVersion": 1,
+                "maxOrderNotional": "300000",
+                "maxPositionNotional": "1000000",
+                "maxDailyBuyCount": 5,
+                "maxOpenPositions": 5,
+                "dailyLossLimit": "-0.03",
+                "maxConsecutiveApiErrors": 5,
+                "blockNewBuysBeforeCloseSeconds": 600,
+            },
+        )
         self.assertNotIn(b"risk-token-long-enough", request.data)
 
     def test_fails_closed_when_workflow_is_unavailable(self) -> None:
