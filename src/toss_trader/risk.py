@@ -32,6 +32,7 @@ class RiskContext:
     consecutive_api_errors: int = 0
     seen_signal_ids: frozenset[str] = field(default_factory=frozenset)
     new_buys_allowed: bool = True
+    advisor_status: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,10 @@ class RiskManager:
             violations.append("duplicate-signal")
         if signal.side is Side.BUY and not context.new_buys_allowed:
             violations.append("universe-refresh-failed")
+        if context.advisor_status == "rejected":
+            violations.append("hermes-rejected")
+        elif context.advisor_status == "unavailable":
+            violations.append("hermes-unavailable")
         if signal.notional > self._limits.max_order_notional:
             violations.append("max-order-notional")
         if (

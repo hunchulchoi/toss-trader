@@ -57,6 +57,7 @@ class CycleStateStore(Protocol):
 SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS paper_cycle_runs (
     run_id TEXT PRIMARY KEY,
+    portfolio_id TEXT NOT NULL DEFAULT 'legacy',
     started_at TEXT NOT NULL,
     finished_at TEXT,
     status TEXT NOT NULL CHECK (
@@ -77,6 +78,7 @@ CREATE TABLE IF NOT EXISTS paper_cycle_runs (
 POSTGRES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS paper_cycle_runs (
     run_id UUID PRIMARY KEY,
+    portfolio_id TEXT NOT NULL DEFAULT 'legacy',
     started_at TIMESTAMPTZ NOT NULL,
     finished_at TIMESTAMPTZ,
     status TEXT NOT NULL CHECK (
@@ -101,11 +103,20 @@ ON paper_cycle_runs (started_at DESC)
 
 
 class SqliteCycleStateStore:
-    def __init__(self, database_path: str) -> None:
+    def __init__(self, database_path: str, *, portfolio_id: str = "legacy") -> None:
+        self._portfolio_id = _validate_portfolio_id(portfolio_id)
         if database_path != ":memory:":
             Path(database_path).parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(database_path)
         self._connection.execute(SQLITE_SCHEMA)
+        columns = {
+            str(row[1])
+            for row in self._connection.execute("PRAGMA table_info(paper_cycle_runs)")
+        }
+        if "portfolio_id" not in columns:
+            self._connection.execute(
+                "ALTER TABLE paper_cycle_runs ADD COLUMN portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
+            )
         self._connection.commit()
 
     def close(self) -> None:
@@ -120,10 +131,10 @@ class SqliteCycleStateStore:
             self._connection.execute(
                 """
                 INSERT INTO paper_cycle_runs (
-                    run_id, started_at, status, interval, symbol_count
-                ) VALUES (?, ?, 'running', ?, ?)
+                    run_id, portfolio_id, started_at, status, interval, symbol_count
+                ) VALUES (?, ?, ?, 'running', ?, ?)
                 """,
-                (run_id, started_at.isoformat(), interval, symbol_count),
+                (run_id, self._portfolio_id, started_at.isoformat(), interval, symbol_count),
             )
         return run_id
 
@@ -177,9 +188,11 @@ class SqliteCycleStateStore:
             """
             SELECT consecutive_api_errors FROM paper_cycle_runs
             WHERE status <> 'running'
+              AND portfolio_id = ?
             ORDER BY started_at DESC, run_id DESC
             LIMIT 1
-            """
+            """,
+            (self._portfolio_id,),
         ).fetchone()
         return int(row[0]) if row else 0
 
@@ -190,9 +203,11 @@ class SqliteCycleStateStore:
                    symbol_count, signal_count, fill_count, failed_count,
                    consecutive_api_errors, daily_return_rate, error_message
             FROM paper_cycle_runs
+            WHERE portfolio_id = ?
             ORDER BY started_at DESC, run_id DESC
             LIMIT 1
-            """
+            """,
+            (self._portfolio_id,),
         ).fetchone()
         return _run_from_row(row) if row else None
 
@@ -204,7 +219,9 @@ class PostgresCycleStateStore:
         *,
         connect: Callable[..., Any] | None = None,
         database_error: type[Exception] | None = None,
+        portfolio_id: str = "legacy",
     ) -> None:
+        self._portfolio_id = _validate_portfolio_id(portfolio_id)
         required = {"host", "port", "user", "password", "dbname"}
         missing = sorted(required - connection_parameters.keys())
         if missing:
@@ -227,6 +244,9 @@ class PostgresCycleStateStore:
             raise RuntimeError("PostgreSQL connection failed") from error
         with self._connection.cursor() as cursor:
             cursor.execute(POSTGRES_SCHEMA)
+            cursor.execute(
+                "ALTER TABLE paper_cycle_runs ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
+            )
             cursor.execute(POSTGRES_INDEX)
         self._connection.commit()
 
@@ -242,10 +262,10 @@ class PostgresCycleStateStore:
             cursor.execute(
                 """
                 INSERT INTO paper_cycle_runs (
-                    run_id, started_at, status, interval, symbol_count
-                ) VALUES (%s, %s, 'running', %s, %s)
+                    run_id, portfolio_id, started_at, status, interval, symbol_count
+                ) VALUES (%s, %s, %s, 'running', %s, %s)
                 """,
-                (run_id, started_at, interval, symbol_count),
+                (run_id, self._portfolio_id, started_at, interval, symbol_count),
             )
         self._connection.commit()
         return run_id
@@ -301,9 +321,11 @@ class PostgresCycleStateStore:
                 """
                 SELECT consecutive_api_errors FROM paper_cycle_runs
                 WHERE status <> 'running'
+                  AND portfolio_id = %s
                 ORDER BY started_at DESC, run_id DESC
                 LIMIT 1
                 """
+                , (self._portfolio_id,)
             )
             row = cursor.fetchone()
         return int(row[0]) if row else 0
@@ -316,9 +338,11 @@ class PostgresCycleStateStore:
                        symbol_count, signal_count, fill_count, failed_count,
                        consecutive_api_errors, daily_return_rate, error_message
                 FROM paper_cycle_runs
+                WHERE portfolio_id = %s
                 ORDER BY started_at DESC, run_id DESC
                 LIMIT 1
                 """
+                , (self._portfolio_id,)
             )
             row = cursor.fetchone()
         return _run_from_row(row) if row else None
@@ -328,10 +352,17 @@ def open_cycle_state_store(
     *,
     postgres_parameters: Mapping[str, str | int] | None,
     sqlite_path: str,
+    portfolio_id: str = "legacy",
 ) -> CycleStateStore:
     if postgres_parameters:
-        return PostgresCycleStateStore(postgres_parameters)
-    return SqliteCycleStateStore(sqlite_path)
+        return PostgresCycleStateStore(postgres_parameters, portfolio_id=portfolio_id)
+    return SqliteCycleStateStore(sqlite_path, portfolio_id=portfolio_id)
+
+
+def _validate_portfolio_id(portfolio_id: str) -> str:
+    if portfolio_id not in {"legacy", "rule", "hermes", "comparison"}:
+        raise ValueError("invalid paper portfolio id")
+    return portfolio_id
 
 
 def _validate_start(started_at: datetime, interval: str, symbol_count: int) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from contextlib import ExitStack
@@ -11,6 +12,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
+from .advisor import create_hermes_trade_advisor
 from .automation import (
     create_daily_automation_from_env,
     create_intraday_paper_automation_from_env,
@@ -130,6 +132,10 @@ def build_parser() -> argparse.ArgumentParser:
     cycle.add_argument("--short-window", type=int)
     cycle.add_argument("--long-window", type=int)
     cycle.add_argument("--quantity", type=Decimal)
+    cycle.add_argument(
+        "--portfolio", choices=("legacy", "rule", "hermes"), default="legacy"
+    )
+    cycle.add_argument("--hermes-advisor", action="store_true")
 
     market_scan = subparsers.add_parser(
         "run-market-scan",
@@ -383,6 +389,8 @@ def _scan_ma(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
+    if args.hermes_advisor and args.portfolio != "hermes":
+        raise ValueError("Hermes advisor is only valid for the hermes portfolio")
     explicit_symbols = (
         tuple(symbol.upper() for symbol in args.symbols)
         if args.symbols
@@ -409,11 +417,13 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
         paper_ledger = open_paper_ledger(
             postgres_parameters=postgres_parameters,
             sqlite_path=settings.paper_db_path,
+            portfolio_id=args.portfolio,
         )
         stack.callback(paper_ledger.close)
         cycle_state = open_cycle_state_store(
             postgres_parameters=postgres_parameters,
             sqlite_path=settings.paper_db_path,
+            portfolio_id=args.portfolio,
         )
         stack.callback(cycle_state.close)
         performance = PortfolioPerformance(
@@ -468,6 +478,17 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 ledger=paper_ledger,
                 risk_manager=RiskManager(RiskLimits()),
                 initial_cash=settings.paper_initial_cash,
+                advisor=(
+                    create_hermes_trade_advisor(
+                        api_key=os.environ.get("HERMES_API_KEY", ""),
+                        base_url=os.environ.get(
+                            "HERMES_API_BASE_URL", "http://hermes-analysis:8642"
+                        ),
+                        audit=paper_ledger,
+                    )
+                    if args.hermes_advisor
+                    else None
+                ),
             ),
             calendar=MarketCalendarService(client),
             performance=performance,
@@ -490,10 +511,14 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             trend_entry_key=(
                 universe_result.run_id if universe_result is not None else None
             ),
+            signal_namespace=(
+                args.portfolio if args.portfolio in {"rule", "hermes"} else None
+            ),
         )
         cash_balance = paper_ledger.cash_balance(settings.paper_initial_cash)
     _emit(
         {
+            "portfolioId": args.portfolio,
             "runId": result.run_id,
             "startedAt": result.started_at,
             "finishedAt": result.finished_at,

@@ -122,8 +122,8 @@ class PostgresCycleStateStoreTest(unittest.TestCase):
 
         statements = connection.cursor_instance.executed
         self.assertIn("TIMESTAMPTZ", statements[0][0])
-        self.assertIn("VALUES (%s, %s", statements[2][0])
-        self.assertIn("WHERE run_id = %s", statements[3][0])
+        self.assertIn("VALUES (%s, %s", statements[3][0])
+        self.assertIn("WHERE run_id = %s", statements[4][0])
         self.assertEqual(connection.commits, 3)
         self.assertTrue(connection.closed)
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
+from typing import Protocol
 
 from .models import PaperFill, TradeSignal
 from .paper import PaperLedgerStore
@@ -16,6 +17,16 @@ class PaperExecutionResult:
     decision_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class TradeAdvice:
+    approved: bool
+    rationale: str
+
+
+class TradeAdvisor(Protocol):
+    def advise(self, signal: TradeSignal, context: RiskContext) -> TradeAdvice: ...
+
+
 class PaperTradingService:
     def __init__(
         self,
@@ -23,12 +34,14 @@ class PaperTradingService:
         ledger: PaperLedgerStore,
         risk_manager: RiskManager,
         initial_cash: Decimal = Decimal(1000000),
+        advisor: TradeAdvisor | None = None,
     ) -> None:
         if initial_cash <= 0:
             raise ValueError("paper initial cash must be positive")
         self._ledger = ledger
         self._risk_manager = risk_manager
         self._initial_cash = initial_cash
+        self._advisor = advisor
 
     def submit(
         self,
@@ -57,6 +70,15 @@ class PaperTradingService:
             seen_signal_ids=self._ledger.seen_signal_ids(),
             new_buys_allowed=new_buys_allowed,
         )
+        if self._advisor is not None:
+            try:
+                advice = self._advisor.advise(signal, context)
+                context = replace(
+                    context,
+                    advisor_status="approved" if advice.approved else "rejected",
+                )
+            except Exception:  # noqa: BLE001
+                context = replace(context, advisor_status="unavailable")
         decision = self._risk_manager.evaluate(signal, context)
         decision_id = self._ledger.record_risk_decision(
             signal,

@@ -11,11 +11,12 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 from .config import Settings
 from .paper import open_paper_ledger
@@ -71,6 +72,23 @@ def paper_cycle_notice(job: dict[str, Any]) -> PaperCycleNotice | None:
     if cycle.get("ok") is False:
         lines.append(f"cycle 실행 실패: {cycle.get('error', '원인 미상')}")
         severity = "critical"
+
+    portfolios = cycle.get("portfolios")
+    if isinstance(portfolios, dict):
+        for portfolio_id, portfolio_cycle in portfolios.items():
+            if not isinstance(portfolio_cycle, dict):
+                continue
+            nested = paper_cycle_notice(
+                {
+                    "exitCode": 0,
+                    "cycle": portfolio_cycle,
+                }
+            )
+            if nested is None:
+                continue
+            label = "규칙 기반" if portfolio_id == "rule" else "Hermes 개입"
+            lines.extend(f"[{label}] {line}" for line in nested.lines)
+            severity = _higher_severity(severity, nested.severity)
 
     summary = cycle.get("summary")
     summary = summary if isinstance(summary, dict) else {}
@@ -292,30 +310,96 @@ class PaperCycleProcess:
         self._timeout_seconds = timeout_seconds
 
     def run(self) -> dict[str, Any]:
+        starts_on = _comparison_starts_on()
+        if starts_on is not None and datetime.now(ZoneInfo("Asia/Seoul")).date() < starts_on:
+            return {
+                "exitCode": 0,
+                "cycle": {
+                    "comparison": True,
+                    "skipped": True,
+                    "reason": "comparison-not-started",
+                    "startsOn": starts_on.isoformat(),
+                    "interval": self._interval or "1d",
+                    "summary": {"symbols": 0, "signals": 0, "fills": 0, "failed": 0},
+                },
+            }
         environment = dict(os.environ)
         environment["TRADING_ENABLED"] = "false"
-        command = [sys.executable, "-m", "toss_trader", "run-paper-cycle"]
-        if self._interval is not None:
-            command.extend(("--interval", self._interval))
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=self._timeout_seconds,
-            env=environment,
-            check=False,
-        )
-        output = completed.stdout.strip()
-        error_output = completed.stderr.strip()
-        payload = _load_json(output) if output else _load_json(error_output)
-        if payload is None:
-            payload = {
-                "ok": False,
-                "error": (error_output or output or "paper cycle produced no output")[
-                    :4000
-                ],
-            }
-        return {"exitCode": completed.returncode, "cycle": payload}
+        portfolios: dict[str, Any] = {}
+        exit_code = 0
+        for portfolio_id in ("rule", "hermes"):
+            command = [
+                sys.executable,
+                "-m",
+                "toss_trader",
+                "run-paper-cycle",
+                "--portfolio",
+                portfolio_id,
+            ]
+            if portfolio_id == "hermes":
+                command.append("--hermes-advisor")
+            if self._interval is not None:
+                command.extend(("--interval", self._interval))
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=self._timeout_seconds,
+                env=environment,
+                check=False,
+            )
+            output = completed.stdout.strip()
+            error_output = completed.stderr.strip()
+            payload = _load_json(output) if output else _load_json(error_output)
+            if payload is None:
+                payload = {
+                    "ok": False,
+                    "error": (
+                        error_output or output or "paper cycle produced no output"
+                    )[:4000],
+                }
+            portfolios[portfolio_id] = payload
+            exit_code = max(exit_code, completed.returncode)
+        return {
+            "exitCode": exit_code,
+            "cycle": {
+                "comparison": True,
+                "interval": self._interval or "1d",
+                "portfolios": portfolios,
+                "summary": {
+                    "symbols": sum(
+                        int(value.get("summary", {}).get("symbols", 0))
+                        for value in portfolios.values()
+                        if isinstance(value, dict)
+                    ),
+                    "signals": sum(
+                        int(value.get("summary", {}).get("signals", 0))
+                        for value in portfolios.values()
+                        if isinstance(value, dict)
+                    ),
+                    "fills": sum(
+                        int(value.get("summary", {}).get("fills", 0))
+                        for value in portfolios.values()
+                        if isinstance(value, dict)
+                    ),
+                    "failed": sum(
+                        int(value.get("summary", {}).get("failed", 0))
+                        for value in portfolios.values()
+                        if isinstance(value, dict)
+                    ),
+                },
+            },
+        }
+
+
+def _comparison_starts_on() -> date | None:
+    raw = os.environ.get("PAPER_COMPARISON_START_DATE", "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as error:
+        raise ValueError("PAPER_COMPARISON_START_DATE must be YYYY-MM-DD") from error
 
 
 class IntradayPaperAutomation:

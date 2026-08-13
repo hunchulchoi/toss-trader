@@ -165,7 +165,7 @@ class PostgresPaperLedgerTest(unittest.TestCase):
         )
         self.assertIn("VALUES (%s, %s", insert)
         assert isinstance(params, tuple)
-        self.assertEqual(params[1:4], ("pg-signal-1", "005930", "BUY"))
+        self.assertEqual(params[1:5], ("legacy", "pg-signal-1", "005930", "BUY"))
         self.assertEqual(received["password"], "secret@:/value")
         self.assertEqual(connection.commits, 2)
         self.assertTrue(connection.closed)

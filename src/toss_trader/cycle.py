@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -88,6 +88,7 @@ class PaperCycleRunner:
         new_buys_allowed: bool = True,
         trend_entry_symbols: tuple[str, ...] = (),
         trend_entry_key: str | None = None,
+        signal_namespace: str | None = None,
     ) -> PaperCycleResult:
         if not symbols:
             raise ValueError("watchlist must not be empty")
@@ -110,6 +111,7 @@ class PaperCycleRunner:
                 new_buys_allowed=new_buys_allowed,
                 trend_entry_symbols=frozenset(trend_entry_symbols),
                 trend_entry_key=trend_entry_key,
+                signal_namespace=signal_namespace,
             )
         except Exception as error:
             self._state.finish_run(
@@ -152,6 +154,7 @@ class PaperCycleRunner:
         new_buys_allowed: bool,
         trend_entry_symbols: frozenset[str],
         trend_entry_key: str | None,
+        signal_namespace: str | None,
     ) -> PaperCycleResult:
         size = len(symbols)
         collections: list[CollectionResult | None] = [None] * size
@@ -195,6 +198,11 @@ class PaperCycleRunner:
                     allow_trend_entry=symbol in trend_entry_symbols,
                     entry_key=trend_entry_key,
                 )
+                if signals[index] is not None and signal_namespace is not None:
+                    signals[index] = replace(
+                        signals[index],
+                        signal_id=f"{signal_namespace}:{signals[index].signal_id}",
+                    )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
 
