@@ -40,6 +40,22 @@ class RiskManagerTest(unittest.TestCase):
         self.assertTrue(decision.approved)
         self.assertEqual(decision.violations, ())
 
+    def test_hermes_rejection_includes_rationale(self) -> None:
+        decision = self.manager.evaluate(
+            signal(),
+            RiskContext(
+                now=NOW,
+                advisor_status="rejected",
+                advisor_rationale="단기 거래량이 평균보다 낮아 신호 강도가 약함",
+            ),
+        )
+
+        self.assertFalse(decision.approved)
+        self.assertEqual(
+            decision.violations,
+            ("Hermes 거부: 단기 거래량이 평균보다 낮아 신호 강도가 약함",),
+        )
+
     def test_rejects_every_configured_safety_limit(self) -> None:
         decision = self.manager.evaluate(
             signal(quantity=Decimal(5)),

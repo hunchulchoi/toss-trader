@@ -112,6 +112,8 @@ class MonitoringAssetsTest(unittest.TestCase):
             if panel["title"] == "Recent RiskManager Decisions"
         )
         self.assertIn("market_symbols", risk_panel["targets"][0]["rawSql"])
+        self.assertIn("jsonb_array_elements_text", risk_panel["targets"][0]["rawSql"])
+        self.assertIn('AS "판단 근거"', risk_panel["targets"][0]["rawSql"])
         fills_panel = next(
             panel
             for panel in dashboard["panels"]

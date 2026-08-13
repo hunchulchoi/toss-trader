@@ -33,6 +33,7 @@ class RiskContext:
     seen_signal_ids: frozenset[str] = field(default_factory=frozenset)
     new_buys_allowed: bool = True
     advisor_status: str | None = None
+    advisor_rationale: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,9 +72,11 @@ class RiskManager:
         if signal.side is Side.BUY and not context.new_buys_allowed:
             violations.append("universe-refresh-failed")
         if context.advisor_status == "rejected":
-            violations.append("hermes-rejected")
+            violations.append(
+                f"Hermes 거부: {context.advisor_rationale or '구체적 근거 없음'}"
+            )
         elif context.advisor_status == "unavailable":
-            violations.append("hermes-unavailable")
+            violations.append("Hermes 분석 실패: 응답을 받지 못해 체결 차단")
         if signal.notional > self._limits.max_order_notional:
             violations.append("max-order-notional")
         if (

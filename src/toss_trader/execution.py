@@ -79,6 +79,7 @@ class PaperTradingService:
                 context = replace(
                     context,
                     advisor_status="approved" if advice.approved else "rejected",
+                    advisor_rationale=advice.rationale,
                 )
             except Exception:  # noqa: BLE001
                 context = replace(context, advisor_status="unavailable")
