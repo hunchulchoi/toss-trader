@@ -16,9 +16,85 @@ from toss_trader.automation import (
     MarketScanAutomation,
     PaperCycleProcess,
     PaperPortfolioProcess,
+    WorkflowTaskService,
     automation_response,
     paper_cycle_notice,
 )
+
+
+class WorkflowTaskServiceTest(unittest.TestCase):
+    def test_completes_direct_market_hermes_response_and_audits_tokens(self) -> None:
+        audits: list[AutomationRunLog] = []
+
+        class NeverCalledAnalyzer:
+            def analyze(self, _: dict[str, object]) -> HermesAnalysis:
+                raise AssertionError("Python must not call Hermes")
+
+        class StubReporter:
+            def report(self, _: dict[str, object]) -> dict[str, object]:
+                return {"accepted": True}
+
+        service = WorkflowTaskService(
+            paper=None,  # type: ignore[arg-type]
+            market_scan=None,  # type: ignore[arg-type]
+            market_analyzer=NeverCalledAnalyzer(),  # type: ignore[arg-type]
+            daily_analyzer=NeverCalledAnalyzer(),  # type: ignore[arg-type]
+            market_reporter=StubReporter(),  # type: ignore[arg-type]
+            paper_reporter=StubReporter(),  # type: ignore[arg-type]
+            daily_reporter=StubReporter(),  # type: ignore[arg-type]
+            failure_reporter=StubReporter(),  # type: ignore[arg-type]
+            audit=lambda run: audits.append(run) or "audit-1",
+            clock=lambda: datetime(2026, 8, 13, 0, 0, tzinfo=UTC),
+        )
+        scan = {
+            "exitCode": 0,
+            "scan": {"markets": [], "candidates": [], "errors": []},
+        }
+
+        result = service.run(
+            "/workflow/hermes-market-result",
+            {
+                "scan": scan,
+                "hermesResponse": {
+                    "choices": [{"message": {"content": "시장 의견"}}],
+                    "usage": {
+                        "prompt_tokens": 100,
+                        "completion_tokens": 20,
+                        "total_tokens": 120,
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(result["opinion"], "시장 의견")
+        self.assertEqual(result["hermesUsage"]["totalTokens"], 120)
+        self.assertEqual(audits[0].run_type, "market_scan")
+        self.assertEqual(audits[0].total_tokens, 120)
+
+    def test_rejects_direct_hermes_response_without_content(self) -> None:
+        class Stub:
+            def report(self, _: dict[str, object]) -> dict[str, object]:
+                return {}
+
+        service = WorkflowTaskService(
+            paper=None,  # type: ignore[arg-type]
+            market_scan=None,  # type: ignore[arg-type]
+            market_analyzer=None,  # type: ignore[arg-type]
+            daily_analyzer=None,  # type: ignore[arg-type]
+            market_reporter=Stub(),  # type: ignore[arg-type]
+            paper_reporter=Stub(),  # type: ignore[arg-type]
+            daily_reporter=Stub(),  # type: ignore[arg-type]
+            failure_reporter=Stub(),  # type: ignore[arg-type]
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "missing content"):
+            service.run(
+                "/workflow/hermes-market-result",
+                {
+                    "scan": {"exitCode": 0, "scan": {}},
+                    "hermesResponse": {"choices": []},
+                },
+            )
 
 
 class DailyAutomationTest(unittest.TestCase):

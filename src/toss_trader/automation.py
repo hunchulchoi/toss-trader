@@ -727,26 +727,7 @@ class HermesAnalyzer:
                 payload = json.loads(response.read())
         except (OSError, urllib.error.HTTPError, json.JSONDecodeError) as error:
             raise RuntimeError("Hermes API request failed") from error
-        try:
-            content = payload["choices"][0]["message"]["content"].strip()
-        except (AttributeError, IndexError, KeyError, TypeError) as error:
-            raise RuntimeError("Hermes API response is missing content") from error
-        if not content:
-            raise RuntimeError("Hermes API returned empty content")
-        usage = payload.get("usage")
-        usage = usage if isinstance(usage, dict) else {}
-        prompt_tokens = _token_count(usage.get("prompt_tokens"))
-        completion_tokens = _token_count(usage.get("completion_tokens"))
-        total_tokens = max(
-            _token_count(usage.get("total_tokens")),
-            prompt_tokens + completion_tokens,
-        )
-        return HermesAnalysis(
-            content=content[:4000],
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-        )
+        return _hermes_analysis_from_response(payload)
 
 
 class AlertmanagerReporter:
@@ -936,6 +917,10 @@ class WorkflowTaskService:
             return self._analyze_market(payload)
         if path == "/workflow/hermes-daily":
             return self._analyze_daily(payload)
+        if path == "/workflow/hermes-market-result":
+            return self._complete_market(payload)
+        if path == "/workflow/hermes-daily-result":
+            return self._complete_daily(payload)
         if path == "/workflow/report-market":
             return self._market_reporter.report(_required_result(payload))
         if path == "/workflow/report-paper":
@@ -979,6 +964,45 @@ class WorkflowTaskService:
         started_at = self._clock()
         try:
             usage = self._daily_analyzer.analyze(comparison)
+        except Exception as error:
+            self._audit_failure("daily", started_at, error)
+            raise
+        result = {
+            "ok": True,
+            "cycle": comparison,
+            "analysis": usage.content,
+            "hermesUsage": _hermes_usage(usage),
+            "finishedAt": self._clock().isoformat(),
+        }
+        self._audit_usage("daily", started_at, usage, result)
+        return result
+
+    def _complete_market(self, payload: dict[str, Any]) -> dict[str, Any]:
+        scan = payload.get("scan")
+        if not isinstance(scan, dict) or not isinstance(scan.get("scan"), dict):
+            raise TypeError("market workflow is missing scan JSON")
+        started_at = self._clock()
+        try:
+            usage = _hermes_analysis_from_response(payload.get("hermesResponse"))
+        except Exception as error:
+            self._audit_failure("market_scan", started_at, error)
+            raise
+        result = {
+            "ok": True,
+            "scan": scan,
+            "opinion": usage.content,
+            "analysis": format_market_scan_report(scan, opinion=usage.content),
+            "hermesUsage": _hermes_usage(usage),
+            "finishedAt": self._clock().isoformat(),
+        }
+        self._audit_usage("market_scan", started_at, usage, result)
+        return result
+
+    def _complete_daily(self, payload: dict[str, Any]) -> dict[str, Any]:
+        comparison = _comparison_payload(payload)
+        started_at = self._clock()
+        try:
+            usage = _hermes_analysis_from_response(payload.get("hermesResponse"))
         except Exception as error:
             self._audit_failure("daily", started_at, error)
             raise
@@ -1268,6 +1292,31 @@ def _token_count(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return 0
     return value
+
+
+def _hermes_analysis_from_response(payload: object) -> HermesAnalysis:
+    if not isinstance(payload, dict):
+        raise TypeError("Hermes API response must be JSON")
+    try:
+        content = payload["choices"][0]["message"]["content"].strip()
+    except (AttributeError, IndexError, KeyError, TypeError) as error:
+        raise RuntimeError("Hermes API response is missing content") from error
+    if not content:
+        raise RuntimeError("Hermes API returned empty content")
+    usage = payload.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+    prompt_tokens = _token_count(usage.get("prompt_tokens"))
+    completion_tokens = _token_count(usage.get("completion_tokens"))
+    total_tokens = max(
+        _token_count(usage.get("total_tokens")),
+        prompt_tokens + completion_tokens,
+    )
+    return HermesAnalysis(
+        content=content[:4000],
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+    )
 
 
 def _daily_run_details(cycle: dict[str, Any]) -> dict[str, object]:

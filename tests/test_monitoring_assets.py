@@ -217,8 +217,10 @@ class MonitoringAssetsTest(unittest.TestCase):
         encoded = json.dumps(workflow, ensure_ascii=False)
         self.assertIn("/workflow/paper-rule-1d", encoded)
         self.assertIn("/workflow/paper-hermes-1d", encoded)
-        self.assertIn("/workflow/hermes-daily", encoded)
+        self.assertIn("/workflow/hermes-daily-result", encoded)
         self.assertIn("/workflow/report-daily", encoded)
+        self.assertIn("http://hermes-analysis:8642/v1/chat/completions", encoded)
+        self.assertIn("toss-trader-hermes-auth", encoded)
         for branch in (
             "Rule 일봉 정상?",
             "Rule 일봉 체결 있음?",
@@ -269,8 +271,11 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertEqual(workflow["settings"]["timezone"], "Asia/Seoul")
         self.assertIn("30 8 * * 1-5", encoded)
         self.assertIn("/workflow/market-scan", encoded)
-        self.assertIn("/workflow/hermes-market", encoded)
+        self.assertIn("/workflow/hermes-market-result", encoded)
         self.assertIn("/workflow/report-market", encoded)
+        self.assertIn("http://hermes-analysis:8642/v1/chat/completions", encoded)
+        self.assertIn("toss-trader-hermes-auth", encoded)
+        self.assertNotIn("HERMES_API_KEY", encoded)
         for branch in (
             "시장 스캔 정상?",
             "발굴 후보 있음?",
