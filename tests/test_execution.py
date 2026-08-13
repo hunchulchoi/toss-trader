@@ -40,7 +40,7 @@ class PaperTradingServiceTest(unittest.TestCase):
         decisions = self.ledger.recent_risk_decisions()
         self.assertEqual(len(decisions), 1)
         self.assertTrue(decisions[0]["approved"])
-        self.assertEqual(decisions[0]["availableCash"], "1000000")
+        self.assertEqual(decisions[0]["availableCash"], "999990")
 
     def test_rejected_signal_is_not_recorded(self) -> None:
         result = self.service.submit(
@@ -114,13 +114,35 @@ class PaperTradingServiceTest(unittest.TestCase):
         self.assertTrue(first.decision.approved)
         self.assertFalse(second.decision.approved)
         self.assertIn("insufficient-paper-cash", second.decision.violations)
-        self.assertEqual(self.ledger.cash_balance(Decimal(100000)), Decimal(29000))
+        self.assertEqual(self.ledger.cash_balance(Decimal(100000)), Decimal(28990))
         decisions = self.ledger.recent_risk_decisions()
         self.assertEqual(len(decisions), 2)
         self.assertFalse(decisions[0]["approved"])
         self.assertEqual(
             decisions[0]["violations"], ["insufficient-paper-cash"]
         )
+
+    def test_buy_fee_is_included_in_cash_preflight(self) -> None:
+        service = PaperTradingService(
+            ledger=self.ledger,
+            risk_manager=RiskManager(RiskLimits()),
+            initial_cash=Decimal(71000),
+        )
+
+        result = service.submit(
+            TradeSignal(
+                signal_id="fee-exceeds-cash",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(71000),
+                quantity=Decimal(1),
+                reason="fee-aware risk",
+            ),
+            now=self.now,
+        )
+
+        self.assertFalse(result.decision.approved)
+        self.assertIn("insufficient-paper-cash", result.decision.violations)
 
     def test_hard_preflight_rejection_skips_advisor_and_remote_risk(self) -> None:
         advisor_calls: list[str] = []

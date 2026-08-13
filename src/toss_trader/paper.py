@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
@@ -17,12 +18,64 @@ class DuplicatePaperOrder(RuntimeError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class TradeCosts:
+    commission: Decimal
+    tax: Decimal
+
+    @property
+    def total(self) -> Decimal:
+        return self.commission + self.tax
+
+
+TOSS_KRX_COMMISSION_RATE = Decimal("0.00015")
+TOSS_US_COMMISSION_RATE = Decimal("0.001")
+KOREAN_STOCK_SELL_TAX_RATE_2026 = Decimal("0.002")
+
+
+def toss_trade_costs(signal: TradeSignal) -> TradeCosts:
+    """Return standard Toss Open API costs for one simulated order.
+
+    Six-digit numeric symbols are treated as KRX-listed common stocks. Other
+    symbols use the US stock schedule. Paper fills currently have no venue or
+    security-type field, so NXT and tax-exempt Korean ETFs are out of scope.
+    """
+    if len(signal.symbol) == 6 and signal.symbol.isdigit():
+        return TradeCosts(
+            commission=_round_down(
+                signal.notional * TOSS_KRX_COMMISSION_RATE, Decimal("1")
+            ),
+            tax=(
+                _round_down(
+                    signal.notional * KOREAN_STOCK_SELL_TAX_RATE_2026,
+                    Decimal("1"),
+                )
+                if signal.side is Side.SELL
+                else Decimal(0)
+            ),
+        )
+    commission = (
+        Decimal(0)
+        if signal.notional <= Decimal(10)
+        else _round_down(
+            signal.notional * TOSS_US_COMMISSION_RATE, Decimal("0.01")
+        )
+    )
+    return TradeCosts(commission=commission, tax=Decimal(0))
+
+
+def _round_down(value: Decimal, unit: Decimal) -> Decimal:
+    return value.quantize(unit, rounding=ROUND_DOWN)
+
+
 class PaperLedgerStore(Protocol):
     def close(self) -> None: ...
 
     def execute(
         self, signal: TradeSignal, *, executed_at: datetime | None = None
     ) -> PaperFill: ...
+
+    def estimate_costs(self, signal: TradeSignal) -> TradeCosts: ...
 
     def record_risk_decision(
         self,
@@ -96,6 +149,8 @@ class PaperLedger:
                 quantity TEXT NOT NULL,
                 price TEXT NOT NULL,
                 notional TEXT NOT NULL,
+                commission TEXT NOT NULL DEFAULT '0',
+                tax TEXT NOT NULL DEFAULT '0',
                 reason TEXT NOT NULL,
                 executed_at TEXT NOT NULL
             )
@@ -132,6 +187,12 @@ class PaperLedger:
             "paper_fills",
             "portfolio_id",
             "TEXT NOT NULL DEFAULT 'legacy'",
+        )
+        _sqlite_add_column(
+            self._connection, "paper_fills", "commission", "TEXT NOT NULL DEFAULT '0'"
+        )
+        _sqlite_add_column(
+            self._connection, "paper_fills", "tax", "TEXT NOT NULL DEFAULT '0'"
         )
         _sqlite_add_column(
             self._connection,
@@ -204,6 +265,7 @@ class PaperLedger:
         self, signal: TradeSignal, *, executed_at: datetime | None = None
     ) -> PaperFill:
         when = executed_at or datetime.now(UTC)
+        costs = self.estimate_costs(signal)
         fill = PaperFill(
             fill_id=str(uuid4()),
             signal_id=signal.signal_id,
@@ -212,6 +274,8 @@ class PaperLedger:
             quantity=signal.quantity,
             price=signal.reference_price,
             notional=signal.notional,
+            commission=costs.commission,
+            tax=costs.tax,
             reason=signal.reason,
             executed_at=when,
         )
@@ -221,8 +285,8 @@ class PaperLedger:
                     """
                     INSERT INTO paper_fills (
                         fill_id, portfolio_id, signal_id, symbol, side, quantity, price,
-                        notional, reason, executed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        notional, commission, tax, reason, executed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         fill.fill_id,
@@ -233,6 +297,8 @@ class PaperLedger:
                         str(fill.quantity),
                         str(fill.price),
                         str(fill.notional),
+                        str(fill.commission),
+                        str(fill.tax),
                         fill.reason,
                         fill.executed_at.isoformat(),
                     ),
@@ -242,6 +308,9 @@ class PaperLedger:
                 f"paper fill already exists for signal_id={signal.signal_id}"
             ) from error
         return fill
+
+    def estimate_costs(self, signal: TradeSignal) -> TradeCosts:
+        return toss_trade_costs(signal)
 
     def record_risk_decision(
         self,
@@ -443,13 +512,15 @@ class PaperLedger:
 
     def cash_balance(self, initial_cash: Decimal) -> Decimal:
         rows = self._connection.execute(
-            "SELECT side, notional FROM paper_fills WHERE portfolio_id = ?",
+            "SELECT side, notional, commission, tax FROM paper_fills WHERE portfolio_id = ?",
             (self._portfolio_id,),
         ).fetchall()
         cash_change = sum(
             (
-                -Decimal(notional) if side == Side.BUY.value else Decimal(notional)
-                for side, notional in rows
+                -Decimal(notional) - Decimal(commission) - Decimal(tax)
+                if side == Side.BUY.value
+                else Decimal(notional) - Decimal(commission) - Decimal(tax)
+                for side, notional, commission, tax in rows
             ),
             start=Decimal(0),
         )
@@ -473,6 +544,8 @@ CREATE TABLE IF NOT EXISTS paper_fills (
     quantity NUMERIC NOT NULL CHECK (quantity > 0),
     price NUMERIC NOT NULL CHECK (price > 0),
     notional NUMERIC NOT NULL CHECK (notional > 0),
+    commission NUMERIC NOT NULL DEFAULT 0 CHECK (commission >= 0),
+    tax NUMERIC NOT NULL DEFAULT 0 CHECK (tax >= 0),
     reason TEXT NOT NULL,
     executed_at TIMESTAMPTZ NOT NULL
 )
@@ -587,6 +660,12 @@ class PostgresPaperLedger:
                     "ALTER TABLE paper_fills ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
                 )
                 cursor.execute(
+                    "ALTER TABLE paper_fills ADD COLUMN IF NOT EXISTS commission NUMERIC NOT NULL DEFAULT 0"
+                )
+                cursor.execute(
+                    "ALTER TABLE paper_fills ADD COLUMN IF NOT EXISTS tax NUMERIC NOT NULL DEFAULT 0"
+                )
+                cursor.execute(
                     "ALTER TABLE paper_risk_decisions ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
                 )
                 cursor.execute(POSTGRES_AUTOMATION_RUN_SCHEMA)
@@ -619,6 +698,7 @@ class PostgresPaperLedger:
         self, signal: TradeSignal, *, executed_at: datetime | None = None
     ) -> PaperFill:
         when = executed_at or datetime.now(UTC)
+        costs = self.estimate_costs(signal)
         fill = PaperFill(
             fill_id=str(uuid4()),
             signal_id=signal.signal_id,
@@ -627,6 +707,8 @@ class PostgresPaperLedger:
             quantity=signal.quantity,
             price=signal.reference_price,
             notional=signal.notional,
+            commission=costs.commission,
+            tax=costs.tax,
             reason=signal.reason,
             executed_at=when,
         )
@@ -636,8 +718,8 @@ class PostgresPaperLedger:
                     """
                     INSERT INTO paper_fills (
                         fill_id, portfolio_id, signal_id, symbol, side, quantity, price,
-                        notional, reason, executed_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        notional, commission, tax, reason, executed_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         fill.fill_id,
@@ -648,6 +730,8 @@ class PostgresPaperLedger:
                         fill.quantity,
                         fill.price,
                         fill.notional,
+                        fill.commission,
+                        fill.tax,
                         fill.reason,
                         fill.executed_at,
                     ),
@@ -661,6 +745,9 @@ class PostgresPaperLedger:
                 ) from error
             raise
         return fill
+
+    def estimate_costs(self, signal: TradeSignal) -> TradeCosts:
+        return toss_trade_costs(signal)
 
     def record_risk_decision(
         self,
@@ -882,7 +969,9 @@ class PostgresPaperLedger:
             cursor.execute(
                 """
                 SELECT COALESCE(SUM(
-                    CASE WHEN side = 'BUY' THEN -notional ELSE notional END
+                    CASE WHEN side = 'BUY'
+                         THEN -notional - commission - tax
+                         ELSE notional - commission - tax END
                 ), 0)
                 FROM paper_fills
                 WHERE portfolio_id = %s

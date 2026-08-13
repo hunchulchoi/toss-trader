@@ -67,7 +67,7 @@ class SqliteMetricsStoreTest(unittest.TestCase):
         self.assertEqual(snapshot.run_counts["partial_failure"], 1)
         self.assertEqual(snapshot.paper_fill_count, 1)
         self.assertEqual(snapshot.position_quantities, {"005930": Decimal("1.5")})
-        self.assertEqual(snapshot.paper_cash_change, Decimal(-105000))
+        self.assertEqual(snapshot.paper_cash_change, Decimal("-105015.0"))
 
     def test_renders_prometheus_exposition(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -94,8 +94,8 @@ class SqliteMetricsStoreTest(unittest.TestCase):
             'toss_trader_paper_position_quantity{symbol="005930"} 1.5', output
         )
         self.assertIn("toss_trader_paper_initial_cash_krw 1000000", output)
-        self.assertIn("toss_trader_paper_available_cash_krw 895000", output)
-        self.assertIn("toss_trader_paper_deployed_cash_krw 105000", output)
+        self.assertIn("toss_trader_paper_available_cash_krw 894985.0", output)
+        self.assertIn("toss_trader_paper_deployed_cash_krw 105015.0", output)
 
 
 class FakeMetricsCursor:
@@ -138,8 +138,11 @@ class FakeMetricsCursor:
             return [("succeeded", 1)]
         if "GROUP BY symbol" in self.last_query:
             return [("005930", Decimal(1))]
-        if "SELECT side, notional FROM paper_fills" in self.last_query:
-            return [("BUY", Decimal(71000))]
+        if (
+            "SELECT side, notional, commission, tax FROM paper_fills"
+            in self.last_query
+        ):
+            return [("BUY", Decimal(71000), Decimal(10), Decimal(0))]
         return []
 
 
@@ -185,7 +188,7 @@ class PostgresMetricsStoreTest(unittest.TestCase):
         self.assertEqual(received["options"], "-c default_transaction_read_only=on")
         self.assertEqual(received["connect_timeout"], 5)
         self.assertEqual(snapshot.paper_fill_count, 1)
-        self.assertEqual(snapshot.paper_cash_change, Decimal(-71000))
+        self.assertEqual(snapshot.paper_cash_change, Decimal(-71010))
         self.assertEqual(connection.rollbacks, 1)
         self.assertTrue(connection.closed)
 

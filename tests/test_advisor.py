@@ -84,7 +84,7 @@ class PortfolioIsolationTest(unittest.TestCase):
             hermes = PaperLedger(path, portfolio_id="hermes")
             rule.execute(self._signal("rule:one"))
 
-            self.assertEqual(rule.cash_balance(Decimal(1000000)), Decimal(930000))
+            self.assertEqual(rule.cash_balance(Decimal(1000000)), Decimal(929990))
             self.assertEqual(hermes.cash_balance(Decimal(1000000)), Decimal(1000000))
             self.assertEqual(rule.position_quantity("005930"), Decimal(1))
             self.assertEqual(hermes.position_quantity("005930"), Decimal(0))

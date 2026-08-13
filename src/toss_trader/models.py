@@ -80,5 +80,11 @@ class PaperFill:
     quantity: Decimal
     price: Decimal
     notional: Decimal
+    commission: Decimal
+    tax: Decimal
     reason: str
     executed_at: datetime
+
+    @property
+    def total_cost(self) -> Decimal:
+        return self.commission + self.tax

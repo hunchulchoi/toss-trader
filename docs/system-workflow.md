@@ -541,6 +541,8 @@ erDiagram
         numeric quantity
         numeric price
         numeric notional
+        numeric commission
+        numeric tax
         text reason
         timestamptz executed_at
     }

@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 
-from .models import PaperFill, TradeSignal
+from .models import PaperFill, Side, TradeSignal
 from .paper import PaperLedgerStore
 from .risk import RiskContext, RiskDecision, RiskLimits, RiskManager
 
@@ -58,6 +58,8 @@ class PaperTradingService:
         consecutive_api_errors: int = 0,
         new_buys_allowed: bool = True,
     ) -> PaperExecutionResult:
+        costs = self._ledger.estimate_costs(signal)
+        cash = self._ledger.cash_balance(self._initial_cash)
         context = RiskContext(
             now=now,
             market_close_at=market_close_at,
@@ -66,7 +68,9 @@ class PaperTradingService:
                 signal.symbol, mark_price=signal.reference_price
             ),
             position_quantity=self._ledger.position_quantity(signal.symbol),
-            available_cash=self._ledger.cash_balance(self._initial_cash),
+            available_cash=(
+                cash - costs.total if signal.side is Side.BUY else cash
+            ),
             daily_buy_count=self._ledger.daily_buy_count(now.date()),
             open_position_count=len(self._ledger.position_quantities()),
             daily_return_rate=daily_return_rate,

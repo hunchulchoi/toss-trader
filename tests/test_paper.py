@@ -28,10 +28,13 @@ class PaperLedgerTest(unittest.TestCase):
         fill = self.ledger.execute(trade_signal, executed_at=executed_at)
 
         self.assertEqual(fill.notional, Decimal(142000))
+        self.assertEqual(fill.commission, Decimal(21))
+        self.assertEqual(fill.tax, Decimal(0))
+        self.assertEqual(fill.total_cost, Decimal(21))
         self.assertEqual(self.ledger.daily_buy_count(executed_at.date()), 1)
         self.assertEqual(self.ledger.position_notional("005930"), Decimal(142000))
         self.assertEqual(
-            self.ledger.cash_balance(Decimal(1000000)), Decimal(858000)
+            self.ledger.cash_balance(Decimal(1000000)), Decimal(857979)
         )
         with self.assertRaises(DuplicatePaperOrder):
             self.ledger.execute(trade_signal, executed_at=executed_at)
@@ -66,7 +69,38 @@ class PaperLedgerTest(unittest.TestCase):
             Decimal(420),
         )
         self.assertEqual(self.ledger.position_quantity("AAPL"), Decimal(2))
-        self.assertEqual(self.ledger.cash_balance(Decimal(1000)), Decimal(610))
+        self.assertEqual(self.ledger.cash_balance(Decimal(1000)), Decimal("609.19"))
+
+    def test_domestic_sell_charges_2026_transaction_tax(self) -> None:
+        fill = self.ledger.execute(
+            TradeSignal(
+                signal_id="kr-sell-1",
+                symbol="005930",
+                side=Side.SELL,
+                reference_price=Decimal(71000),
+                quantity=Decimal(2),
+                reason="cost test",
+            ),
+            executed_at=datetime(2026, 8, 13, 9, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(fill.commission, Decimal(21))
+        self.assertEqual(fill.tax, Decimal(284))
+
+    def test_us_order_up_to_ten_dollars_has_no_commission(self) -> None:
+        fill = self.ledger.execute(
+            TradeSignal(
+                signal_id="us-small-buy",
+                symbol="AAPL",
+                side=Side.BUY,
+                reference_price=Decimal(10),
+                quantity=Decimal(1),
+                reason="fee waiver test",
+            )
+        )
+
+        self.assertEqual(fill.commission, Decimal(0))
+        self.assertEqual(fill.tax, Decimal(0))
 
     def test_records_and_queries_automation_run_tokens(self) -> None:
         started_at = datetime(2026, 8, 12, 8, 30, tzinfo=UTC)
@@ -157,6 +191,8 @@ class PostgresPaperLedgerTest(unittest.TestCase):
         ledger.close()
 
         self.assertEqual(fill.notional, Decimal(71000))
+        self.assertEqual(fill.commission, Decimal(10))
+        self.assertEqual(fill.tax, Decimal(0))
         self.assertIn("TIMESTAMPTZ", connection.cursor_instance.executed[0][0])
         insert, params = next(
             (query, params)

@@ -70,7 +70,7 @@ class SqliteMetricsStore:
                 "SELECT symbol, side, quantity FROM paper_fills ORDER BY symbol"
             ).fetchall()
             cash_rows = self._connection.execute(
-                "SELECT side, notional FROM paper_fills"
+                "SELECT side, notional, commission, tax FROM paper_fills"
             ).fetchall()
         except sqlite3.Error as error:
             raise RuntimeError("SQLite metrics query failed") from error
@@ -144,7 +144,9 @@ class PostgresMetricsStore:
                     """
                 )
                 position_rows = cursor.fetchall()
-                cursor.execute("SELECT side, notional FROM paper_fills")
+                cursor.execute(
+                    "SELECT side, notional, commission, tax FROM paper_fills"
+                )
                 cash_rows = cursor.fetchall()
         except self._database_error as error:
             self._connection.rollback()
@@ -370,12 +372,13 @@ def _sqlite_positions(rows: Sequence[Sequence[object]]) -> dict[str, Decimal]:
 
 def _paper_cash_change(rows: Sequence[Sequence[object]]) -> Decimal:
     change = Decimal(0)
-    for side, notional in rows:
+    for side, notional, commission, tax in rows:
         value = Decimal(str(notional))
+        costs = Decimal(str(commission)) + Decimal(str(tax))
         if side == "BUY":
-            change -= value
+            change -= value + costs
         elif side == "SELL":
-            change += value
+            change += value - costs
         else:
             raise ValueError(f"unsupported paper fill side: {side}")
     return change
