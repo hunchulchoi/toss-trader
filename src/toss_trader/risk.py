@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -144,3 +148,132 @@ class RiskManager:
         if context.consecutive_api_errors >= self._limits.max_consecutive_api_errors:
             violations.append("api-error-kill-switch")
         return RiskDecision(approved=not violations, violations=tuple(violations))
+
+
+class N8nRiskManager:
+    def __init__(
+        self, *, webhook_url: str, token: str, timeout_seconds: int = 30
+    ) -> None:
+        if not webhook_url.startswith(("http://", "https://")):
+            raise ValueError("RiskManager webhook URL must use HTTP(S)")
+        if len(token) < 16:
+            raise ValueError("RiskManager webhook token is missing or too short")
+        self._webhook_url = webhook_url
+        self._token = token
+        self._timeout_seconds = timeout_seconds
+
+    def evaluate(self, signal: TradeSignal, context: RiskContext) -> RiskDecision:
+        return self._call(
+            {
+                "kind": "trade",
+                "signal": _trade_signal_payload(signal),
+                "context": _risk_context_payload(context),
+            }
+        )
+
+    def evaluate_universe_candidate(
+        self, candidate: UniverseCandidateRisk, context: UniverseRiskContext
+    ) -> RiskDecision:
+        return self._call(
+            {
+                "kind": "universe",
+                "candidate": {
+                    "symbol": candidate.symbol,
+                    "referencePrice": str(candidate.reference_price),
+                    "securityType": candidate.security_type,
+                    "isCommonShare": candidate.is_common_share,
+                    "status": candidate.status,
+                    "tradingSuspended": candidate.trading_suspended,
+                },
+                "context": {
+                    "quantity": str(context.quantity),
+                    "availableCash": str(context.available_cash),
+                    "dailyReturnRate": str(context.daily_return_rate),
+                    "consecutiveApiErrors": context.consecutive_api_errors,
+                },
+            }
+        )
+
+    def _call(self, payload: dict[str, object]) -> RiskDecision:
+        payload["parent"] = {
+            "workflowId": os.environ.get("N8N_PARENT_WORKFLOW_ID", "unknown"),
+            "executionId": os.environ.get("N8N_PARENT_EXECUTION_ID", "unknown"),
+            "portfolioId": os.environ.get("PAPER_PORTFOLIO_ID", "unknown"),
+            "interval": os.environ.get("PAPER_INTERVAL", "unknown"),
+        }
+        request = urllib.request.Request(
+            self._webhook_url,
+            data=json.dumps(payload, separators=(",", ":")).encode(),
+            headers={
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(
+                request, timeout=self._timeout_seconds
+            ) as response:
+                result = json.load(response)
+            return _remote_decision(result)
+        except (
+            OSError,
+            TypeError,
+            ValueError,
+            urllib.error.HTTPError,
+            urllib.error.URLError,
+        ):
+            return RiskDecision(
+                approved=False,
+                violations=("risk-manager-workflow-unavailable",),
+            )
+
+
+def _trade_signal_payload(signal: TradeSignal) -> dict[str, object]:
+    return {
+        "signalId": signal.signal_id,
+        "symbol": signal.symbol,
+        "side": signal.side.value,
+        "referencePrice": str(signal.reference_price),
+        "quantity": str(signal.quantity),
+        "reason": signal.reason,
+    }
+
+
+def _risk_context_payload(context: RiskContext) -> dict[str, object]:
+    return {
+        "now": context.now.isoformat(),
+        "marketCloseAt": (
+            context.market_close_at.isoformat()
+            if context.market_close_at is not None
+            else None
+        ),
+        "marketIsBusinessDay": context.market_is_business_day,
+        "positionNotional": str(context.position_notional),
+        "positionQuantity": str(context.position_quantity),
+        "availableCash": (
+            str(context.available_cash) if context.available_cash is not None else None
+        ),
+        "dailyBuyCount": context.daily_buy_count,
+        "openPositionCount": context.open_position_count,
+        "dailyReturnRate": str(context.daily_return_rate),
+        "consecutiveApiErrors": context.consecutive_api_errors,
+        "seenSignalIds": sorted(context.seen_signal_ids),
+        "newBuysAllowed": context.new_buys_allowed,
+        "advisorStatus": context.advisor_status,
+        "advisorRationale": context.advisor_rationale,
+    }
+
+
+def _remote_decision(payload: object) -> RiskDecision:
+    if not isinstance(payload, dict) or not isinstance(payload.get("approved"), bool):
+        raise TypeError("RiskManager workflow returned invalid JSON")
+    violations = payload.get("violations")
+    if not isinstance(violations, list) or not all(
+        isinstance(value, str) for value in violations
+    ):
+        raise TypeError("RiskManager workflow returned invalid violations")
+    return RiskDecision(
+        approved=payload["approved"],
+        violations=tuple(violations),
+    )

@@ -144,6 +144,56 @@ class WorkflowTaskServiceTest(unittest.TestCase):
                 },
             )
 
+    def test_evaluates_risk_manager_workflow_payload(self) -> None:
+        class Stub:
+            def report(self, _: dict[str, object]) -> dict[str, object]:
+                return {}
+
+        service = WorkflowTaskService(
+            paper=None,  # type: ignore[arg-type]
+            market_scan=None,  # type: ignore[arg-type]
+            market_analyzer=None,  # type: ignore[arg-type]
+            daily_analyzer=None,  # type: ignore[arg-type]
+            market_reporter=Stub(),  # type: ignore[arg-type]
+            paper_reporter=Stub(),  # type: ignore[arg-type]
+            daily_reporter=Stub(),  # type: ignore[arg-type]
+            failure_reporter=Stub(),  # type: ignore[arg-type]
+        )
+
+        result = service.run(
+            "/workflow/risk-manager-evaluate",
+            {
+                "kind": "trade",
+                "signal": {
+                    "signalId": "signal-1",
+                    "symbol": "005930",
+                    "side": "SELL",
+                    "referencePrice": "70000",
+                    "quantity": "2",
+                    "reason": "MA20 crossed below MA60",
+                },
+                "context": {
+                    "now": "2026-08-13T06:00:00Z",
+                    "marketCloseAt": "2026-08-13T06:30:00Z",
+                    "marketIsBusinessDay": True,
+                    "positionNotional": "70000",
+                    "positionQuantity": "1",
+                    "availableCash": "900000",
+                    "dailyBuyCount": 0,
+                    "openPositionCount": 1,
+                    "dailyReturnRate": "0",
+                    "consecutiveApiErrors": 0,
+                    "seenSignalIds": [],
+                    "newBuysAllowed": True,
+                    "advisorStatus": None,
+                    "advisorRationale": None,
+                },
+            },
+        )
+
+        self.assertFalse(result["approved"])
+        self.assertEqual(result["violations"], ["insufficient-position"])
+
 
 class DailyAutomationTest(unittest.TestCase):
     def test_runs_cycle_then_hermes_then_report(self) -> None:

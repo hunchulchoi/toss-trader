@@ -108,6 +108,8 @@ services:
       HERMES_API_KEY: ${HERMES_API_KEY:?HERMES_API_KEY is required}
       HERMES_API_BASE_URL: http://hermes-analysis:8642
       ALERTMANAGER_API_URL: http://alertmanager:9093/api/v2/alerts
+      RISK_MANAGER_WEBHOOK_URL: http://n8n:5678/webhook/toss-trader-risk-manager
+      N8N_RISK_MANAGER_TOKEN: ${N8N_RISK_MANAGER_TOKEN:?N8N_RISK_MANAGER_TOKEN is required}
     expose:
       - "8088"
     volumes:

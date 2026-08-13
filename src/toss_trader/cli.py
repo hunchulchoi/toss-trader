@@ -33,7 +33,7 @@ from .models import Side, TradeSignal
 from .paper import DuplicatePaperOrder, open_paper_ledger
 from .portfolio import PortfolioPerformance
 from .repository import open_market_repository
-from .risk import RiskLimits, RiskManager, UniverseRiskContext
+from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
 from .screening import MarketScanner, market_scan_to_dict
 from .strategy import ma_crossover_signal
 from .universe import DynamicUniverseSelector, open_universe_store
@@ -453,7 +453,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 client=client,
                 repository=market_repository,
                 store=universe_store,
-                risk_manager=RiskManager(RiskLimits()),
+                risk_manager=_cycle_risk_manager(),
                 refresh_interval=timedelta(
                     minutes=settings.dynamic_universe_refresh_minutes
                 ),
@@ -485,7 +485,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             strategy=StoredMaStrategy(market_repository),
             trading=PaperTradingService(
                 ledger=paper_ledger,
-                risk_manager=RiskManager(RiskLimits()),
+                risk_manager=_cycle_risk_manager(),
                 initial_cash=settings.paper_initial_cash,
                 advisor=(
                     create_hermes_trade_advisor(
@@ -606,6 +606,16 @@ def _cycle_snapshot_to_dict(snapshot: PaperCycleSnapshot) -> dict[str, Any]:
         "apiFailed": snapshot.api_failed,
         "newBuysAllowed": snapshot.new_buys_allowed,
     }
+
+
+def _cycle_risk_manager() -> RiskManager | N8nRiskManager:
+    webhook_url = os.environ.get("RISK_MANAGER_WEBHOOK_URL", "").strip()
+    if not webhook_url:
+        return RiskManager(RiskLimits())
+    return N8nRiskManager(
+        webhook_url=webhook_url,
+        token=os.environ.get("N8N_RISK_MANAGER_TOKEN", ""),
+    )
 
 
 def _read_cycle_snapshot() -> PaperCycleSnapshot:

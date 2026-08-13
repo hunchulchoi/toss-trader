@@ -39,17 +39,11 @@ class MonitoringAssetsTest(unittest.TestCase):
             if "datasource" in panel
         }
         self.assertEqual(datasources, {"toss-prometheus", "toss-postgres"})
-        self.assertTrue(
-            any("paper_risk_decisions" in query for query in sql_queries)
-        )
-        self.assertTrue(
-            any("automation_run_logs" in query for query in sql_queries)
-        )
+        self.assertTrue(any("paper_risk_decisions" in query for query in sql_queries))
+        self.assertTrue(any("automation_run_logs" in query for query in sql_queries))
         self.assertTrue(any("paper_cycle_runs" in query for query in sql_queries))
         self.assertTrue(any("paper_fills" in query for query in sql_queries))
-        self.assertTrue(
-            any("dynamic_universe_runs" in query for query in sql_queries)
-        )
+        self.assertTrue(any("dynamic_universe_runs" in query for query in sql_queries))
         self.assertTrue(
             any("dynamic_universe_decisions" in query for query in sql_queries)
         )
@@ -64,7 +58,9 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertEqual(cycle_panel["type"], "timeseries")
         self.assertEqual(cycle_panel["targets"][0]["format"], "time_series")
         self.assertIn("paper_portfolios", cycle_panel["targets"][0]["rawSql"])
-        self.assertIn("portfolio_id IN ('rule', 'hermes')", cycle_panel["targets"][0]["rawSql"])
+        self.assertIn(
+            "portfolio_id IN ('rule', 'hermes')", cycle_panel["targets"][0]["rawSql"]
+        )
         symbol_panel = next(
             panel
             for panel in dashboard["panels"]
@@ -86,7 +82,9 @@ class MonitoringAssetsTest(unittest.TestCase):
             for variable in dashboard["templating"]["list"]
             if variable["name"] == "trade_symbol"
         )
-        self.assertIn("SELECT DISTINCT symbol FROM market_candles", trade_variable["query"])
+        self.assertIn(
+            "SELECT DISTINCT symbol FROM market_candles", trade_variable["query"]
+        )
         self.assertIn("EXISTS (SELECT 1 FROM paper_fills", trade_variable["query"])
         self.assertEqual(trade_variable["label"], "종목")
         trade_filter = next(
@@ -122,6 +120,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("market_symbols", fills_panel["targets"][0]["rawSql"])
         self.assertIn("f.reason", fills_panel["targets"][0]["rawSql"])
         self.assertIn("Hermes Automation Run Log", titles)
+        self.assertIn("n8n Flow Review Log", titles)
         self.assertNotIn("DS_PROMETHEUS", dashboard)
 
     def test_prometheus_assets_cover_outage_loss_and_stale_cycle(self) -> None:
@@ -185,6 +184,8 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("HERMES_API_KEY", compose)
         self.assertIn("toss-trader-automation", compose)
         self.assertIn("openclaw-net", compose)
+        self.assertIn("RISK_MANAGER_WEBHOOK_URL: http://n8n:5678/webhook/", compose)
+        self.assertIn("N8N_RISK_MANAGER_TOKEN", compose)
         self.assertNotIn("/var/run/docker.sock", compose)
 
     def test_compose_uses_isolated_zero_tool_hermes_sidecar(self) -> None:
@@ -234,10 +235,7 @@ class MonitoringAssetsTest(unittest.TestCase):
     def test_n8n_workflow_runs_intraday_paper_every_five_minutes(self) -> None:
         workflow = json.loads(
             (
-                ROOT
-                / "automation"
-                / "n8n"
-                / "toss-trader-intraday-paper.json"
+                ROOT / "automation" / "n8n" / "toss-trader-intraday-paper.json"
             ).read_text()
         )
         encoded = json.dumps(workflow, ensure_ascii=False)
@@ -299,7 +297,8 @@ class MonitoringAssetsTest(unittest.TestCase):
             ]
             self.assertTrue(
                 all(
-                    node["parameters"].get("options", {})
+                    node["parameters"]
+                    .get("options", {})
                     .get("response", {})
                     .get("response", {})
                     .get("neverError")
@@ -307,10 +306,7 @@ class MonitoringAssetsTest(unittest.TestCase):
                 )
             )
             self.assertTrue(
-                any(
-                    node["type"] == "n8n-nodes-base.if"
-                    for node in workflow["nodes"]
-                )
+                any(node["type"] == "n8n-nodes-base.if" for node in workflow["nodes"])
             )
 
     def test_n8n_workflows_use_shared_failure_reporter(self) -> None:
@@ -331,6 +327,19 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("n8n-nodes-base.errorTrigger", encoded)
         self.assertIn("/workflow/report-failure", encoded)
 
+    def test_n8n_risk_manager_uses_authenticated_webhook(self) -> None:
+        workflow = json.loads(
+            (ROOT / "automation" / "n8n" / "toss-trader-risk-manager.json").read_text()
+        )
+        encoded = json.dumps(workflow, ensure_ascii=False)
+
+        self.assertFalse(workflow["active"])
+        self.assertIn("n8n-nodes-base.webhook", encoded)
+        self.assertIn('"authentication": "headerAuth"', encoded)
+        self.assertIn("toss-trader-risk-manager-auth", encoded)
+        self.assertIn("/workflow/risk-manager-evaluate", encoded)
+        self.assertIn("parentExecutionId", encoded)
+
     def test_n8n_credentials_sync_from_infisical_without_literals(self) -> None:
         script = (
             ROOT / "automation" / "n8n" / "sync-infisical-credentials.sh"
@@ -343,6 +352,10 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn('type: "oAuth2Api"', script)
         self.assertIn("HERMES_API_KEY=$(get_secret HERMES_API_KEY)", script)
         self.assertIn("TOSS_CLIENT_SECRET=$(get_secret TOSS_CLIENT_SECRET)", script)
+        self.assertIn(
+            "N8N_RISK_MANAGER_TOKEN=$(get_secret N8N_RISK_MANAGER_TOKEN)", script
+        )
+        self.assertNotIn("risk-token-long-enough", script)
         self.assertNotIn("secretValue", script)
 
     def test_monitoring_images_embed_remote_deployment_assets(self) -> None:
@@ -360,9 +373,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn(
             "COPY alerts.yml /etc/prometheus/alerts.yml", prometheus_dockerfile
         )
-        self.assertIn(
-            "COPY provisioning /etc/grafana/provisioning", grafana_dockerfile
-        )
+        self.assertIn("COPY provisioning /etc/grafana/provisioning", grafana_dockerfile)
         self.assertIn(
             "COPY dashboards /etc/grafana/dashboards/toss-trader",
             grafana_dockerfile,

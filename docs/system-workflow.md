@@ -115,6 +115,13 @@ stage, portfolio/interval을 전달한다. automation 서비스는 request body�
 append한다. Grafana `n8n Flow Review Log`에서 같은 execution의 단계, 소요시간,
 token, Telegram 결과와 RiskManager decision ID를 사후 검토한다.
 
+RiskManager 호출은 `Toss Trader RiskManager` n8n webhook sub-workflow를 거친다.
+webhook은 Header Auth가 필수이며, n8n은 automation의
+`/workflow/risk-manager-evaluate`에서 결정 규칙을 실행한 뒤 승인·거부만 반환한다.
+trade와 동적 universe 후보 판단 모두 같은 경로를 쓴다. n8n/automation 오류나
+잘못된 응답은 `risk-manager-workflow-unavailable` 거부로 fail-closed 처리되어 paper
+fill을 차단한다. parent/child n8n execution ID와 최종 `decision_id`를 함께 추적한다.
+
 n8n HTTP Request node가 encrypted Header Auth credential로 Hermes sidecar를 직접
 호출한다. automation 서비스는 요청 경로에 없고, 응답 뒤에서 content 형식 검증,
 token audit, 리포트 조립만 수행한다. Hermes에는 automation 서비스가 만든
@@ -130,6 +137,7 @@ credential ID만 저장한다.
 
 - `toss-trader-hermes-auth`: Hermes bearer Header Auth
 - `toss-trader-toss-oauth2`: Toss Client Credentials OAuth2, body authentication
+- `toss-trader-risk-manager-auth`: RiskManager webhook bearer Header Auth
 
 스크립트는 repo `.env`의 machine identity를 사용한다. access token과 secret은
 shell memory와 pipe로만 전달하며 plaintext credential 파일을 host에 만들지 않는다.

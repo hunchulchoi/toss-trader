@@ -18,7 +18,15 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .config import Settings
+from .models import Side, TradeSignal
 from .paper import open_paper_ledger
+from .risk import (
+    RiskContext,
+    RiskLimits,
+    RiskManager,
+    UniverseCandidateRisk,
+    UniverseRiskContext,
+)
 from .screening import format_market_scan_report
 
 logger = logging.getLogger(__name__)
@@ -408,6 +416,7 @@ class PaperPortfolioProcess:
         portfolio_id: str,
         interval: str,
         rule_cycle: dict[str, Any] | None = None,
+        workflow_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if portfolio_id not in {"rule", "hermes"}:
             raise ValueError("workflow paper portfolio must be rule or hermes")
@@ -433,6 +442,15 @@ class PaperPortfolioProcess:
             )
         environment = dict(os.environ)
         environment["TRADING_ENABLED"] = "false"
+        context = workflow_context if isinstance(workflow_context, dict) else {}
+        execution_id = context.get("executionId")
+        if isinstance(execution_id, (str, int)):
+            environment["N8N_PARENT_EXECUTION_ID"] = str(execution_id)
+        environment["N8N_PARENT_WORKFLOW_ID"] = str(
+            context.get("workflowId") or "unknown"
+        )
+        environment["PAPER_PORTFOLIO_ID"] = portfolio_id
+        environment["PAPER_INTERVAL"] = interval
         completed = subprocess.run(
             command,
             capture_output=True,
@@ -913,16 +931,30 @@ class WorkflowTaskService:
         if path == "/workflow/market-scan":
             return self._market_scan.run()
         if path == "/workflow/paper-rule-1m":
-            return self._paper.run(portfolio_id="rule", interval="1m")
+            return self._paper.run(
+                portfolio_id="rule",
+                interval="1m",
+                workflow_context=payload.get("_workflow"),
+            )
         if path == "/workflow/paper-rule-1d":
-            return self._paper.run(portfolio_id="rule", interval="1d")
+            return self._paper.run(
+                portfolio_id="rule",
+                interval="1d",
+                workflow_context=payload.get("_workflow"),
+            )
         if path == "/workflow/paper-hermes-1m":
             return self._paper.run(
-                portfolio_id="hermes", interval="1m", rule_cycle=payload.get("rule")
+                portfolio_id="hermes",
+                interval="1m",
+                rule_cycle=payload.get("rule"),
+                workflow_context=payload.get("_workflow"),
             )
         if path == "/workflow/paper-hermes-1d":
             return self._paper.run(
-                portfolio_id="hermes", interval="1d", rule_cycle=payload.get("rule")
+                portfolio_id="hermes",
+                interval="1d",
+                rule_cycle=payload.get("rule"),
+                workflow_context=payload.get("_workflow"),
             )
         if path == "/workflow/hermes-market":
             return self._analyze_market(payload)
@@ -948,6 +980,8 @@ class WorkflowTaskService:
                     ],
                 }
             )
+        if path == "/workflow/risk-manager-evaluate":
+            return _evaluate_risk_payload(payload)
         raise ValueError("unknown workflow task")
 
     def _audit_flow(
@@ -1183,6 +1217,152 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _evaluate_risk_payload(payload: dict[str, Any]) -> dict[str, object]:
+    manager = RiskManager(RiskLimits())
+    kind = payload.get("kind")
+    if kind == "trade":
+        signal_payload = _required_mapping(payload, "signal")
+        context_payload = _required_mapping(payload, "context")
+        signal = TradeSignal(
+            signal_id=_required_text(signal_payload, "signalId"),
+            symbol=_required_text(signal_payload, "symbol"),
+            side=Side(_required_text(signal_payload, "side")),
+            reference_price=_required_decimal(signal_payload, "referencePrice"),
+            quantity=_required_decimal(signal_payload, "quantity"),
+            reason=_required_text(signal_payload, "reason"),
+        )
+        context = RiskContext(
+            now=_required_datetime(context_payload, "now"),
+            market_close_at=_optional_datetime(context_payload.get("marketCloseAt")),
+            market_is_business_day=_required_bool(
+                context_payload, "marketIsBusinessDay"
+            ),
+            position_notional=_required_decimal(context_payload, "positionNotional"),
+            position_quantity=_required_decimal(context_payload, "positionQuantity"),
+            available_cash=_optional_decimal(context_payload.get("availableCash")),
+            daily_buy_count=_required_int(context_payload, "dailyBuyCount"),
+            open_position_count=_required_int(context_payload, "openPositionCount"),
+            daily_return_rate=_required_decimal(context_payload, "dailyReturnRate"),
+            consecutive_api_errors=_required_int(
+                context_payload, "consecutiveApiErrors"
+            ),
+            seen_signal_ids=frozenset(
+                _required_text_list(context_payload, "seenSignalIds")
+            ),
+            new_buys_allowed=_required_bool(context_payload, "newBuysAllowed"),
+            advisor_status=_optional_text(context_payload.get("advisorStatus")),
+            advisor_rationale=_optional_text(context_payload.get("advisorRationale")),
+        )
+        decision = manager.evaluate(signal, context)
+    elif kind == "universe":
+        candidate_payload = _required_mapping(payload, "candidate")
+        context_payload = _required_mapping(payload, "context")
+        candidate = UniverseCandidateRisk(
+            symbol=_required_text(candidate_payload, "symbol"),
+            reference_price=_required_decimal(candidate_payload, "referencePrice"),
+            security_type=_required_text(candidate_payload, "securityType"),
+            is_common_share=_required_bool(candidate_payload, "isCommonShare"),
+            status=_required_text(candidate_payload, "status"),
+            trading_suspended=_required_bool(candidate_payload, "tradingSuspended"),
+        )
+        context = UniverseRiskContext(
+            quantity=_required_decimal(context_payload, "quantity"),
+            available_cash=_required_decimal(context_payload, "availableCash"),
+            daily_return_rate=_required_decimal(context_payload, "dailyReturnRate"),
+            consecutive_api_errors=_required_int(
+                context_payload, "consecutiveApiErrors"
+            ),
+        )
+        decision = manager.evaluate_universe_candidate(candidate, context)
+    else:
+        raise ValueError("RiskManager workflow kind must be trade or universe")
+    return {
+        "ok": True,
+        "approved": decision.approved,
+        "violations": list(decision.violations),
+    }
+
+
+def _required_mapping(payload: dict[str, Any], key: str) -> dict[str, Any]:
+    value = payload.get(key)
+    if not isinstance(value, dict):
+        raise TypeError(f"RiskManager {key} must be an object")
+    return value
+
+
+def _required_text(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise TypeError(f"RiskManager {key} must be non-empty text")
+    return value
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("RiskManager optional text is invalid")
+    return value
+
+
+def _required_bool(payload: dict[str, Any], key: str) -> bool:
+    value = payload.get(key)
+    if not isinstance(value, bool):
+        raise TypeError(f"RiskManager {key} must be boolean")
+    return value
+
+
+def _required_int(payload: dict[str, Any], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise TypeError(f"RiskManager {key} must be a non-negative integer")
+    return value
+
+
+def _required_text_list(payload: dict[str, Any], key: str) -> list[str]:
+    value = payload.get(key)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise TypeError(f"RiskManager {key} must be a text list")
+    return value
+
+
+def _required_decimal(payload: dict[str, Any], key: str) -> Decimal:
+    value = _decimal(payload.get(key))
+    if value is None:
+        raise TypeError(f"RiskManager {key} must be decimal")
+    return value
+
+
+def _optional_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    parsed = _decimal(value)
+    if parsed is None:
+        raise TypeError("RiskManager optional decimal is invalid")
+    return parsed
+
+
+def _required_datetime(payload: dict[str, Any], key: str) -> datetime:
+    value = payload.get(key)
+    if not isinstance(value, str):
+        raise TypeError(f"RiskManager {key} must be datetime text")
+    parsed = _optional_datetime(value)
+    if parsed is None:
+        raise TypeError(f"RiskManager {key} must be datetime text")
+    return parsed
+
+
+def _optional_datetime(value: object) -> datetime | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("RiskManager datetime is invalid")
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("RiskManager datetime must include timezone")
+    return parsed
+
+
 def _required_result(payload: dict[str, Any]) -> dict[str, Any]:
     result = payload.get("result")
     if not isinstance(result, dict):
@@ -1375,6 +1555,7 @@ def _flow_audit_details(
         ("trigger", "trigger"),
         ("portfolioId", "portfolioId"),
         ("interval", "interval"),
+        ("parentExecutionId", "parentExecutionId"),
     ):
         value = context.get(source)
         if isinstance(value, (str, int, float, bool)):
@@ -1399,6 +1580,20 @@ def _flow_audit_details(
         decisions = sorted(set(_collect_decision_ids(result)))
         if decisions:
             details["riskDecisionIds"] = decisions[:100]
+        if path == "/workflow/risk-manager-evaluate":
+            details["approved"] = bool(result.get("approved"))
+            violations = result.get("violations")
+            if isinstance(violations, list) and all(
+                isinstance(value, str) for value in violations
+            ):
+                details["violations"] = violations
+    if path == "/workflow/risk-manager-evaluate":
+        kind = payload.get("kind")
+        if isinstance(kind, str):
+            details["riskKind"] = kind
+        entity = payload.get("signal") if kind == "trade" else payload.get("candidate")
+        if isinstance(entity, dict) and isinstance(entity.get("symbol"), str):
+            details["symbol"] = entity["symbol"]
     if path == "/workflow/report-failure":
         response = payload.get("response")
         response = response if isinstance(response, dict) else payload

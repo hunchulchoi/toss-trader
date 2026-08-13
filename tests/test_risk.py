@@ -1,9 +1,12 @@
 import unittest
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from io import BytesIO
+from unittest.mock import patch
 
 from toss_trader.models import Side, TradeSignal
 from toss_trader.risk import (
+    N8nRiskManager,
     RiskContext,
     RiskLimits,
     RiskManager,
@@ -165,9 +168,7 @@ class RiskManagerTest(unittest.TestCase):
         )
         sell = self.manager.evaluate(
             signal(side=Side.SELL),
-            RiskContext(
-                now=NOW, position_quantity=Decimal(3), new_buys_allowed=False
-            ),
+            RiskContext(now=NOW, position_quantity=Decimal(3), new_buys_allowed=False),
         )
 
         self.assertIn("universe-refresh-failed", buy.violations)
@@ -180,6 +181,41 @@ class RiskManagerTest(unittest.TestCase):
 
         self.assertFalse(decision.approved)
         self.assertIn("max-open-positions", decision.violations)
+
+
+class N8nRiskManagerTest(unittest.TestCase):
+    def test_routes_trade_decision_through_authenticated_webhook(self) -> None:
+        response = BytesIO(b'{"approved":true,"violations":[]}')
+        manager = N8nRiskManager(
+            webhook_url="http://n8n:5678/webhook/toss-trader-risk-manager",
+            token="risk-token-long-enough",
+        )
+
+        with patch("urllib.request.urlopen", return_value=response) as urlopen:
+            decision = manager.evaluate(signal(), RiskContext(now=NOW))
+
+        self.assertTrue(decision.approved)
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            request.get_header("Authorization"), "Bearer risk-token-long-enough"
+        )
+        self.assertIn(b'"kind":"trade"', request.data)
+        self.assertNotIn(b"risk-token-long-enough", request.data)
+
+    def test_fails_closed_when_workflow_is_unavailable(self) -> None:
+        manager = N8nRiskManager(
+            webhook_url="http://n8n:5678/webhook/toss-trader-risk-manager",
+            token="risk-token-long-enough",
+        )
+
+        with patch("urllib.request.urlopen", side_effect=OSError("unavailable")):
+            decision = manager.evaluate(signal(), RiskContext(now=NOW))
+
+        self.assertFalse(decision.approved)
+        self.assertEqual(
+            decision.violations,
+            ("risk-manager-workflow-unavailable",),
+        )
 
 
 if __name__ == "__main__":

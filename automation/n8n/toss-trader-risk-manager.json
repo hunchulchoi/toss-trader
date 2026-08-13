@@ -1,0 +1,63 @@
+{
+  "id": "toss-trader-risk-manager",
+  "name": "Toss Trader RiskManager",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "toss-trader-risk-manager",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "risk-webhook",
+      "name": "인증된 RiskManager 요청",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "toss-trader-risk-manager",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "toss-trader-risk-manager-auth",
+          "name": "Toss Trader RiskManager Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://toss-trader-automation:8088/workflow/risk-manager-evaluate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ...$json.body, \"_workflow\": { \"workflowId\": \"toss-trader-risk-manager\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"risk-manager-evaluate\", \"parentExecutionId\": $json.body.parent?.executionId || \"unknown\", \"portfolioId\": $json.body.parent?.portfolioId || \"unknown\", \"interval\": $json.body.parent?.interval || \"unknown\" } } }}",
+        "options": {"timeout": 30000}
+      },
+      "id": "evaluate",
+      "name": "RiskManager 정책 판단·기록",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"approved\": $json.approved, \"violations\": $json.violations } }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "승인·거부 반환",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [520, 0]
+    }
+  ],
+  "connections": {
+    "인증된 RiskManager 요청": {"main": [[{"node": "RiskManager 정책 판단·기록", "type": "main", "index": 0}]]},
+    "RiskManager 정책 판단·기록": {"main": [[{"node": "승인·거부 반환", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1", "timezone": "Asia/Seoul", "errorWorkflow": "toss-trader-workflow-error"},
+  "staticData": null,
+  "pinData": {},
+  "tags": []
+}

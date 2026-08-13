@@ -19,6 +19,10 @@ RiskManager 판단은 paper fill보다 먼저 기록한다. 판단 기록에 실
 paper fill도 실행하지 않는다. 실제 주문은 지원하지 않으며
 `TRADING_ENABLED=false`를 유지한다.
 
+운영 paper cycle의 trade·동적 universe RiskManager 요청은 인증된 n8n
+sub-workflow를 거친다. n8n 장애 시 승인으로 우회하지 않고
+`risk-manager-workflow-unavailable` 거부를 기록한다.
+
 최근 기록은 CLI에서 조회할 수 있다.
 
 ```bash
