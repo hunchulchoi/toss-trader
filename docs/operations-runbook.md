@@ -6,6 +6,8 @@
 - `TRADING_ENABLED=false`를 항상 유지한다.
 - 실제 주문 생성·정정·취소 기능은 없다.
 - PostgreSQL volume, n8n volume, 운영 장부를 초기화하지 않는다.
+- Toss DB는 `common-postgres`의 호스트 포트 `5431`만 사용한다.
+- `5432`의 `dgst_postgres`에는 Toss Trader를 연결하지 않는다.
 - secret 값은 shell argument, 로그, 문서, Git에 출력하거나 저장하지 않는다.
 
 ## 마감 리뷰 수동 실행
