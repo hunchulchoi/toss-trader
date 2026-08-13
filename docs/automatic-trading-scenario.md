@@ -220,10 +220,13 @@ Grafana는 Tailscale 주소로만 접근한다. 현재 기본 port:
 
 공용 Grafana `Trading / Toss Trader` dashboard에는 최근 RiskManager 판단,
 paper cycle 실행 로그, 가상 체결, Hermes token 사용량과 자동화 실행 로그가
-있다. `Queried Symbols`는 수집된 1분봉을 심볼별 정규화 그래프로 보여준다.
+있다. `Queried Symbols`는 수집된 1분봉을 심볼별 정규화 그래프로 보여주며,
+장전 scan에서 Toss 종목 기본정보 API로 갱신한 `market_symbols` 기준정보를
+조인해 회사명과 종목코드를 함께 표시한다.
 `Paper Cycle Run Log`는 장중 cycle마다 갱신되며 `Hermes Automation Run Log`는
-장전·마감 Hermes 실행만 기록한다. `toss-postgres` datasource는 네 장부 테이블과
-`market_candles`에 대한 SELECT만 허용된 전용 read-only 계정을 사용한다.
+장전·마감 Hermes 실행만 기록한다. `toss-postgres` datasource는 네 장부 테이블,
+`market_candles`, `market_symbols`에 대한 SELECT만 허용된 전용 read-only 계정을
+사용한다.
 
 ## 장애 처리
 

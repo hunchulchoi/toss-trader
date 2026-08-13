@@ -17,30 +17,6 @@ class MarketRegime(StrEnum):
     RISK_OFF = "RISK_OFF"
 
 
-MARKET_DISPLAY_NAMES = {
-    "069500": "KOSPI200",
-    "229200": "KOSDAQ150",
-}
-
-SECURITY_DISPLAY_NAMES = {
-    "000270": "기아",
-    "000660": "SK하이닉스",
-    "005380": "현대차",
-    "005930": "삼성전자",
-    "006400": "삼성SDI",
-    "012330": "현대모비스",
-    "028260": "삼성물산",
-    "035420": "NAVER",
-    "035720": "카카오",
-    "051910": "LG화학",
-    "055550": "신한지주",
-    "068270": "셀트리온",
-    "105560": "KB금융",
-    "207940": "삼성바이오로직스",
-    "373220": "LG에너지솔루션",
-}
-
-
 @dataclass(frozen=True, slots=True)
 class MarketAnalysis:
     symbol: str
@@ -73,9 +49,12 @@ class MarketScanResult:
     markets: tuple[MarketAnalysis, ...]
     candidates: tuple[DiscoveryCandidate, ...]
     errors: dict[str, str]
+    names: dict[str, str]
 
 
 class DailyCollector(Protocol):
+    def collect_symbol_names(self, symbols: tuple[str, ...]) -> dict[str, str]: ...
+
     def collect(
         self,
         *,
@@ -109,7 +88,13 @@ class MarketScanner:
             raise ValueError("discovery top_n must be between 1 and 50")
 
         errors: dict[str, str] = {}
-        for symbol in dict.fromkeys((*benchmark_symbols, *discovery_symbols)):
+        all_symbols = tuple(dict.fromkeys((*benchmark_symbols, *discovery_symbols)))
+        try:
+            names = self._collector.collect_symbol_names(all_symbols)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            names = {}
+            errors["stock_info"] = str(error)
+        for symbol in all_symbols:
             try:
                 self._collector.collect(symbol=symbol, interval="1d", count=60)
             except (OSError, RuntimeError, TypeError, ValueError) as error:
@@ -146,6 +131,7 @@ class MarketScanner:
             markets=tuple(markets),
             candidates=tuple(candidates[:top_n]),
             errors=errors,
+            names=names,
         )
 
 
@@ -198,7 +184,7 @@ def market_scan_to_dict(result: MarketScanResult) -> dict[str, object]:
         "markets": [
             {
                 "symbol": item.symbol,
-                "name": MARKET_DISPLAY_NAMES.get(item.symbol, item.symbol),
+                "name": result.names.get(item.symbol, item.symbol),
                 "regime": item.regime.value,
                 "asOf": item.as_of,
                 "closePrice": item.close_price,
@@ -213,7 +199,7 @@ def market_scan_to_dict(result: MarketScanResult) -> dict[str, object]:
         "candidates": [
             {
                 "symbol": item.symbol,
-                "name": SECURITY_DISPLAY_NAMES.get(item.symbol, item.symbol),
+                "name": result.names.get(item.symbol, item.symbol),
                 "asOf": item.as_of,
                 "closePrice": item.close_price,
                 "ma20": item.ma20,
@@ -272,12 +258,12 @@ def format_market_scan_report(
 
 def _market_label(item: dict[str, object]) -> str:
     symbol = str(item.get("symbol", "?"))
-    return str(item.get("name") or MARKET_DISPLAY_NAMES.get(symbol, symbol))
+    return str(item.get("name") or symbol)
 
 
 def _candidate_label(item: dict[str, object]) -> str:
     symbol = str(item.get("symbol", "?"))
-    name = str(item.get("name") or SECURITY_DISPLAY_NAMES.get(symbol, symbol))
+    name = str(item.get("name") or symbol)
     return f"{name} ({symbol})" if name != symbol else symbol
 
 

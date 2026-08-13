@@ -26,6 +26,9 @@ class WatchlistCandleClient:
         self.calendar_calls: list[str] = []
         self.closed_countries = closed_countries
 
+    def stocks(self, symbols: tuple[str, ...]) -> list[dict]:
+        return [{"symbol": symbol, "name": f"Name {symbol}"} for symbol in symbols]
+
     def candles(
         self,
         symbol: str,

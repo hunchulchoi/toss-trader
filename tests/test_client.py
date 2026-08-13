@@ -26,6 +26,26 @@ def response(status: int, payload: dict, **headers: str) -> HttpResponse:
 
 
 class TossClientTest(unittest.TestCase):
+    def test_fetches_stock_names_in_one_batch(self) -> None:
+        transport = FakeTransport(
+            [
+                response(
+                    200,
+                    {"access_token": "token", "token_type": "Bearer", "expires_in": 3600},
+                ),
+                response(
+                    200,
+                    {"result": [{"symbol": "005930", "name": "삼성전자"}]},
+                ),
+            ]
+        )
+        client = TossClient(client_id="id", client_secret="secret", transport=transport)
+
+        result = client.stocks(("005930",))
+
+        self.assertEqual(result[0]["name"], "삼성전자")
+        self.assertTrue(transport.requests[-1].url.endswith("/api/v1/stocks?symbols=005930"))
+
     def test_fetches_market_calendar_for_country_and_date(self) -> None:
         transport = FakeTransport(
             [

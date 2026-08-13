@@ -185,7 +185,7 @@
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 46},
       "id": 17,
       "options": {"legend": {"calcs": ["lastNotNull", "min", "max"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "time_series", "rawQuery": true, "rawSql": "WITH candles AS (SELECT timestamp AS time, symbol, close_price, FIRST_VALUE(close_price) OVER (PARTITION BY symbol ORDER BY timestamp) AS base_price FROM market_candles WHERE interval = '1m' AND $__timeFilter(timestamp)) SELECT time, (((close_price / NULLIF(base_price, 0)) - 1) * 100)::double precision AS value, symbol AS metric FROM candles ORDER BY time", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "time_series", "rawQuery": true, "rawSql": "WITH candles AS (SELECT timestamp AS time, symbol, close_price, FIRST_VALUE(close_price) OVER (PARTITION BY symbol ORDER BY timestamp) AS base_price FROM market_candles WHERE interval = '1m' AND $__timeFilter(timestamp)) SELECT c.time, (((c.close_price / NULLIF(c.base_price, 0)) - 1) * 100)::double precision AS value, COALESCE(s.display_name || ' (' || c.symbol || ')', c.symbol) AS metric FROM candles c LEFT JOIN market_symbols s ON s.symbol = c.symbol ORDER BY c.time", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
       "title": "Queried Symbols (1m, Change from Range Start)",
       "type": "timeseries"
     },
@@ -209,6 +209,6 @@
   "timezone": "browser",
   "title": "Toss Trader",
   "uid": "toss-trader",
-  "version": 5,
+  "version": 6,
   "weekStart": "monday"
 }

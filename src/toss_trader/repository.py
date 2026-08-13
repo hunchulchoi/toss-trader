@@ -13,6 +13,8 @@ from .models import Candle
 class MarketRepository(Protocol):
     def upsert_candles(self, candles: Sequence[Candle]) -> int: ...
 
+    def upsert_symbol_names(self, names: Mapping[str, str]) -> int: ...
+
     def latest_candles(
         self, symbol: str, interval: str, *, limit: int
     ) -> list[Candle]: ...
@@ -37,6 +39,13 @@ CREATE TABLE IF NOT EXISTS market_candles (
 )
 """
 
+SQLITE_SYMBOL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS market_symbols (
+    symbol TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL
+)
+"""
+
 POSTGRES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS market_candles (
     symbol TEXT NOT NULL,
@@ -52,6 +61,13 @@ CREATE TABLE IF NOT EXISTS market_candles (
 )
 """
 
+POSTGRES_SYMBOL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS market_symbols (
+    symbol TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL
+)
+"""
+
 POSTGRES_INDEX = """
 CREATE INDEX IF NOT EXISTS market_candles_latest_idx
 ON market_candles (symbol, interval, timestamp DESC)
@@ -64,6 +80,7 @@ class SqliteMarketRepository:
             Path(database_path).parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(database_path)
         self._connection.execute(SQLITE_SCHEMA)
+        self._connection.execute(SQLITE_SYMBOL_SCHEMA)
         self._connection.commit()
 
     def close(self) -> None:
@@ -91,6 +108,19 @@ class SqliteMarketRepository:
                 rows,
             )
         return len(rows)
+
+    def upsert_symbol_names(self, names: Mapping[str, str]) -> int:
+        if not names:
+            return 0
+        with self._connection:
+            self._connection.executemany(
+                """
+                INSERT INTO market_symbols (symbol, display_name) VALUES (?, ?)
+                ON CONFLICT(symbol) DO UPDATE SET display_name = excluded.display_name
+                """,
+                names.items(),
+            )
+        return len(names)
 
     def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
         _validate_limit(limit)
@@ -148,6 +178,7 @@ class PostgresMarketRepository:
             raise RuntimeError("PostgreSQL connection failed") from error
         with self._connection.cursor() as cursor:
             cursor.execute(POSTGRES_SCHEMA)
+            cursor.execute(POSTGRES_SYMBOL_SCHEMA)
             cursor.execute(POSTGRES_INDEX)
         self._connection.commit()
 
@@ -177,6 +208,20 @@ class PostgresMarketRepository:
             )
         self._connection.commit()
         return len(rows)
+
+    def upsert_symbol_names(self, names: Mapping[str, str]) -> int:
+        if not names:
+            return 0
+        with self._connection.cursor() as cursor:
+            cursor.executemany(
+                """
+                INSERT INTO market_symbols (symbol, display_name) VALUES (%s, %s)
+                ON CONFLICT(symbol) DO UPDATE SET display_name = EXCLUDED.display_name
+                """,
+                list(names.items()),
+            )
+        self._connection.commit()
+        return len(names)
 
     def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
         _validate_limit(limit)

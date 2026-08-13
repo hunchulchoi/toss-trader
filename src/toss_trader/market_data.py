@@ -12,6 +12,8 @@ from .strategy import ma_crossover_signal
 
 
 class CandleClient(Protocol):
+    def stocks(self, symbols: tuple[str, ...]) -> list[dict[str, Any]]: ...
+
     def candles(
         self,
         symbol: str,
@@ -36,6 +38,28 @@ class MarketCollector:
     def __init__(self, *, client: CandleClient, repository: MarketRepository) -> None:
         self._client = client
         self._repository = repository
+
+    def collect_symbol_names(self, symbols: tuple[str, ...]) -> dict[str, str]:
+        requested = tuple(dict.fromkeys(symbols))
+        if not requested:
+            raise ValueError("symbols must not be empty")
+        payload = self._client.stocks(requested)
+        names: dict[str, str] = {}
+        for item in payload:
+            if not isinstance(item, Mapping):
+                raise TypeError("each stock must be an object")
+            symbol = item.get("symbol")
+            name = item.get("name")
+            if not isinstance(symbol, str) or symbol not in requested:
+                raise ValueError("stock response contains invalid symbol")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(f"stock name missing for {symbol}")
+            names[symbol] = name.strip()
+        missing = sorted(set(requested) - names.keys())
+        if missing:
+            raise ValueError(f"stock info missing symbols: {', '.join(missing)}")
+        self._repository.upsert_symbol_names(names)
+        return names
 
     def collect(
         self,

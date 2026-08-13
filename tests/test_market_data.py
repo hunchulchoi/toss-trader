@@ -17,6 +17,9 @@ class FakeCandleClient:
         self.calls.append({"symbol": symbol, **kwargs})
         return self.payload
 
+    def stocks(self, symbols: tuple[str, ...]) -> list[dict]:
+        return [{"symbol": symbol, "name": f"Name {symbol}"} for symbol in symbols]
+
 
 def candle_payload() -> dict:
     return {
@@ -83,6 +86,19 @@ class MarketCollectorTest(unittest.TestCase):
             [item.close_price for item in stored], [Decimal(71000), Decimal(71100)]
         )
         self.assertEqual(first.next_before, "2026-08-12T09:00:00+09:00")
+
+    def test_collects_stock_names_into_database(self) -> None:
+        collector = MarketCollector(
+            client=FakeCandleClient(candle_payload()), repository=self.repository
+        )
+
+        names = collector.collect_symbol_names(("005930", "000660"))
+
+        self.assertEqual(names["005930"], "Name 005930")
+        row = self.repository._connection.execute(
+            "SELECT display_name FROM market_symbols WHERE symbol = ?", ("005930",)
+        ).fetchone()
+        self.assertEqual(row, ("Name 005930",))
 
     def test_rejects_malformed_api_candle_without_writing(self) -> None:
         payload = candle_payload()
@@ -204,6 +220,7 @@ class PostgresMarketRepositoryTest(unittest.TestCase):
 
         self.assertEqual(count, 1)
         self.assertIn("TIMESTAMPTZ", connection.cursor_instance.executed[0][0])
+        self.assertIn("market_symbols", connection.cursor_instance.executed[1][0])
         assert connection.cursor_instance.batch is not None
         query, params = connection.cursor_instance.batch
         self.assertIn("VALUES (%s, %s, %s", query)

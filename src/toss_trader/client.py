@@ -93,6 +93,13 @@ class TossClient:
         )
         return self._require_result(payload, list)
 
+    def stocks(self, symbols: Sequence[str]) -> list[dict[str, Any]]:
+        clean_symbols = self._validate_symbols(symbols)
+        payload = self._request(
+            "GET", "/api/v1/stocks", query={"symbols": ",".join(clean_symbols)}
+        )
+        return self._require_result(payload, list)
+
     def candles(
         self,
         symbol: str,

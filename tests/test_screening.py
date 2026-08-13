@@ -79,11 +79,14 @@ class DiscoveryTest(unittest.TestCase):
 
         payload = market_scan_to_dict(
             MarketScanResult(
-                markets=(market,), candidates=(candidate,), errors={}
+                markets=(market,),
+                candidates=(candidate,),
+                errors={},
+                names={"069500": "KODEX 200", "068270": "셀트리온"},
             )
         )
 
-        self.assertEqual(payload["markets"][0]["name"], "KOSPI200")
+        self.assertEqual(payload["markets"][0]["name"], "KODEX 200")
         self.assertEqual(payload["candidates"][0]["name"], "셀트리온")
 
     def test_formats_telegram_report(self) -> None:
@@ -94,6 +97,7 @@ class DiscoveryTest(unittest.TestCase):
                     "markets": [
                         {
                             "symbol": "069500",
+                            "name": "KODEX 200",
                             "regime": "RISK_ON",
                             "momentum20d": "0.12",
                         }
@@ -101,6 +105,7 @@ class DiscoveryTest(unittest.TestCase):
                     "candidates": [
                         {
                             "symbol": "005930",
+                            "name": "삼성전자",
                             "score": "14.5",
                             "momentum20d": "0.10",
                             "volumeRatio": "1.3",
@@ -113,7 +118,7 @@ class DiscoveryTest(unittest.TestCase):
         )
 
         self.assertIn("📊 시장 분석\n", report)
-        self.assertIn("• KOSPI200: RISK_ON", report)
+        self.assertIn("• KODEX 200: RISK_ON", report)
         self.assertIn("🔎 발굴 종목\n", report)
         self.assertIn("1. 삼성전자 (005930)", report)
         self.assertIn("모멘텀 +10.00%\n   거래량 1.30x", report)
