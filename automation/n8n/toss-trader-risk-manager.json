@@ -111,7 +111,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return items.map((item) => ({ json: { approved: true, violations: [], kind: item.json.kind, branch: 'approved', _workflow: item.json._workflow } }));"
+        "jsCode": "const request = $('요청 검증·실행 메타데이터').first().json; return items.map((item) => ({ json: { approved: true, violations: [], kind: item.json.kind, symbol: request.signal?.symbol || request.candidate?.symbol, branch: 'approved', _workflow: item.json._workflow } }));"
       },
       "id": "approved-response",
       "name": "승인 응답 구성",
@@ -121,13 +121,28 @@
     },
     {
       "parameters": {
-        "jsCode": "return items.map((item) => ({ json: { approved: false, violations: item.json.violations, kind: item.json.kind, branch: 'rejected', _workflow: item.json._workflow } }));"
+        "jsCode": "const request = $('요청 검증·실행 메타데이터').first().json; return items.map((item) => ({ json: { approved: false, violations: item.json.violations, kind: item.json.kind, symbol: request.signal?.symbol || request.candidate?.symbol, branch: 'rejected', _workflow: item.json._workflow } }));"
       },
       "id": "rejected-response",
       "name": "거부 응답 구성",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1500, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://toss-trader-automation:8088/workflow/risk-manager-audit",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {"timeout": 30000}
+      },
+      "id": "audit",
+      "name": "Risk 판단 로그 저장",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1740, 0]
     },
     {
       "parameters": {
@@ -139,7 +154,7 @@
       "name": "RiskManager 결과 반환",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [1760, 0]
+      "position": [1980, 0]
     }
   ],
   "connections": {
@@ -151,8 +166,9 @@
     "Universe 정책 계산": {"main": [[{"node": "승인?", "type": "main", "index": 0}]]},
     "지원하지 않는 요청 거부": {"main": [[{"node": "승인?", "type": "main", "index": 0}]]},
     "승인?": {"main": [[{"node": "승인 응답 구성", "type": "main", "index": 0}], [{"node": "거부 응답 구성", "type": "main", "index": 0}]]},
-    "승인 응답 구성": {"main": [[{"node": "RiskManager 결과 반환", "type": "main", "index": 0}]]},
-    "거부 응답 구성": {"main": [[{"node": "RiskManager 결과 반환", "type": "main", "index": 0}]]}
+    "승인 응답 구성": {"main": [[{"node": "Risk 판단 로그 저장", "type": "main", "index": 0}]]},
+    "거부 응답 구성": {"main": [[{"node": "Risk 판단 로그 저장", "type": "main", "index": 0}]]},
+    "Risk 판단 로그 저장": {"main": [[{"node": "RiskManager 결과 반환", "type": "main", "index": 0}]]}
   },
   "settings": {"executionOrder": "v1", "timezone": "Asia/Seoul", "errorWorkflow": "toss-trader-workflow-error"},
   "staticData": null,

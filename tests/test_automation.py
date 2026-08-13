@@ -248,6 +248,37 @@ class WorkflowTaskServiceTest(unittest.TestCase):
         self.assertFalse(result["approved"])
         self.assertEqual(result["violations"], ["insufficient-position"])
 
+    def test_audits_n8n_risk_manager_decision_without_recalculating(self) -> None:
+        class Stub:
+            def report(self, _: dict[str, object]) -> dict[str, object]:
+                return {}
+
+        service = WorkflowTaskService(
+            paper=None,  # type: ignore[arg-type]
+            market_scan=None,  # type: ignore[arg-type]
+            market_analyzer=None,  # type: ignore[arg-type]
+            daily_analyzer=None,  # type: ignore[arg-type]
+            market_reporter=Stub(),  # type: ignore[arg-type]
+            paper_reporter=Stub(),  # type: ignore[arg-type]
+            daily_reporter=Stub(),  # type: ignore[arg-type]
+            failure_reporter=Stub(),  # type: ignore[arg-type]
+        )
+
+        result = service.run(
+            "/workflow/risk-manager-audit",
+            {
+                "kind": "trade",
+                "approved": False,
+                "violations": ["max-order-notional"],
+                "symbol": "005930",
+            },
+        )
+
+        self.assertEqual(
+            result,
+            {"approved": False, "violations": ["max-order-notional"]},
+        )
+
 
 class DailyAutomationTest(unittest.TestCase):
     def test_runs_cycle_then_hermes_then_report(self) -> None:

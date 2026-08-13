@@ -987,6 +987,8 @@ class WorkflowTaskService:
             )
         if path == "/workflow/risk-manager-evaluate":
             return _evaluate_risk_payload(payload)
+        if path == "/workflow/risk-manager-audit":
+            return _risk_audit_payload(payload)
         raise ValueError("unknown workflow task")
 
     def _audit_flow(
@@ -1288,6 +1290,13 @@ def _evaluate_risk_payload(payload: dict[str, Any]) -> dict[str, object]:
     }
 
 
+def _risk_audit_payload(payload: dict[str, Any]) -> dict[str, object]:
+    return {
+        "approved": _required_bool(payload, "approved"),
+        "violations": _required_text_list(payload, "violations"),
+    }
+
+
 def _required_mapping(payload: dict[str, Any], key: str) -> dict[str, Any]:
     value = payload.get(key)
     if not isinstance(value, dict):
@@ -1586,14 +1595,20 @@ def _flow_audit_details(
         decisions = sorted(set(_collect_decision_ids(result)))
         if decisions:
             details["riskDecisionIds"] = decisions[:100]
-        if path == "/workflow/risk-manager-evaluate":
+        if path in (
+            "/workflow/risk-manager-evaluate",
+            "/workflow/risk-manager-audit",
+        ):
             details["approved"] = bool(result.get("approved"))
             violations = result.get("violations")
             if isinstance(violations, list) and all(
                 isinstance(value, str) for value in violations
             ):
                 details["violations"] = violations
-    if path == "/workflow/risk-manager-evaluate":
+    if path in (
+        "/workflow/risk-manager-evaluate",
+        "/workflow/risk-manager-audit",
+    ):
         kind = payload.get("kind")
         if isinstance(kind, str):
             details["riskKind"] = kind

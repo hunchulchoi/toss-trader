@@ -364,7 +364,7 @@ class MonitoringAssetsTest(unittest.TestCase):
             }.issubset(node_names)
         )
         self.assertGreaterEqual(encoded.count("n8n-nodes-base.if"), 3)
-        self.assertNotIn("n8n-nodes-base.httpRequest", encoded)
+        self.assertIn("/workflow/risk-manager-audit", encoded)
         for violation in (
             "duplicate-signal",
             "universe-refresh-failed",
