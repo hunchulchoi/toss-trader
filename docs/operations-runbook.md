@@ -143,8 +143,11 @@ docker exec dgst_postgres psql -U postgres -d postgres -P pager=off -c \
 ### MA20/MA60 이력 부족
 
 Toss candle 요청은 성공했지만 저장 이력이 61개보다 적으면 오류가 아니다.
-종목 결과에 `skipReason`을 남기고 `failed_count`와 API 오류 streak는 증가시키지
-않는다. 이력이 쌓이면 자동으로 평가 대상에 복귀한다.
+종목 결과에 `skipReason`. `failed_count`·API streak 불변. `partial_failure`(종목 `error`)와 섞지 말 것.
+
+### Hermes token 0 + 거부 다수
+
+한도 preflight. `paper_risk_decisions` 위반 코드 확인. `hermes_trade` 없음이 정상.
 
 ### n8n workflow failure 알림
 

@@ -16,9 +16,9 @@ RiskManager 판단은 paper fill보다 먼저 기록한다. 판단 기록에 실
 paper fill도 실행하지 않는다. 실제 주문은 지원하지 않으며
 `TRADING_ENABLED=false`를 유지한다.
 
-운영 paper cycle의 trade·동적 universe RiskManager 요청은 인증된 n8n
-sub-workflow를 거친다. n8n 장애 시 승인으로 우회하지 않고
-`risk-manager-workflow-unavailable` 거부를 기록한다.
+Hermes 한도 거부: 로컬 preflight → `paper_risk_decisions` 1행. Hermes·n8n 없음, token 0.
+통과 신호만 Hermes → n8n Risk 1회 → fill. Rule은 preflight 없이 n8n 1회.
+n8n 장애는 `risk-manager-workflow-unavailable`. preflight 대상 아님.
 
 최근 기록은 CLI에서 조회할 수 있다.
 
@@ -33,13 +33,11 @@ toss-trader automation-runs --type market_scan --status failed --limit 100
 | 구분 | 실제 흐름 | 확인 장부·패널 |
 |---|---|---|
 | legacy 장중 endpoint | `/run-paper-cycle`은 호환용 직접 endpoint이며 Hermes 비교 task를 호출하지 않음 | `paper_cycle_runs`, `paper_risk_decisions`, `paper_fills` |
-| 운영 장중 workflow | n8n이 `/workflow/paper-rule-1m` 뒤 `/workflow/paper-hermes-1m`을 호출. Hermes는 Hermes 포트폴리오에서 신호가 있을 때만 advisor로 호출 | `Paper Cycle Run Log`, `Hermes Automation Run Log`, `n8n Flow Review Log` |
+| 운영 장중 workflow | `paper-rule-1m` → `paper-hermes-1m`. advisor는 신호+한도 통과 때만 | `Paper Cycle Run Log`, `Hermes Automation Run Log`, `n8n Flow Review Log` |
 | 장전·마감 분석 | n8n이 Hermes API를 직접 호출하고, automation의 `hermes-*-result` endpoint가 응답·token을 검증·기록 | `automation_run_logs`의 `market_scan`·`daily`, token panel |
 | RiskManager | 신호 또는 universe 후보마다 승인/거부를 먼저 저장. 승인된 trade만 fill 생성 | `Dynamic Universe Risk Decisions`, 최근 `paper_risk_decisions`, `Recent Paper Fills` |
 
-공용 Grafana `Toss Trader` dashboard는 장부·상세 패널에 `toss-postgres` read-only
-datasource를, 상단 상태 패널(`Last Cycle`, `Daily Return`, `API Error Streak` 등)에
-`toss-prometheus` datasource를 사용한다.
+Grafana `Toss Trader`: 장부 `toss-postgres`(ro), 상태 패널 `toss-prometheus`.
 
 | 패널 | 표시 내용 | 데이터 기준 |
 |---|---|---|
@@ -48,19 +46,14 @@ datasource를, 상단 상태 패널(`Last Cycle`, `Daily Return`, `API Error Str
 | `Symbols (1m, BUY/SELL Marked · $trade_filter)` | 수집 1분봉의 조회 구간 시작 대비 정규화 등락률, 회사명·코드, BUY/SELL mark | `market_candles`, `market_symbols`, `paper_fills`; filter에 따라 체결 종목 또는 전체 조회 종목 |
 | `Recent Paper Fills` | BUY/SELL, 수량·가격·금액, 전략 근거 `reason` | `paper_fills`, `market_symbols` |
 | `Paper Cycle Run Log` | rule/Hermes 포트폴리오별 cycle 상태, 신호·체결·실패·제외 수 | `paper_cycle_runs` |
-| `Hermes Automation Run Log` | 장전·마감 분석 token 및 신호가 발생한 장중 Hermes advisor token | `automation_run_logs`의 `market_scan`, `daily`, `hermes_trade` |
+| `Hermes Automation Run Log` | 장전·마감·실제 advisor token. 한도 preflight 거부는 없음 | `automation_run_logs`의 `market_scan`, `daily`, `hermes_trade` |
 
-장전 scan과 dynamic universe refresh는 Toss 종목 기본정보를 batch 조회해 회사명을
-`market_symbols`에 갱신한다. Grafana는 이를 조인해 `회사명 (코드)`로 표시한다.
-request body와 인증정보는 저장하지 않고 허용된 메타데이터와 집계값만 남긴다.
-API key, bearer token, OAuth credential, 전체 Hermes prompt/response도 장부에
-저장하지 않는다.
+회사명은 `market_symbols` 조인. body·secret·전체 Hermes prompt/response 미저장.
 
-MA 계산에 필요한 candle 이력이 부족한 종목은 cycle 결과와
-`automation_run_logs.details.skipped`에서 제외 수를 확인한다. 이 경우
-`paper_cycle_runs.failed_count`와 `consecutive_api_errors`는 증가하지 않는다.
-수동 마감 실행과 장애 대응 절차는
-[`operations-runbook.md`](operations-runbook.md)를 따른다.
+candle 이력 부족은 `skipped`. `failed_count`·API streak 불변. `partial_failure`는 종목 `error`. 합치지 말 것.
+`daily_return_rate`는 보유 전체 MTM. 오늘 체결 성과 아님.
+한도 거부: `risk-decisions --status rejected`. advisor: `automation-runs --type hermes_trade`.
+수동 마감·장애는 [`operations-runbook.md`](operations-runbook.md).
 
 운영 안전 경계:
 

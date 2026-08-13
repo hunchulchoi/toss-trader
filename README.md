@@ -191,7 +191,7 @@ Telegram 비밀값으로 생성한 Alertmanager 설정은 container tmpfs에만 
 | 시각(KST) | 작업 | Hermes | Telegram |
 |---|---|---|---|
 | 평일 08:30 | 시장분석·종목발굴 | 시장 의견 생성 | 리포트 전송 |
-| 평일 09:00~15:20, 5분 간격 | 1분봉 MA20/MA60 rule/Hermes 비교 cycle | Hermes 포트폴리오 신호 발생 시 advisor 호출 | 특이사항만 전송 |
+| 평일 09:00~15:20, 5분 간격 | 1분봉 MA20/MA60 rule/Hermes 비교 | 한도 통과 신호만 advisor | 특이사항만 전송 |
 | 평일 15:40 | 일봉 paper cycle·마감 분석 | 일일 분석 생성 | 마감 리포트 전송 |
 
 장중 신호는 RiskManager 승인 후에만 100만원 가상 장부에 반영한다. 휴장일에는

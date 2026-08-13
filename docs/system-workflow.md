@@ -196,9 +196,15 @@ sequenceDiagram
     N->>A: POST /workflow/paper-rule-1m
     A-->>N: {exitCode, cycle, sharedSnapshot}
     N->>A: POST /workflow/paper-hermes-1m (rule 결과)
-    A->>H: 신호가 있을 때만 advisor 호출
-    A->>R: trade/universe 판단 요청
-    R-->>A: {approved, violations}
+    alt 신호 + hard 한도 통과
+        A->>H: advisor 호출
+        A->>R: final RiskManager
+        R-->>A: {approved, violations}
+    else 신호 + hard 한도 거부
+        Note over A: 로컬 preflight 거부 기록. Hermes·n8n skip
+    else 무신호
+        Note over A: Hermes 없음
+    end
     A-->>N: {exitCode, cycle}
     N->>A: POST /workflow/report-paper (rule + hermes)
     alt 특이사항 있음
@@ -209,9 +215,7 @@ sequenceDiagram
     end
 ```
 
-rule과 Hermes는 같은 `sharedSnapshot`을 재사용하므로 candle 수집을 두 번 하지
-않는다. `exitCode=3`은 partial cycle이며 실패 flow로 전달되지만 Telegram severity는
-`warning`이다.
+rule·Hermes는 `sharedSnapshot` 공유. candle 1회. `exitCode=3` = partial, Telegram `warning`.
 
 ### 4. 마감 일봉·Hermes 분석
 
@@ -257,6 +261,8 @@ sequenceDiagram
     end
 ```
 
+Hermes 한도 거부는 webhook 전 로컬 preflight. n8n 없음. Rule·universe는 항상 이 경로.
+
 ### 6. 공통 failure·운영 검증
 
 | API | 성공 응답/판단 | 실패 처리·감사 |
@@ -293,8 +299,10 @@ flowchart TD
     X -->|조건 없음| NS[신호 없음]
     B --> SPLIT{포트폴리오}
     CS --> SPLIT
-    SPLIT -->|규칙 기반| RM[RiskManager 최종 판단]
-    SPLIT -->|Hermes 개입| HA[Hermes 신호 승인·거부]
+    SPLIT -->|규칙 기반| RM[n8n RiskManager 최종 판단]
+    SPLIT -->|Hermes 개입| PRE{hard 한도\n로컬 preflight}
+    PRE -->|거부| RD
+    PRE -->|통과| HA[Hermes 신호 승인·거부]
     HA --> AL[(automation_run_logs\n근거 + token)]
     HA --> RM
     RM --> RD[(paper_risk_decisions)]
@@ -326,9 +334,13 @@ flowchart TD
     START[동적 universe 후보 또는 MA 신호] --> KIND{판단 종류}
 
     KIND -->|universe| UIN[후보 종목·기준가·종목 상태\n수량·가용 현금·손익·API 오류]
-    KIND -->|trade| TIN[BUY/SELL 신호·보유 수량/금액\n현금·일일 BUY·장 상태·Hermes 판단]
+    KIND -->|trade Rule| REQUEST
+    KIND -->|trade Hermes| PRE[로컬 RiskManager\nHardLimits]
+    PRE -->|위반| RLEDGER
+    PRE -->|통과| HA[Hermes advisor]
+    HA --> TIN
     UIN --> REQUEST
-    TIN --> REQUEST
+    TIN[BUY/SELL 신호·보유 수량/금액\n현금·일일 BUY·장 상태·Hermes 판단] --> REQUEST
 
     REQUEST[automation N8nRiskManager\nPOST n8n RiskManager webhook\n전용 bearer] --> AUTH{n8n Header Auth}
     AUTH -->|실패| CLOSED[거부\nrisk-manager-workflow-unavailable]
@@ -354,7 +366,7 @@ flowchart TD
 | 구분 | 평가 입력 | 거부 조건 | 기록 결과 |
 |---|---|---|---|
 | `universe` | 종목 유형·보통주 여부·거래 상태·정지 여부·기준가, 가용 현금, 당일 손익, API 오류 연속 횟수 | 비주식/우선주, 비활성·정지, 가격 오류, 주문 한도·현금 초과, 손실·API kill switch | `dynamic_universe_decisions`에 후보별 승인·위반·선정 여부 |
-| `trade` | 신호 ID·BUY/SELL·수량·기준가·근거, 포지션·현금·일일 BUY·장 상태·Hermes 판단 | 중복 신호, universe 실패 신규 BUY, Hermes 거부/장애, 주문·포지션·현금·보유수량 한도, 손실·API kill switch, 휴장·마감 10분 전 BUY | `paper_risk_decisions`에 모든 승인·거부 판단, 승인만 `paper_fills` |
+| `trade` | 신호·포지션·현금·장 상태·Hermes | Hermes: 로컬 한도 먼저. 통과 후 advisor+n8n. Rule: n8n 1회 | 판단은 `paper_risk_decisions`. 승인만 fill. 한도 거부는 `hermes_trade` 없음 |
 
 RiskManager는 매매 추천이나 실제 주문을 수행하지 않는다. 호출 timeout·network 오류·인증
 실패·응답 JSON 오류는 모두 `risk-manager-workflow-unavailable`으로 처리해 체결을
@@ -378,15 +390,8 @@ flowchart LR
     REPORT_OK -->|아니오| FAIL
 ```
 
-장중·마감 workflow는 `시장 Snapshot + Rule → Rule 체결 유무 → 공유
-Snapshot + Hermes → Hermes 체결 유무`로 실행한다. 첫 단계가 Toss candles와
-MA20/MA60 원시 신호를 한 번만 만들며, Hermes 포트폴리오는 같은 평가시각·종목·
-수집 결과·원시 신호·universe BUY 허용 상태를 재사용한다. 각 포트폴리오의
-보유수량 필터, RiskManager 판단, Hermes advisor, paper 체결과 장부만 분리된다.
-따라서 15종목 기준 전략 candle 조회는 30회가 아니라 15회다. 마감 workflow는
-비교 병합 뒤 `Hermes 마감 분석 정상?`과 `마감 Telegram 정상?`을 추가 확인한다.
-HTTP 응답 오류는 해당 단계 실패 Telegram으로, network/timeout처럼 응답 자체가
-없는 오류는 공통 `Toss Trader Workflow Error Reporter`로 전달한다.
+장중·마감은 `Snapshot+Rule → Hermes`. candle·원시 신호는 1회. 포트폴리오별 판단·체결만 분리.
+Hermes advisor는 한도 통과 신호만. 15종목 candle은 15회.
 
 각 automation HTTP node는 `_workflow`에 workflow ID, n8n execution ID, 실행 mode,
 stage, portfolio/interval을 전달한다. automation 서비스는 request body를 복제하지
@@ -394,12 +399,8 @@ stage, portfolio/interval을 전달한다. automation 서비스는 request body�
 append한다. Grafana `n8n Flow Review Log`에서 같은 execution의 단계, 소요시간,
 token, Telegram 결과와 RiskManager decision ID를 사후 검토한다.
 
-RiskManager 호출은 `Toss Trader RiskManager` n8n webhook sub-workflow를 거친다.
-webhook은 Header Auth가 필수이며, n8n은 automation의
-`/workflow/risk-manager-evaluate`에서 결정 규칙을 실행한 뒤 승인·거부만 반환한다.
-trade와 동적 universe 후보 판단 모두 같은 경로를 쓴다. n8n/automation 오류나
-잘못된 응답은 `risk-manager-workflow-unavailable` 거부로 fail-closed 처리되어 paper
-fill을 차단한다. parent/child n8n execution ID와 최종 `decision_id`를 함께 추적한다.
+RiskManager는 n8n webhook → `/workflow/risk-manager-evaluate`. Header Auth 필수.
+오류는 `risk-manager-workflow-unavailable`, fail-closed. Hermes 한도 거부는 n8n child 없음.
 
 n8n HTTP Request node가 encrypted Header Auth credential로 Hermes sidecar를 직접
 호출한다. automation 서비스는 요청 경로에 없고, 응답 뒤에서 content 형식 검증,
@@ -561,7 +562,7 @@ erDiagram
 
 DB에서 강제하는 FK는 `dynamic_universe_decisions.run_id` 하나다. `symbol`과
 `signal_id` 선은 Grafana 조회와 감사 추적에 사용하는 논리 관계다.
-`paper_cycle_runs`와 `automation_run_logs`는 실행 단위 독립 장부다.
+`paper_cycle_runs`와 `automation_run_logs`는 독립 장부. `daily_return_rate`는 보유 MTM.
 `automation_run_logs.details` JSONB에는 `workflowId`, `executionId`, `trigger`,
 `portfolioId`, `interval`, `parentExecutionId`, `telegramAccepted`, `riskDecisionIds` 등
 workflow 감사 메타데이터가 들어가며, 별도 DB column이나 FK가 아니다.

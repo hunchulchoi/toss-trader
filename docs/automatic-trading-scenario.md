@@ -7,7 +7,7 @@
 - `TRADING_ENABLED=false` 고정
 - 실제 주문 생성·정정·취소 코드 없음
 - 전략 신호가 승인되어도 DB에 가상 체결만 기록
-- 비교 실험에서 Hermes는 기술 신호를 승인/거부하지만 RiskManager가 항상 최종 결정
+- Hermes는 한도 통과 신호만 승인/거부. 최종은 RiskManager
 - 실주문 전환은 별도 구현·검증·명시적 승인 필요
 
 ## 전체 흐름
@@ -25,7 +25,7 @@ Telegram 장전 리포트
   -> 규칙 기반 1분봉 task
   -> 동일 universe·entry signal로 Hermes 개입 1분봉 task
   -> 각 포트폴리오 1,000,000원, 장부·현금·포지션 완전 분리
-  -> Hermes 포트폴리오만 신호 발생 시 LLM 승인/거부
+  -> Hermes: 신호+한도 통과 때만 LLM. 한도 거부는 skip
   -> RiskManager 최종 판단 감사 + paper 체결 + cycle 상태 저장
   -> 체결·거부·오류만 Telegram
 
@@ -104,7 +104,7 @@ discovery universe 안에서 발굴한다.
 - n8n이 `paper-rule-1m`, `paper-hermes-1m` task를 순차 호출
 - task endpoint는 host port 없이 `openclaw-net` 내부에서만 접근
 - 종목별 최근 1분봉 61개로 MA20/MA60 교차 계산
-- 규칙 기반은 Hermes를 호출하지 않고, Hermes 포트폴리오는 신호가 있을 때만 호출
+- Rule은 Hermes 없음. Hermes는 신호+한도 통과 때만. 한도 거부는 판단 행만
 - 정상 무신호는 Telegram을 보내지 않음
 - 체결, 의미 있는 RiskManager 거부, 종목/API 오류만 즉시 보고
 - 동일 cycle 중복 요청은 `409`, 동일 캔들 신호는 `duplicate-signal`로 차단
@@ -131,10 +131,9 @@ n8n의 각 task 호출마다 automation service가 별도 프로세스로
 `paper_portfolios`가 표시 이름·mode·초기자금을 저장하고, `paper_fills`,
 `paper_risk_decisions`, `paper_cycle_runs`는 `portfolio_id`로 격리한다.
 
-Hermes advisor에는 주문 신호와 RiskContext JSON만 전달한다. 응답은 승인 여부와 한국어
-근거를 담은 JSON이어야 한다. 호출·파싱 장애는 기계적 판단으로 대체하지 않고
-`Hermes 분석 실패: 응답을 받지 못해 체결 차단`으로 RiskManager가 거부한다. 승인/거부 근거와 token 사용량은
-`automation_run_logs`의 `hermes_trade` 실행으로 조회한다.
+Hermes: 로컬 hard preflight 통과 후에만 advisor. 한도 거부 → 판단 1행, token 0.
+Rule: preflight 없이 n8n 1회. payload는 신호+RiskContext. 뉴스·호가 없음.
+장애는 `Hermes 분석 실패: 응답을 받지 못해 체결 차단`. token은 `hermes_trade`.
 
 종목별 처리:
 
@@ -143,9 +142,9 @@ Hermes advisor에는 주문 신호와 RiskContext JSON만 전달한다. 응답�
 3. 저장된 종가로 이전·현재 MA20/MA60 계산
 4. 골든크로스면 `BUY`, 데드크로스면 `SELL`, 교차 없으면 신호 없음
 5. 신호가 있으면 국가별 정규장 일정과 시장 휴장 여부 조회
-6. RiskManager 검사
-7. 승인 시 PostgreSQL 또는 SQLite ledger에 paper 체결 기록
-8. 사이클 결과와 연속 API 오류 수 저장
+6. Hermes면 hard preflight → 통과 시 advisor → n8n Risk. Rule은 n8n 1회
+7. 승인 시 paper 체결 기록
+8. 사이클 결과·API 오류 수 저장
 
 한 종목 실패는 다른 종목 처리를 막지 않는다. 일부 실패는
 `partial_failure`, 전부 실패는 `failed`로 저장된다. 같은 캔들에서 생성된
@@ -173,12 +172,12 @@ RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저�
 | 장 마감 전 신규 매수 | 10분 전부터 금지 | `market-close-window` |
 | 동일 신호 | 재체결 금지 | `duplicate-signal` |
 | 보유량 초과 매도 | 금지 | `insufficient-position` |
-| RiskManager webhook 오류 | 체결 금지 | `risk-manager-workflow-unavailable` |
-| Hermes advisor 거부 | 체결 금지 | `Hermes 거부: <근거>` |
-| Hermes advisor 오류 | 체결 금지 | `Hermes 분석 실패: 응답을 받지 못해 체결 차단` |
+| RiskManager webhook 오류 | 체결 금지. preflight 아님 | `risk-manager-workflow-unavailable` |
+| Hermes advisor 거부 | 한도 통과 후 | `Hermes 거부: <근거>` |
+| Hermes advisor 오류 | 한도 통과 후 | `Hermes 분석 실패: 응답을 받지 못해 체결 차단` |
 
-일일 손실은 통화별 수익률을 합산하지 않고 가장 나쁜 통화 구간 수익률로
-판정한다. 매도는 보유 수량 안에서만 허용한다.
+위 세 줄 제외가 hard preflight. 일손실은 최악 통화 구간. 매도는 보유 수량 안.
+`daily_return_rate`는 보유 MTM. 오늘 체결 성과 아님.
 
 ### 6. Hermes 분석
 
@@ -209,9 +208,7 @@ Docker socket을 가진 기존 공용 Hermes 컨테이너와 그 credential은 �
 않는다. system prompt의 “도구를 호출하지 마라” 문구는 보안 경계로 간주하지
 않는다.
 
-장중 Hermes 포트폴리오는 신호가 있을 때만 Hermes를 호출한다. 신호가 없는
-cycle에서는 token이 증가하지 않는다. 장전·장중·마감 token 사용량은
-`automation_run_logs`에 저장한다.
+장중 token은 실제 advisor 호출만. 무신호·한도 거부는 0. 기록은 `automation_run_logs`.
 
 ### 7. Telegram 보고
 
@@ -254,16 +251,8 @@ Grafana는 Tailscale 주소로만 접근한다. 현재 기본 port:
 | Alertmanager | `19093` |
 | Grafana (공용) | `3001` |
 
-공용 Grafana `Trading / Toss Trader` dashboard에는 최근 RiskManager 판단,
-paper cycle 실행 로그, 가상 체결, Hermes token 사용량과 자동화 실행 로그가
-있다. `Symbols (1m, BUY/SELL Marked · $trade_filter)`는 수집된 1분봉을 심볼별 정규화 그래프로 보여주며,
-장전 scan에서 Toss 종목 기본정보 API로 갱신한 `market_symbols` 기준정보를
-조인해 회사명과 종목코드를 함께 표시한다.
-`Paper Cycle Run Log`는 장중 cycle마다 갱신되며 `Hermes Automation Run Log`는
-장전·마감 분석과 신호가 발생한 장중 Hermes advisor 실행을 기록한다. 실행 상태
-stat 패널은 `toss-prometheus`, 장부·그래프 패널은 `toss-postgres` datasource를
-사용한다. `toss-postgres`는 장부 테이블, `market_candles`, `market_symbols`에 대한
-SELECT만 허용된 전용 read-only 계정이다.
+Grafana `Toss Trader`: 상태 패널 `toss-prometheus`, 장부 `toss-postgres` (SELECT only).
+한도 거부는 `paper_risk_decisions`만. `Hermes Automation Run Log`에는 advisor 호출만.
 
 ## 장애 처리
 

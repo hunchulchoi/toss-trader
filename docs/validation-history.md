@@ -17,5 +17,4 @@
 | PostgreSQL lock·idle transaction | 0 |
 | trading | `TRADING_ENABLED=false` |
 
-특정 종목 매매 권고가 아닌 자동화 운영 검증 스냅샷이다. 현재 상태 판단은
-runbook의 조회 명령, Grafana, n8n execution과 DB 장부로 수행한다.
+수익률은 보유 전체 MTM. 오늘 체결 성과 아님. 매매 권고 아님.
