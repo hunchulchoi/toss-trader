@@ -68,7 +68,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         symbol_panel = next(
             panel
             for panel in dashboard["panels"]
-            if panel["title"].startswith("Traded Symbols")
+            if panel["title"].startswith("Symbols (1m")
         )
         self.assertEqual(symbol_panel["type"], "timeseries")
         self.assertEqual(symbol_panel["fieldConfig"]["defaults"]["unit"], "percent")
@@ -86,8 +86,17 @@ class MonitoringAssetsTest(unittest.TestCase):
             for variable in dashboard["templating"]["list"]
             if variable["name"] == "trade_symbol"
         )
-        self.assertIn("SELECT DISTINCT symbol FROM paper_fills", trade_variable["query"])
-        self.assertEqual(trade_variable["label"], "체결 종목")
+        self.assertIn("SELECT DISTINCT symbol FROM market_candles", trade_variable["query"])
+        self.assertIn("EXISTS (SELECT 1 FROM paper_fills", trade_variable["query"])
+        self.assertEqual(trade_variable["label"], "종목")
+        trade_filter = next(
+            variable
+            for variable in dashboard["templating"]["list"]
+            if variable["name"] == "trade_filter"
+        )
+        self.assertEqual(trade_filter["label"], "종목 범위")
+        self.assertEqual(trade_filter["current"]["value"], "traded")
+        self.assertIn("전체 조회 종목 : all", trade_filter["query"])
         self.assertIn("Recent Paper Fills", titles)
         self.assertIn("Dynamic Universe Risk Decisions", titles)
         positions_panel = next(
