@@ -6,7 +6,7 @@ import sys
 from collections.abc import Sequence
 from contextlib import ExitStack
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any
@@ -30,9 +30,10 @@ from .models import Side, TradeSignal
 from .paper import DuplicatePaperOrder, open_paper_ledger
 from .portfolio import PortfolioPerformance
 from .repository import open_market_repository
-from .risk import RiskLimits, RiskManager
+from .risk import RiskLimits, RiskManager, UniverseRiskContext
 from .screening import MarketScanner, market_scan_to_dict
 from .strategy import ma_crossover_signal
+from .universe import DynamicUniverseSelector, open_universe_store
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -382,10 +383,10 @@ def _scan_ma(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
-    symbols = (
+    explicit_symbols = (
         tuple(symbol.upper() for symbol in args.symbols)
         if args.symbols
-        else settings.watchlist_symbols
+        else None
     )
     interval = args.interval or settings.strategy_interval
     short_window = args.short_window or settings.strategy_short_window
@@ -397,6 +398,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
         raise ValueError("quantity must be positive")
 
     postgres_parameters = settings.postgres_connection_parameters()
+    now = datetime.now(UTC)
     with ExitStack() as stack:
         client = _client(settings)
         market_repository = open_market_repository(
@@ -414,6 +416,51 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             sqlite_path=settings.paper_db_path,
         )
         stack.callback(cycle_state.close)
+        performance = PortfolioPerformance(
+            ledger=paper_ledger,
+            market_repository=market_repository,
+        )
+        universe_result = None
+        if explicit_symbols is not None:
+            symbols = explicit_symbols
+        else:
+            universe_store = open_universe_store(
+                postgres_parameters=postgres_parameters,
+                sqlite_path=settings.paper_db_path,
+            )
+            stack.callback(universe_store.close)
+            latest_cycle = cycle_state.latest_run()
+            universe_result = DynamicUniverseSelector(
+                client=client,
+                repository=market_repository,
+                store=universe_store,
+                risk_manager=RiskManager(RiskLimits()),
+                refresh_interval=timedelta(
+                    minutes=settings.dynamic_universe_refresh_minutes
+                ),
+                candidate_count=settings.dynamic_universe_candidate_count,
+                universe_size=settings.dynamic_universe_size,
+            ).resolve(
+                now=now,
+                held_symbols=performance.open_position_symbols(),
+                risk_context=UniverseRiskContext(
+                    quantity=quantity,
+                    available_cash=paper_ledger.cash_balance(
+                        settings.paper_initial_cash
+                    ),
+                    daily_return_rate=(
+                        latest_cycle.daily_return_rate
+                        if latest_cycle is not None
+                        else Decimal(0)
+                    ),
+                    consecutive_api_errors=(
+                        latest_cycle.consecutive_api_errors
+                        if latest_cycle is not None
+                        else 0
+                    ),
+                ),
+            )
+            symbols = universe_result.symbols
         result = PaperCycleRunner(
             collector=MarketCollector(client=client, repository=market_repository),
             strategy=StoredMaStrategy(market_repository),
@@ -423,10 +470,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 initial_cash=settings.paper_initial_cash,
             ),
             calendar=MarketCalendarService(client),
-            performance=PortfolioPerformance(
-                ledger=paper_ledger,
-                market_repository=market_repository,
-            ),
+            performance=performance,
             state=cycle_state,
         ).run(
             symbols=symbols,
@@ -434,7 +478,12 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             short_window=short_window,
             long_window=long_window,
             quantity=quantity,
-            now=datetime.now(UTC),
+            now=now,
+            new_buys_allowed=(
+                universe_result.new_buys_allowed
+                if universe_result is not None
+                else True
+            ),
         )
         cash_balance = paper_ledger.cash_balance(settings.paper_initial_cash)
     _emit(
@@ -448,6 +497,16 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             "initialCash": settings.paper_initial_cash,
             "cashBalance": cash_balance,
             "consecutiveApiErrors": result.consecutive_api_errors,
+            "universe": (
+                {
+                    "runId": universe_result.run_id,
+                    "refreshed": universe_result.refreshed,
+                    "symbols": list(universe_result.symbols),
+                    "newBuysAllowed": universe_result.new_buys_allowed,
+                }
+                if universe_result is not None
+                else {"source": "explicit", "symbols": list(symbols)}
+            ),
             "summary": {
                 "symbols": result.symbol_count,
                 "signals": result.signal_count,

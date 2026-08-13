@@ -85,6 +85,9 @@ class SettingsTest(unittest.TestCase):
                 "PAPER_ORDER_QUANTITY": "2.5",
                 "PAPER_INITIAL_CASH": "1000000",
                 "CANDLE_REQUEST_INTERVAL_SECONDS": "0.4",
+                "DYNAMIC_UNIVERSE_REFRESH_MINUTES": "20",
+                "DYNAMIC_UNIVERSE_CANDIDATE_COUNT": "40",
+                "DYNAMIC_UNIVERSE_SIZE": "12",
             }
         )
 
@@ -95,6 +98,9 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(settings.paper_order_quantity, Decimal("2.5"))
         self.assertEqual(settings.paper_initial_cash, Decimal(1000000))
         self.assertEqual(settings.candle_request_interval_seconds, 0.4)
+        self.assertEqual(settings.dynamic_universe_refresh_minutes, 20)
+        self.assertEqual(settings.dynamic_universe_candidate_count, 40)
+        self.assertEqual(settings.dynamic_universe_size, 12)
 
     def test_parses_market_benchmarks_and_discovery_universe(self) -> None:
         settings = Settings.from_mapping(
@@ -130,6 +136,8 @@ class SettingsTest(unittest.TestCase):
             Settings.from_mapping({"PAPER_INITIAL_CASH": "0"})
         with self.assertRaises(ValueError):
             Settings.from_mapping({"CANDLE_REQUEST_INTERVAL_SECONDS": "-0.1"})
+        with self.assertRaises(ValueError):
+            Settings.from_mapping({"DYNAMIC_UNIVERSE_CANDIDATE_COUNT": "101"})
 
     def test_parses_and_validates_metrics_listener(self) -> None:
         settings = Settings.from_mapping(

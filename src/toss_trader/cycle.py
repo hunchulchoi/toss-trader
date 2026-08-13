@@ -85,6 +85,7 @@ class PaperCycleRunner:
         long_window: int,
         quantity: Decimal,
         now: datetime,
+        new_buys_allowed: bool = True,
     ) -> PaperCycleResult:
         if not symbols:
             raise ValueError("watchlist must not be empty")
@@ -104,6 +105,7 @@ class PaperCycleRunner:
                 quantity=quantity,
                 now=now,
                 previous_api_errors=previous_api_errors,
+                new_buys_allowed=new_buys_allowed,
             )
         except Exception as error:
             self._state.finish_run(
@@ -143,6 +145,7 @@ class PaperCycleRunner:
         quantity: Decimal,
         now: datetime,
         previous_api_errors: int,
+        new_buys_allowed: bool,
     ) -> PaperCycleResult:
         size = len(symbols)
         collections: list[CollectionResult | None] = [None] * size
@@ -218,6 +221,7 @@ class PaperCycleRunner:
                     session=session,
                     performance=performance,
                     consecutive_api_errors=consecutive_api_errors,
+                    new_buys_allowed=new_buys_allowed,
                 )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
@@ -285,6 +289,7 @@ class PaperCycleRunner:
         session: MarketSession,
         performance: DailyPortfolioPerformance,
         consecutive_api_errors: int,
+        new_buys_allowed: bool,
     ) -> PaperExecutionResult:
         return self._trading.submit(
             signal,
@@ -293,6 +298,7 @@ class PaperCycleRunner:
             market_is_business_day=session.is_business_day,
             daily_return_rate=performance.daily_return_rate,
             consecutive_api_errors=consecutive_api_errors,
+            new_buys_allowed=new_buys_allowed,
         )
 
     def _finished_at(self, started_at: datetime) -> datetime:

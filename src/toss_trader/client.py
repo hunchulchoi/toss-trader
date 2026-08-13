@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -89,6 +90,7 @@ class TossClient:
         self._candle_min_interval_seconds = candle_min_interval_seconds
         self._candle_interval_seconds = candle_min_interval_seconds
         self._next_candle_request_at = 0.0
+        self._candle_slot_lock = threading.Lock()
         self._access_token: str | None = None
         self._token_expires_at = 0.0
 
@@ -105,6 +107,30 @@ class TossClient:
             "GET", "/api/v1/stocks", query={"symbols": ",".join(clean_symbols)}
         )
         return self._require_result(payload, list)
+
+    def rankings(
+        self,
+        *,
+        ranking_type: str,
+        market_country: str,
+        duration: str,
+        exclude_investment_caution: bool,
+        count: int,
+    ) -> dict[str, Any]:
+        payload = self._request(
+            "GET",
+            "/api/v1/rankings",
+            query={
+                "type": ranking_type,
+                "marketCountry": market_country,
+                "duration": duration,
+                "excludeInvestmentCaution": str(
+                    exclude_investment_caution
+                ).lower(),
+                "count": count,
+            },
+        )
+        return self._require_result(payload, dict)
 
     def candles(
         self,
@@ -212,26 +238,27 @@ class TossClient:
             self._raise_api_error(response)
 
     def _wait_for_candle_slot(self) -> None:
-        now = self._clock()
-        delay = max(0.0, self._next_candle_request_at - now)
-        if delay:
-            self._sleeper(delay)
-        self._next_candle_request_at = max(now, self._next_candle_request_at) + (
-            self._candle_interval_seconds
-        )
+        with self._candle_slot_lock:
+            now = self._clock()
+            delay = max(0.0, self._next_candle_request_at - now)
+            if delay:
+                self._sleeper(delay)
+                now = self._clock()
+            self._next_candle_request_at = now + self._candle_interval_seconds
 
     def _update_candle_limit(self, response: HttpResponse) -> None:
-        limit = self._rate_limit_header(response, "X-RateLimit-Limit")
-        if limit is not None and limit > 0:
-            self._candle_interval_seconds = max(
-                self._candle_min_interval_seconds, 1.0 / limit
-            )
-        remaining = self._rate_limit_header(response, "X-RateLimit-Remaining")
-        reset = self._rate_limit_header(response, "X-RateLimit-Reset")
-        if remaining is not None and remaining <= 1 and reset is not None:
-            self._next_candle_request_at = max(
-                self._next_candle_request_at, self._clock() + reset
-            )
+        with self._candle_slot_lock:
+            limit = self._rate_limit_header(response, "X-RateLimit-Limit")
+            if limit is not None and limit > 0:
+                self._candle_interval_seconds = max(
+                    self._candle_min_interval_seconds, 1.0 / limit
+                )
+            remaining = self._rate_limit_header(response, "X-RateLimit-Remaining")
+            reset = self._rate_limit_header(response, "X-RateLimit-Reset")
+            if remaining is not None and remaining <= 1 and reset is not None:
+                self._next_candle_request_at = max(
+                    self._next_candle_request_at, self._clock() + reset
+                )
 
     def _rate_limit_header(self, response: HttpResponse, name: str) -> float | None:
         raw = self._header(response, name)

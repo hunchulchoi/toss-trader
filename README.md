@@ -114,16 +114,24 @@ infisical run --env=prod --path=/ -- \
 기본 설정:
 
 ```dotenv
-WATCHLIST_SYMBOLS=005930
 STRATEGY_INTERVAL=1d
 STRATEGY_SHORT_WINDOW=20
 STRATEGY_LONG_WINDOW=60
 PAPER_ORDER_QUANTITY=1
 PAPER_INITIAL_CASH=1000000
+CANDLE_REQUEST_INTERVAL_SECONDS=0.25
+DYNAMIC_UNIVERSE_REFRESH_MINUTES=30
+DYNAMIC_UNIVERSE_CANDIDATE_COUNT=30
+DYNAMIC_UNIVERSE_SIZE=15
 ```
 
 `STRATEGY_INTERVAL=1d`는 수동 실행과 15:40 마감 cycle의 기본값이다. 장중
 `/run-paper-cycle` endpoint는 환경값과 관계없이 `--interval 1m`을 강제한다.
+종목은 고정 watchlist가 아니라 30분마다 Toss 시장 거래대금 상위 30개와
+1일 상승률 상위 30개를 합산 점수화해 RiskManager가 승인한 상위 15개를 쓴다.
+보유 종목은 순위에서 빠져도 계속 추적한다. 랭킹 장애 시 보유 종목만 추적하고
+신규 BUY는 `universe-refresh-failed`로 거부한다. `/candles`는 기본 0.25초 간격과
+Toss rate-limit 응답 헤더에 따라 더 느리게 호출한다.
 
 장전 시장분석·종목발굴:
 
@@ -212,7 +220,6 @@ docker compose run --rm trader config
 
 ## 다음 단계
 
-1. Infisical `WATCHLIST_SYMBOLS`에 paper 대상 종목 추가
-2. n8n scheduler로 2~4주 paper 성과·장애 데이터 축적
-3. 공용 Grafana에서 Risk 판단·가상 체결·token 추이 검토
-4. 실주문은 별도 설계·검증·명시적 승인 전까지 구현하지 않음
+1. n8n scheduler로 2~4주 paper 성과·장애 데이터 축적
+2. 공용 Grafana에서 universe/Risk 판단·가상 체결·token 추이 검토
+3. 실주문은 별도 설계·검증·명시적 승인 전까지 구현하지 않음

@@ -48,6 +48,12 @@ class MonitoringAssetsTest(unittest.TestCase):
         )
         self.assertTrue(any("paper_cycle_runs" in query for query in sql_queries))
         self.assertTrue(any("paper_fills" in query for query in sql_queries))
+        self.assertTrue(
+            any("dynamic_universe_runs" in query for query in sql_queries)
+        )
+        self.assertTrue(
+            any("dynamic_universe_decisions" in query for query in sql_queries)
+        )
         self.assertTrue(any("prompt_tokens" in query for query in sql_queries))
         titles = {panel["title"] for panel in dashboard["panels"]}
         self.assertIn("Paper Cycle Run Log", titles)
@@ -72,6 +78,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("display_name", symbol_panel["targets"][0]["rawSql"])
         self.assertNotIn("CASE symbol", symbol_panel["targets"][0]["rawSql"])
         self.assertIn("Recent Paper Fills", titles)
+        self.assertIn("Dynamic Universe Risk Decisions", titles)
         self.assertIn("Hermes Automation Run Log", titles)
         self.assertNotIn("DS_PROMETHEUS", dashboard)
 

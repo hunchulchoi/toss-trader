@@ -232,6 +232,7 @@ paper cycle 실행 로그, 가상 체결, Hermes token 사용량과 자동화 �
 
 | 장애 | 동작 |
 |---|---|
+| Toss 랭킹 오류 | 동적 universe 실패 기록, 보유 종목만 추적, 신규 BUY 거부 |
 | Toss 인증/시세 오류 | 종목 실패 기록, 오류 streak 증가, 나머지 종목 계속 |
 | 시장 일정 조회 실패 | 해당 국가 신호 실행 금지 |
 | RiskManager 거부 | 체결 없음, 위반 코드 기록 |
@@ -269,9 +270,22 @@ HERMES_API_KEY=
 MARKET_BENCHMARK_SYMBOLS=069500,229200
 DISCOVERY_SYMBOLS=005930,000660,373220,207940,005380,000270,068270,105560,055550,035420,035720,006400,051910,028260,012330
 DISCOVERY_TOP_N=10
+DYNAMIC_UNIVERSE_REFRESH_MINUTES=30
+DYNAMIC_UNIVERSE_CANDIDATE_COUNT=30
+DYNAMIC_UNIVERSE_SIZE=15
+CANDLE_REQUEST_INTERVAL_SECONDS=0.25
 ```
 
-`WATCHLIST_SYMBOLS`, 전략 window, 수량, port도 비밀이 아닌 일반 설정이다.
+장중 paper cycle은 고정 watchlist를 사용하지 않는다. 30분마다 한국 시장의
+거래대금 상위 30개와 1일 상승률 상위 30개를 조회하고, 거래대금 순위에 2배
+가중치를 둬 합산한다. 투자유의 종목은 Toss 랭킹 요청에서 제외한다.
+RiskManager가 보통주·거래 상태·거래정지·가격·주문 한도·가용 현금·일일 손실·
+API 오류 streak를 검사한 뒤 승인 상위 15개와 기존 보유 종목을 추적한다.
+판단은 `dynamic_universe_runs`, `dynamic_universe_decisions`에 저장한다.
+
+선정 종목의 `/candles`는 종목별 순차 조회한다. 호출 사이에는 기본 0.25초를
+두고, Toss의 `X-RateLimit-*`와 `Retry-After` 응답에 따라 대기를 늘린다.
+전략 window, 수량, port와 위 설정은 비밀이 아닌 일반 설정이다.
 
 ## Toss 허용 IP
 

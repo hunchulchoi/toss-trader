@@ -192,7 +192,17 @@
     {
       "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
       "fieldConfig": {"defaults": {}, "overrides": []},
-      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 56},
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 56},
+      "id": 18,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT d.evaluated_at AS time, COALESCE(s.display_name || ' (' || d.symbol || ')', d.symbol) AS security, d.score, d.amount_rank, d.gainer_rank, d.change_rate, d.trading_amount, d.reference_price, d.risk_approved, d.selected, d.violations::text AS violations, r.status AS refresh_status, d.run_id FROM dynamic_universe_decisions d JOIN dynamic_universe_runs r ON r.run_id = d.run_id LEFT JOIN market_symbols s ON s.symbol = d.symbol WHERE $__timeFilter(d.evaluated_at) ORDER BY d.evaluated_at DESC, d.score DESC LIMIT 500", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "title": "Dynamic Universe Risk Decisions",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 68},
       "id": 16,
       "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
       "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT executed_at AS time, symbol, side, quantity, price, notional, signal_id, fill_id FROM paper_fills WHERE $__timeFilter(executed_at) ORDER BY executed_at DESC LIMIT 100", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
@@ -209,6 +219,6 @@
   "timezone": "browser",
   "title": "Toss Trader",
   "uid": "toss-trader",
-  "version": 6,
+  "version": 7,
   "weekStart": "monday"
 }

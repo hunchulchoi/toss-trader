@@ -39,6 +39,7 @@ class PaperTradingService:
         market_is_business_day: bool = True,
         daily_return_rate: Decimal = Decimal(0),
         consecutive_api_errors: int = 0,
+        new_buys_allowed: bool = True,
     ) -> PaperExecutionResult:
         context = RiskContext(
             now=now,
@@ -53,6 +54,7 @@ class PaperTradingService:
             daily_return_rate=daily_return_rate,
             consecutive_api_errors=consecutive_api_errors,
             seen_signal_ids=self._ledger.seen_signal_ids(),
+            new_buys_allowed=new_buys_allowed,
         )
         decision = self._risk_manager.evaluate(signal, context)
         decision_id = self._ledger.record_risk_decision(

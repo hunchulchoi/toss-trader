@@ -26,6 +26,9 @@ class Settings:
     market_benchmark_symbols: tuple[str, ...] = ("069500",)
     discovery_symbols: tuple[str, ...] = ("005930",)
     discovery_top_n: int = 10
+    dynamic_universe_refresh_minutes: int = 30
+    dynamic_universe_candidate_count: int = 30
+    dynamic_universe_size: int = 15
     strategy_interval: str = "1d"
     strategy_short_window: int = 20
     strategy_long_window: int = 60
@@ -72,6 +75,23 @@ class Settings:
         )
         if discovery_top_n > 50:
             raise ValueError("DISCOVERY_TOP_N must not exceed 50")
+        universe_refresh = _positive_int(
+            "DYNAMIC_UNIVERSE_REFRESH_MINUTES",
+            values.get("DYNAMIC_UNIVERSE_REFRESH_MINUTES", "30"),
+        )
+        universe_candidates = _positive_int(
+            "DYNAMIC_UNIVERSE_CANDIDATE_COUNT",
+            values.get("DYNAMIC_UNIVERSE_CANDIDATE_COUNT", "30"),
+        )
+        universe_size = _positive_int(
+            "DYNAMIC_UNIVERSE_SIZE", values.get("DYNAMIC_UNIVERSE_SIZE", "15")
+        )
+        if universe_candidates > 100:
+            raise ValueError("DYNAMIC_UNIVERSE_CANDIDATE_COUNT must not exceed 100")
+        if universe_size > universe_candidates * 2:
+            raise ValueError(
+                "DYNAMIC_UNIVERSE_SIZE must not exceed twice candidate count"
+            )
         return cls(
             client_id=values.get("TOSS_CLIENT_ID") or values.get("TOSS_API_KEY"),
             client_secret=values.get("TOSS_CLIENT_SECRET")
@@ -100,6 +120,9 @@ class Settings:
                 or ",".join(watchlist_symbols),
             ),
             discovery_top_n=discovery_top_n,
+            dynamic_universe_refresh_minutes=universe_refresh,
+            dynamic_universe_candidate_count=universe_candidates,
+            dynamic_universe_size=universe_size,
             strategy_interval=interval,
             strategy_short_window=short_window,
             strategy_long_window=long_window,

@@ -26,6 +26,34 @@ def response(status: int, payload: dict, **headers: str) -> HttpResponse:
 
 
 class TossClientTest(unittest.TestCase):
+    def test_fetches_market_rankings_with_safety_filter(self) -> None:
+        transport = FakeTransport(
+            [
+                response(
+                    200,
+                    {"access_token": "token", "token_type": "Bearer", "expires_in": 3600},
+                ),
+                response(
+                    200,
+                    {"result": {"rankedAt": None, "rankings": []}},
+                ),
+            ]
+        )
+        client = TossClient(client_id="id", client_secret="secret", transport=transport)
+
+        result = client.rankings(
+            ranking_type="MARKET_TRADING_AMOUNT",
+            market_country="KR",
+            duration="realtime",
+            exclude_investment_caution=True,
+            count=30,
+        )
+
+        self.assertEqual(result["rankings"], [])
+        url = transport.requests[-1].url
+        self.assertIn("/api/v1/rankings?", url)
+        self.assertIn("excludeInvestmentCaution=true", url)
+
     def test_spaces_candle_requests_and_honors_rate_limit_reset(self) -> None:
         now = [100.0]
         sleeps: list[float] = []

@@ -3,7 +3,13 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from toss_trader.models import Side, TradeSignal
-from toss_trader.risk import RiskContext, RiskLimits, RiskManager
+from toss_trader.risk import (
+    RiskContext,
+    RiskLimits,
+    RiskManager,
+    UniverseCandidateRisk,
+    UniverseRiskContext,
+)
 
 NOW = datetime(2026, 8, 12, 5, 0, tzinfo=UTC)
 
@@ -104,6 +110,52 @@ class RiskManagerTest(unittest.TestCase):
 
         self.assertFalse(decision.approved)
         self.assertIn("insufficient-position", decision.violations)
+
+    def test_audits_dynamic_universe_candidate_safety(self) -> None:
+        decision = self.manager.evaluate_universe_candidate(
+            UniverseCandidateRisk(
+                symbol="069500",
+                reference_price=Decimal(400000),
+                security_type="ETF",
+                is_common_share=False,
+                status="ACTIVE",
+                trading_suspended=True,
+            ),
+            UniverseRiskContext(
+                quantity=Decimal(1),
+                available_cash=Decimal(200000),
+                daily_return_rate=Decimal("-0.04"),
+                consecutive_api_errors=5,
+            ),
+        )
+
+        self.assertFalse(decision.approved)
+        self.assertEqual(
+            set(decision.violations),
+            {
+                "unsupported-security-type",
+                "not-common-share",
+                "trading-suspended",
+                "max-order-notional",
+                "insufficient-paper-cash",
+                "daily-loss-limit",
+                "api-error-kill-switch",
+            },
+        )
+
+    def test_universe_failure_blocks_buy_but_not_sell(self) -> None:
+        buy = self.manager.evaluate(
+            signal(), RiskContext(now=NOW, new_buys_allowed=False)
+        )
+        sell = self.manager.evaluate(
+            signal(side=Side.SELL),
+            RiskContext(
+                now=NOW, position_quantity=Decimal(3), new_buys_allowed=False
+            ),
+        )
+
+        self.assertIn("universe-refresh-failed", buy.violations)
+        self.assertTrue(sell.approved)
 
 
 if __name__ == "__main__":

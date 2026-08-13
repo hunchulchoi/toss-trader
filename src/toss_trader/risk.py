@@ -29,12 +29,31 @@ class RiskContext:
     daily_return_rate: Decimal = Decimal(0)
     consecutive_api_errors: int = 0
     seen_signal_ids: frozenset[str] = field(default_factory=frozenset)
+    new_buys_allowed: bool = True
 
 
 @dataclass(frozen=True, slots=True)
 class RiskDecision:
     approved: bool
     violations: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class UniverseCandidateRisk:
+    symbol: str
+    reference_price: Decimal
+    security_type: str
+    is_common_share: bool
+    status: str
+    trading_suspended: bool
+
+
+@dataclass(frozen=True, slots=True)
+class UniverseRiskContext:
+    quantity: Decimal
+    available_cash: Decimal
+    daily_return_rate: Decimal
+    consecutive_api_errors: int
 
 
 class RiskManager:
@@ -46,6 +65,8 @@ class RiskManager:
 
         if signal.signal_id in context.seen_signal_ids:
             violations.append("duplicate-signal")
+        if signal.side is Side.BUY and not context.new_buys_allowed:
+            violations.append("universe-refresh-failed")
         if signal.notional > self._limits.max_order_notional:
             violations.append("max-order-notional")
         if (
@@ -81,4 +102,29 @@ class RiskManager:
         ):
             violations.append("market-close-window")
 
+        return RiskDecision(approved=not violations, violations=tuple(violations))
+
+    def evaluate_universe_candidate(
+        self, candidate: UniverseCandidateRisk, context: UniverseRiskContext
+    ) -> RiskDecision:
+        violations: list[str] = []
+        if candidate.security_type != "STOCK":
+            violations.append("unsupported-security-type")
+        if not candidate.is_common_share:
+            violations.append("not-common-share")
+        if candidate.status != "ACTIVE":
+            violations.append("stock-not-active")
+        if candidate.trading_suspended:
+            violations.append("trading-suspended")
+        if candidate.reference_price <= 0:
+            violations.append("invalid-reference-price")
+        notional = candidate.reference_price * context.quantity
+        if notional > self._limits.max_order_notional:
+            violations.append("max-order-notional")
+        if notional > context.available_cash:
+            violations.append("insufficient-paper-cash")
+        if context.daily_return_rate <= self._limits.daily_loss_limit:
+            violations.append("daily-loss-limit")
+        if context.consecutive_api_errors >= self._limits.max_consecutive_api_errors:
+            violations.append("api-error-kill-switch")
         return RiskDecision(approved=not violations, violations=tuple(violations))
