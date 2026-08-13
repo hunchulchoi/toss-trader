@@ -11,12 +11,11 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo
 
 from .config import Settings
 from .paper import open_paper_ledger
@@ -310,19 +309,6 @@ class PaperCycleProcess:
         self._timeout_seconds = timeout_seconds
 
     def run(self) -> dict[str, Any]:
-        starts_on = _comparison_starts_on()
-        if starts_on is not None and datetime.now(ZoneInfo("Asia/Seoul")).date() < starts_on:
-            return {
-                "exitCode": 0,
-                "cycle": {
-                    "comparison": True,
-                    "skipped": True,
-                    "reason": "comparison-not-started",
-                    "startsOn": starts_on.isoformat(),
-                    "interval": self._interval or "1d",
-                    "summary": {"symbols": 0, "signals": 0, "fills": 0, "failed": 0},
-                },
-            }
         environment = dict(os.environ)
         environment["TRADING_ENABLED"] = "false"
         portfolios: dict[str, Any] = {}
@@ -390,16 +376,6 @@ class PaperCycleProcess:
                 },
             },
         }
-
-
-def _comparison_starts_on() -> date | None:
-    raw = os.environ.get("PAPER_COMPARISON_START_DATE", "").strip()
-    if not raw:
-        return None
-    try:
-        return date.fromisoformat(raw)
-    except ValueError as error:
-        raise ValueError("PAPER_COMPARISON_START_DATE must be YYYY-MM-DD") from error
 
 
 class IntradayPaperAutomation:

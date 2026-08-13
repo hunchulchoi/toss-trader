@@ -112,8 +112,6 @@ automation service가 별도 프로세스로 `run-paper-cycle --portfolio rule`�
 
 두 신규 포트폴리오는 각각 독립된 1,000,000원으로 시작한다. 기존 시험 체결은
 삭제하지 않고 `legacy` 포트폴리오로 보존하며 비교 성과에는 포함하지 않는다.
-운영 비교 시작일은 `PAPER_COMPARISON_START_DATE=2026-08-14`이며, 그 전 scheduler
-호출은 `comparison-not-started`로 안전하게 건너뛴다.
 `paper_portfolios`가 표시 이름·mode·초기자금을 저장하고, `paper_fills`,
 `paper_risk_decisions`, `paper_cycle_runs`는 `portfolio_id`로 격리한다.
 
