@@ -96,10 +96,11 @@ PYTHONPATH=src python3 -m toss_trader ma-signal 005930 10 10 10 12 \
 ```bash
 PYTHONPATH=src python3 -m toss_trader backtest-ma 005930 \
   --interval 1d --count 1000 --short-window 20 --long-window 60 \
-  --quantity 1 --initial-cash 1000000
+  --quantity 1 --slippage-bps 5 --initial-cash 1000000
 ```
 
 운영 장부에는 쓰지 않으며 paper trading과 같은 Toss 수수료·세금을 반영한다.
+신호 다음 캔들 시가에 체결하고 Buy & Hold 대비 초과수익률도 출력한다.
 체결 가정과 결과 필드는 [MA 백테스트](docs/backtesting.md)를 참고한다.
 
 paper 주문:

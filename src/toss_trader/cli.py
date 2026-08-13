@@ -94,6 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--initial-cash", type=Decimal)
     backtest.add_argument("--short-window", type=int, default=20)
     backtest.add_argument("--long-window", type=int, default=60)
+    backtest.add_argument("--slippage-bps", type=Decimal, default=Decimal(0))
 
     strategy = subparsers.add_parser("ma-signal", help="evaluate MA crossover")
     strategy.add_argument("symbol")
@@ -425,6 +426,7 @@ def _backtest_ma(settings: Settings, args: argparse.Namespace) -> int:
         initial_cash=args.initial_cash or settings.paper_initial_cash,
         short_window=args.short_window,
         long_window=args.long_window,
+        slippage_rate=args.slippage_bps / Decimal(10000),
     )
     return _emit(asdict(result))
 

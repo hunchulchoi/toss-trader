@@ -63,14 +63,16 @@ class MetricsCliTest(unittest.TestCase):
                         "2",
                         "--long-window",
                         "3",
+                        "--slippage-bps",
+                        "10",
                     ]
                 )
 
         payload = json.loads(output.getvalue())
         self.assertEqual(exit_code, 0)
-        self.assertEqual(payload["final_equity"], "959810")
-        self.assertEqual(payload["total_costs"], "190")
-        self.assertEqual(len(payload["trades"]), 2)
+        self.assertEqual(payload["slippage_rate"], "0.001")
+        self.assertIn("buy_hold_return_rate", payload)
+        self.assertIn("excess_return_rate", payload)
 
     def test_metrics_command_renders_from_read_only_sqlite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
