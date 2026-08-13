@@ -1,26 +1,40 @@
 # Toss Trader workflow·ERD·파일 구조
 
-## 운영 구성
+## 시스템 구성도
 
 ```mermaid
-flowchart LR
-    O[운영자] -->|authenticated async webhook| N[n8n orchestrator]
-    N -->|internal HTTP| A[toss-trader-automation]
-    A --> C[Toss Open API]
-    A --> P[(PostgreSQL)]
-    N -->|bearer auth| H[Hermes analysis sidecar]
-    A --> AM[Alertmanager]
-    AM --> T[Telegram topic]
-    P --> M[toss-trader-metrics]
-    M --> PR[Prometheus]
-    P --> G[Grafana :3001]
-    PR --> G
+flowchart TB
+    OP[운영자] -->|인증된 수동 Webhook| N8N
+    SCHED[평일 스케줄] --> N8N
+
+    subgraph NET[openclaw-net 내부망]
+        N8N[n8n orchestration]
+        AUTO[toss-trader-automation]
+        HERMES[Hermes analysis sidecar]
+        AM[Alertmanager]
+        DB[(Toss Trader PostgreSQL)]
+        METRICS[toss-trader-metrics]
+        PROM[Prometheus]
+    end
+
+    N8N -->|내부 HTTP| AUTO
+    N8N -->|Bearer 인증 /v1/chat/completions| HERMES
+    AUTO -->|OAuth2 API| TOSS[Toss Open API]
+    AUTO -->|paper 장부·감사 로그| DB
+    AUTO -->|알림 이벤트| AM
+    AM -->|Bot API| TELEGRAM[Telegram topic]
+    DB --> METRICS
+    METRICS --> PROM
+    DB --> GRAFANA[Grafana :3001]
+    PROM --> GRAFANA
 ```
 
 - `automation`, `hermes-analysis`는 `openclaw-net` 내부에서만 통신한다.
 - Hermes `8642`는 host port를 publish하지 않으며 Docker socket도 없다.
 - Hermes API server의 toolset·plugin·MCP·context tool은 모두 0개다.
 - 실제 주문 코드는 없고 모든 서비스에서 `TRADING_ENABLED=false`를 유지한다.
+- 관측용 Grafana·Prometheus·metrics·Alertmanager는 운영망에서 조회할 수 있다.
+  automation과 Hermes는 host port를 publish하지 않는다.
 
 ## 스케줄
 
@@ -29,6 +43,40 @@ flowchart LR
 | 평일 08:30 | Market Analysis + Discovery | `/run-market-scan` | 시장·후보 JSON을 Hermes가 해석하고 Telegram 전송 |
 | 평일 09:00~15:20, 5분 간격 | Intraday Paper Cycle | n8n rule→Hermes task | 동적 universe, 1분봉, 전략, RiskManager, paper 체결 |
 | 평일 15:40 | Daily Paper + Hermes | n8n rule→Hermes→분석 task | 일봉 paper cycle, Hermes 마감 분석, Telegram 전송 |
+
+## API 구성도
+
+```mermaid
+flowchart LR
+    OP[운영자] -->|POST /webhook/toss-trader-daily-run\nHeader Auth| N8N[n8n]
+
+    N8N -->|POST /workflow/market-scan\n/workflow/paper-*-1m, 1d| AUTO[toss-trader-automation :8088]
+    N8N -->|POST /v1/chat/completions\nBearer 인증| HERMES[hermes-analysis :8642]
+    AUTO -->|POST /webhook/toss-trader-risk-manager\nBearer 인증| N8N
+    N8N -->|POST /workflow/risk-manager-evaluate| AUTO
+
+    AUTO -->|OAuth2 + market/candle API| TOSS[Toss Open API]
+    AUTO -->|POST /api/v2/alerts| ALERT[Alertmanager]
+    ALERT -->|Telegram Bot API| TG[Telegram topic]
+    AUTO -->|SQL| DB[(PostgreSQL)]
+    HERMES -->|GET /v1/toolsets\n운영 검증만| TOOLSET{enabled = 0\nresolved = 0}
+```
+
+| 경계 | 호출 | 인증 | 용도 |
+|---|---|---|---|
+| 운영자 → n8n | `POST /webhook/toss-trader-daily-run` | 전용 bearer Header Auth | 15:40 마감 workflow를 비동기로 접수 |
+| n8n → automation | `POST /workflow/*`, `GET /healthz` | `openclaw-net` 내부 통신 | 시장 스캔, rule/Hermes paper cycle, 리포트, 감사 로그 |
+| automation → n8n | `POST /webhook/toss-trader-risk-manager` | 전용 bearer Header Auth | RiskManager sub-workflow 요청 |
+| n8n → Hermes | `POST /v1/chat/completions` | Hermes bearer | 시장분석 JSON 또는 paper 비교 JSON 해석 |
+| 운영 검증 → Hermes | `GET /v1/toolsets` | Hermes bearer | enabled/resolved tool이 모두 0인지 확인 |
+| automation → Toss | OAuth2 token·시장·캔들 API | Toss OAuth2 credential | 조회 전용 시장 데이터 수집 |
+| automation → Alertmanager | `POST /api/v2/alerts` | 내부망 | 성공·실패·paper 체결 이벤트 전달 |
+| Alertmanager → Telegram | Telegram Bot API | bot credential | 지정 topic에 리포트·장애 알림 전송 |
+
+`/workflow/*`와 Hermes `:8642`는 외부에 공개하지 않는다. n8n의 수동 webhook만
+전용 bearer credential을 통과한 요청을 받고 즉시 접수 응답한다. 모든 bearer 값과
+OAuth2 credential은 Infisical에서 n8n encrypted credential 또는 프로세스 환경으로
+주입하며, workflow JSON·로그·Git에는 저장하지 않는다.
 
 ## 장중 paper cycle
 
