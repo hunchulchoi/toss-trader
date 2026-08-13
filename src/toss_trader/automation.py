@@ -104,8 +104,8 @@ def paper_cycle_notice(job: dict[str, Any]) -> PaperCycleNotice | None:
             fill = raw_item.get("fill")
             if isinstance(fill, dict):
                 side = str(fill.get("side") or "?")
-                quantity = str(fill.get("quantity") or "?")
-                price = str(fill.get("price") or "?")
+                quantity = _grouped_number(fill.get("quantity"))
+                price = _grouped_number(fill.get("price"))
                 lines.append(f"paper 체결: {symbol} {side} {quantity} @ {price}")
             decision = raw_item.get("decision")
             if not isinstance(decision, dict) or decision.get("approved") is not False:
@@ -912,6 +912,15 @@ def _decimal(value: Any) -> Decimal | None:
     except (InvalidOperation, TypeError, ValueError):
         return None
     return parsed if parsed.is_finite() else None
+
+
+def _grouped_number(value: Any) -> str:
+    number = _decimal(value)
+    if number is None:
+        return "?"
+    if number == number.to_integral_value():
+        return format(number, ",.0f")
+    return format(number, ",f").rstrip("0").rstrip(".")
 
 
 def _higher_severity(current: str, candidate: str) -> str:

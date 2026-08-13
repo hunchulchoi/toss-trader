@@ -135,7 +135,11 @@ class IntradayPaperAutomationTest(unittest.TestCase):
                     "items": [
                         {
                             "symbol": "005930",
-                            "fill": {"side": "BUY", "quantity": "1", "price": "71000"},
+                            "fill": {
+                                "side": "BUY",
+                                "quantity": "1000",
+                                "price": "71000",
+                            },
                         }
                     ],
                 },
@@ -146,7 +150,10 @@ class IntradayPaperAutomationTest(unittest.TestCase):
         result = service.run()
 
         self.assertEqual(result["noticeReported"], {"accepted": True})
-        self.assertIn("paper 체결: 005930 BUY 1 @ 71000", notices[0]["analysis"])
+        self.assertIn(
+            "paper 체결: 005930 BUY 1,000 @ 71,000",
+            notices[0]["analysis"],
+        )
 
     def test_process_forces_one_minute_interval_and_disables_trading(self) -> None:
         completed = subprocess.CompletedProcess(
@@ -199,7 +206,7 @@ class DailyAutomationNoticeTest(unittest.TestCase):
         )
         notice = calls[1][1]
         self.assertEqual(notice["severity"], "info")
-        self.assertIn("paper 체결: 005930 BUY 1 @ 71000", notice["analysis"])
+        self.assertIn("paper 체결: 005930 BUY 1 @ 71,000", notice["analysis"])
         self.assertEqual(result["noticeReported"], {"accepted": True})
 
     def test_skips_notice_for_normal_cycle_without_events(self) -> None:
