@@ -28,12 +28,14 @@ token 행을 만들지 않는다. 실행 상태는 `paper_cycle_runs`, 신호가
 Risk 판단은 `paper_risk_decisions`, 승인된 가상 체결은 `paper_fills`에서 본다.
 
 공용 Grafana의 `Toss Trader` dashboard는 `toss-postgres` read-only datasource로
-최근 판단, Hermes token 사용량, 자동화 실행 로그를 조회한다. 장부에는 API
-key, bearer token, 전체 Hermes prompt/response를 저장하지 않는다.
+최근 판단, paper cycle 실행, 가상 체결, Hermes token 사용량과 자동화 실행
+로그를 조회한다. `Paper Cycle Run Log`는 장중 5분마다 갱신되고 `Hermes
+Automation Run Log`는 Hermes를 호출하는 장전·마감 실행에만 행이 추가된다.
+장부에는 API key, bearer token, 전체 Hermes prompt/response를 저장하지 않는다.
 
 운영 안전 경계:
 
 - Risk 판단을 paper fill보다 먼저 저장; 저장 실패 시 체결 금지
 - 휴장일에는 매수·매도 모두 거부
 - `TRADING_ENABLED=false` 고정, 실제 주문 코드 없음
-- Grafana DB 사용자는 감사 테이블 SELECT만 가능
+- Grafana DB 사용자는 네 장부 테이블 SELECT만 가능

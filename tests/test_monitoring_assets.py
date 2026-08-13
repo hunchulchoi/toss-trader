@@ -46,7 +46,13 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertTrue(
             any("automation_run_logs" in query for query in sql_queries)
         )
+        self.assertTrue(any("paper_cycle_runs" in query for query in sql_queries))
+        self.assertTrue(any("paper_fills" in query for query in sql_queries))
         self.assertTrue(any("prompt_tokens" in query for query in sql_queries))
+        titles = {panel["title"] for panel in dashboard["panels"]}
+        self.assertIn("Paper Cycle Run Log", titles)
+        self.assertIn("Recent Paper Fills", titles)
+        self.assertIn("Hermes Automation Run Log", titles)
         self.assertNotIn("DS_PROMETHEUS", dashboard)
 
     def test_prometheus_assets_cover_outage_loss_and_stale_cycle(self) -> None:

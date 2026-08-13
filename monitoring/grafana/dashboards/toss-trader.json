@@ -163,7 +163,27 @@
       "id": 14,
       "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
       "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT finished_at AS time, run_type, status, stage, duration_ms, prompt_tokens, completion_tokens, total_tokens, error, details::text AS details, run_id FROM automation_run_logs WHERE $__timeFilter(finished_at) ORDER BY finished_at DESC LIMIT 100", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
-      "title": "Automation Run Log",
+      "title": "Hermes Automation Run Log",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 36},
+      "id": 15,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT started_at AS time, interval, status, symbol_count, signal_count, fill_count, failed_count, consecutive_api_errors, ROUND(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000) AS duration_ms, daily_return_rate, error_message, run_id FROM paper_cycle_runs WHERE $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 200", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "title": "Paper Cycle Run Log",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 46},
+      "id": 16,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT executed_at AS time, symbol, side, quantity, price, notional, signal_id, fill_id FROM paper_fills WHERE $__timeFilter(executed_at) ORDER BY executed_at DESC LIMIT 100", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "title": "Recent Paper Fills",
       "type": "table"
     }
   ],
@@ -176,6 +196,6 @@
   "timezone": "browser",
   "title": "Toss Trader",
   "uid": "toss-trader",
-  "version": 3,
+  "version": 4,
   "weekStart": "monday"
 }
