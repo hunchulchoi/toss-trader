@@ -112,6 +112,20 @@ HTTP 응답 오류는 해당 단계 실패 Telegram으로, network/timeout처럼
 Hermes에는 automation 서비스가 만든 시장분석 또는 비교 JSON만 전달한다.
 Hermes 실패 시 기계적 의견을 만들지 않고 실패 경로로 종료한다.
 
+### n8n credential과 Infisical
+
+n8n Community license에는 native External Secrets entitlement가 없으므로
+`automation/n8n/sync-infisical-credentials.sh`가 Infisical `prod`, `/`에서
+필요한 값만 읽어 n8n encrypted credential DB로 동기화한다. workflow JSON에는
+credential ID만 저장한다.
+
+- `toss-trader-hermes-auth`: Hermes bearer Header Auth
+- `toss-trader-toss-oauth2`: Toss Client Credentials OAuth2, body authentication
+
+스크립트는 repo `.env`의 machine identity를 사용한다. access token과 secret은
+shell memory와 pipe로만 전달하며 plaintext credential 파일을 host에 만들지 않는다.
+Infisical 값 교체 후 스크립트를 다시 실행하면 같은 ID의 credential을 갱신한다.
+
 ## PostgreSQL ERD
 
 ```mermaid

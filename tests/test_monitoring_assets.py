@@ -326,6 +326,20 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("n8n-nodes-base.errorTrigger", encoded)
         self.assertIn("/workflow/report-failure", encoded)
 
+    def test_n8n_credentials_sync_from_infisical_without_literals(self) -> None:
+        script = (
+            ROOT / "automation" / "n8n" / "sync-infisical-credentials.sh"
+        ).read_text()
+        self.assertIn("infisical login", script)
+        self.assertIn("--env=prod", script)
+        self.assertIn("--path=/", script)
+        self.assertIn("n8n import:credentials", script)
+        self.assertIn('type: "httpHeaderAuth"', script)
+        self.assertIn('type: "oAuth2Api"', script)
+        self.assertIn("HERMES_API_KEY=$(get_secret HERMES_API_KEY)", script)
+        self.assertIn("TOSS_CLIENT_SECRET=$(get_secret TOSS_CLIENT_SECRET)", script)
+        self.assertNotIn("secretValue", script)
+
     def test_monitoring_images_embed_remote_deployment_assets(self) -> None:
         prometheus_dockerfile = (
             ROOT / "monitoring" / "prometheus" / "Dockerfile"
