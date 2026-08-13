@@ -226,3 +226,6 @@ docker compose run --rm trader config
 1. n8n scheduler로 2~4주 paper 성과·장애 데이터 축적
 2. 공용 Grafana에서 universe/Risk 판단·가상 체결·token 추이 검토
 3. 실주문은 별도 설계·검증·명시적 승인 전까지 구현하지 않음
+
+전체 실행 흐름, ERD, 파일별 책임은
+[`docs/system-workflow.md`](docs/system-workflow.md)에 정리되어 있다.
