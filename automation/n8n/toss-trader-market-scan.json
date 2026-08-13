@@ -1,79 +1,21 @@
 {
   "id": "toss-trader-market-scan",
-  "name": "Toss Trader Market Analysis + Discovery",
+  "name": "Toss Trader Market Analysis n8n Orchestration",
   "active": false,
   "nodes": [
-    {
-      "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "cronExpression",
-              "expression": "30 8 * * 1-5"
-            }
-          ]
-        }
-      },
-      "id": "schedule-weekday-0830",
-      "name": "평일 08:30 KST",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [0, 0]
-    },
-    {
-      "parameters": {},
-      "id": "manual-market-scan",
-      "name": "수동 시장 스캔",
-      "type": "n8n-nodes-base.manualTrigger",
-      "typeVersion": 1,
-      "position": [0, 180]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://toss-trader-automation:8088/run-market-scan",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{}",
-        "options": {
-          "timeout": 600000
-        }
-      },
-      "id": "run-market-analysis-discovery",
-      "name": "시장분석 + 종목발굴 + Telegram",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [300, 80]
-    }
+    {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "30 8 * * 1-5"}]}}, "id": "schedule", "name": "평일 08:30 KST", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0]},
+    {"parameters": {}, "id": "manual", "name": "수동 시장 스캔", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 180]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/market-scan", "sendBody": true, "specifyBody": "json", "jsonBody": "{}", "options": {"timeout": 600000}}, "id": "scan", "name": "시장 수치와 후보 계산", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [300, 80]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/hermes-market", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"scan\": $json } }}", "options": {"timeout": 600000}}, "id": "hermes", "name": "Hermes 시장 의견", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [560, 80]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/report-market", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"result\": $json } }}", "options": {"timeout": 30000}}, "id": "report", "name": "시장 리포트 Telegram", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [820, 80]}
   ],
   "connections": {
-    "평일 08:30 KST": {
-      "main": [
-        [
-          {
-            "node": "시장분석 + 종목발굴 + Telegram",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "수동 시장 스캔": {
-      "main": [
-        [
-          {
-            "node": "시장분석 + 종목발굴 + Telegram",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
+    "평일 08:30 KST": {"main": [[{"node": "시장 수치와 후보 계산", "type": "main", "index": 0}]]},
+    "수동 시장 스캔": {"main": [[{"node": "시장 수치와 후보 계산", "type": "main", "index": 0}]]},
+    "시장 수치와 후보 계산": {"main": [[{"node": "Hermes 시장 의견", "type": "main", "index": 0}]]},
+    "Hermes 시장 의견": {"main": [[{"node": "시장 리포트 Telegram", "type": "main", "index": 0}]]}
   },
-  "settings": {
-    "executionOrder": "v1",
-    "timezone": "Asia/Seoul"
-  },
+  "settings": {"executionOrder": "v1", "timezone": "Asia/Seoul", "errorWorkflow": "toss-trader-workflow-error"},
   "pinData": {},
-  "versionId": "57f037bf-dd93-4c61-ad10-9454335bfbe7"
+  "versionId": "22222222-fd93-4c61-ad10-9454335bfbe7"
 }

@@ -27,14 +27,15 @@ flowchart LR
 | 시각(KST) | n8n workflow | endpoint | 역할 |
 |---|---|---|---|
 | 평일 08:30 | Market Analysis + Discovery | `/run-market-scan` | 시장·후보 JSON을 Hermes가 해석하고 Telegram 전송 |
-| 평일 09:00~15:20, 5분 간격 | Intraday Paper Cycle | `/run-paper-cycle` | 동적 universe, 1분봉, 전략, RiskManager, paper 체결 |
-| 평일 15:40 | Daily Paper + Hermes | `/run-daily` | 일봉 paper cycle, Hermes 마감 분석, Telegram 전송 |
+| 평일 09:00~15:20, 5분 간격 | Intraday Paper Cycle | n8n rule→Hermes task | 동적 universe, 1분봉, 전략, RiskManager, paper 체결 |
+| 평일 15:40 | Daily Paper + Hermes | n8n rule→Hermes→분석 task | 일봉 paper cycle, Hermes 마감 분석, Telegram 전송 |
 
 ## 장중 paper cycle
 
 ```mermaid
 flowchart TD
-    S[n8n 5분 trigger] --> API[POST /run-paper-cycle]
+    S[n8n 5분 trigger] --> API[POST /workflow/paper-rule-1m]
+    API --> HAPI[POST /workflow/paper-hermes-1m]
     API --> U{최근 universe가\n30분 이내인가?}
     U -->|예| UC[선정 15종목 cache 사용]
     U -->|아니오| R1[거래대금 상위 30]

@@ -22,8 +22,8 @@
 Telegram 장전 리포트
 
 평일 09:00~15:20 KST n8n (5분 간격)
-  -> POST /run-paper-cycle
-  -> 동일 동적 universe로 규칙 기반/Hermes 개입 포트폴리오 실행
+  -> 규칙 기반 1분봉 task
+  -> 동일 universe·entry signal로 Hermes 개입 1분봉 task
   -> 각 포트폴리오 1,000,000원, 장부·현금·포지션 완전 분리
   -> Hermes 포트폴리오만 신호 발생 시 LLM 승인/거부
   -> RiskManager 최종 판단 감사 + paper 체결 + cycle 상태 저장
@@ -32,7 +32,7 @@ Telegram 장전 리포트
 평일 15:40 KST n8n
         │
         ▼
-POST http://toss-trader-automation:8088/run-daily
+규칙 기반 일봉 → Hermes 개입 일봉 → 결과 병합 → Hermes 마감 분석
         │  openclaw-net 내부 전용
         ▼
 Toss paper cycle
@@ -52,13 +52,26 @@ Alertmanager
 Telegram 지정 topic
 ```
 
-n8n workflow는
+n8n이 전체 자동화의 단계 순서와 실패 전파를 담당한다. workflow는
 [`automation/n8n/toss-trader-market-scan.json`](../automation/n8n/toss-trader-market-scan.json)과
 [`automation/n8n/toss-trader-intraday-paper.json`](../automation/n8n/toss-trader-intraday-paper.json),
 [`automation/n8n/toss-trader-daily.json`](../automation/n8n/toss-trader-daily.json)에
-있다. 저장소 JSON의 `active=false`는 import 안전 기본값이며 운영 n8n에서는
+있고 공통 실패 처리는
+[`automation/n8n/toss-trader-error.json`](../automation/n8n/toss-trader-error.json)이
+담당한다. 저장소 JSON의 `active=false`는 import 안전 기본값이며 운영 n8n에서는
 세 workflow가 publish되어 활성 상태다. 각 workflow의 평일 스케줄과 수동
 trigger가 같은 내부 API를 호출한다.
+
+automation API는 원자 작업만 제공한다. n8n은 secret 없이 `openclaw-net`에서
+다음 단계를 조립한다.
+
+- 장전: `market-scan` → `hermes-market` → `report-market`
+- 장중: `paper-rule-1m` → `paper-hermes-1m` → 병합 → `report-paper`
+- 마감: `paper-rule-1d` → `paper-hermes-1d` → 병합 → `hermes-daily` → `report-daily`
+- 실패: Error Trigger → `report-failure`
+
+Toss/Hermes/Alertmanager credential은 automation 컨테이너의 Infisical 주입값으로만
+사용한다. workflow JSON과 n8n에는 secret을 저장하지 않는다.
 
 ## 일일 실행 시나리오
 
@@ -86,8 +99,8 @@ discovery universe 안에서 발굴한다.
 ### 2. 장중 paper cycle
 
 - 평일 `09:00~15:20 KST`, 5분 간격 실행
-- `POST /run-paper-cycle`; host port 없이 `openclaw-net` 내부에서만 접근
-- automation process가 `rule`, `hermes` 두 `run-paper-cycle --interval 1m`을 순차 실행
+- n8n이 `paper-rule-1m`, `paper-hermes-1m` task를 순차 호출
+- task endpoint는 host port 없이 `openclaw-net` 내부에서만 접근
 - 종목별 최근 1분봉 61개로 MA20/MA60 교차 계산
 - 규칙 기반은 Hermes를 호출하지 않고, Hermes 포트폴리오는 신호가 있을 때만 호출
 - 정상 무신호는 Telegram을 보내지 않음
@@ -106,7 +119,8 @@ discovery universe 안에서 발굴한다.
 
 ### 4. Toss paper cycle
 
-automation service가 별도 프로세스로 `run-paper-cycle --portfolio rule`과
+n8n의 각 task 호출마다 automation service가 별도 프로세스로
+`run-paper-cycle --portfolio rule` 또는
 `run-paper-cycle --portfolio hermes --hermes-advisor`를 실행한다. 자식
 프로세스에도 `TRADING_ENABLED=false`를 강제로 넣는다.
 
@@ -187,8 +201,9 @@ Docker socket을 가진 기존 공용 Hermes 컨테이너와 그 credential은 �
 않는다. system prompt의 “도구를 호출하지 마라” 문구는 보안 경계로 간주하지
 않는다.
 
-장중 5분 cycle은 Hermes를 호출하지 않는다. Hermes token 사용량은 장전·마감
-자동화 실행별로 `automation_run_logs`에 저장한다.
+장중 Hermes 포트폴리오는 신호가 있을 때만 Hermes를 호출한다. 신호가 없는
+cycle에서는 token이 증가하지 않는다. 장전·장중·마감 token 사용량은
+`automation_run_logs`에 저장한다.
 
 ### 7. Telegram 보고
 

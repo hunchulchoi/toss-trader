@@ -214,10 +214,11 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertFalse(workflow["active"])
         self.assertEqual(workflow["settings"]["timezone"], "Asia/Seoul")
         self.assertIn("40 15 * * 1-5", json.dumps(nodes["평일 15:40 KST"]))
-        self.assertIn(
-            "http://toss-trader-automation:8088/run-daily",
-            json.dumps(nodes["Paper + Hermes + Telegram"]),
-        )
+        encoded = json.dumps(workflow, ensure_ascii=False)
+        self.assertIn("/workflow/paper-rule-1d", encoded)
+        self.assertIn("/workflow/paper-hermes-1d", encoded)
+        self.assertIn("/workflow/hermes-daily", encoded)
+        self.assertIn("/workflow/report-daily", encoded)
 
     def test_n8n_workflow_runs_intraday_paper_every_five_minutes(self) -> None:
         workflow = json.loads(
@@ -234,9 +235,10 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertEqual(workflow["settings"]["timezone"], "Asia/Seoul")
         self.assertIn("*/5 9-14 * * 1-5", encoded)
         self.assertIn("0-20/5 15 * * 1-5", encoded)
-        self.assertIn(
-            "http://toss-trader-automation:8088/run-paper-cycle", encoded
-        )
+        self.assertIn("/workflow/paper-rule-1m", encoded)
+        self.assertIn("/workflow/paper-hermes-1m", encoded)
+        self.assertIn("/workflow/report-paper", encoded)
+        self.assertIn("비교 결과 병합", encoded)
 
     def test_n8n_workflow_sends_weekday_market_discovery_report(self) -> None:
         workflow = json.loads(
@@ -247,9 +249,27 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertFalse(workflow["active"])
         self.assertEqual(workflow["settings"]["timezone"], "Asia/Seoul")
         self.assertIn("30 8 * * 1-5", encoded)
-        self.assertIn(
-            "http://toss-trader-automation:8088/run-market-scan", encoded
+        self.assertIn("/workflow/market-scan", encoded)
+        self.assertIn("/workflow/hermes-market", encoded)
+        self.assertIn("/workflow/report-market", encoded)
+
+    def test_n8n_workflows_use_shared_failure_reporter(self) -> None:
+        for filename in (
+            "toss-trader-market-scan.json",
+            "toss-trader-intraday-paper.json",
+            "toss-trader-daily.json",
+        ):
+            workflow = json.loads((ROOT / "automation" / "n8n" / filename).read_text())
+            self.assertEqual(
+                workflow["settings"]["errorWorkflow"],
+                "toss-trader-workflow-error",
+            )
+        error_workflow = json.loads(
+            (ROOT / "automation" / "n8n" / "toss-trader-error.json").read_text()
         )
+        encoded = json.dumps(error_workflow)
+        self.assertIn("n8n-nodes-base.errorTrigger", encoded)
+        self.assertIn("/workflow/report-failure", encoded)
 
     def test_monitoring_images_embed_remote_deployment_assets(self) -> None:
         prometheus_dockerfile = (

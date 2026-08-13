@@ -1,83 +1,25 @@
 {
   "id": "toss-trader-intraday-paper",
-  "name": "Toss Trader Intraday Paper Cycle",
+  "name": "Toss Trader Intraday Rule vs Hermes",
   "active": false,
   "nodes": [
-    {
-      "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "cronExpression",
-              "expression": "*/5 9-14 * * 1-5"
-            }
-          ]
-        }
-      },
-      "id": "schedule-weekday-0900-1455",
-      "name": "평일 09:00-14:55 5분",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [0, 0]
-    },
-    {
-      "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "cronExpression",
-              "expression": "0-20/5 15 * * 1-5"
-            }
-          ]
-        }
-      },
-      "id": "schedule-weekday-1500-1520",
-      "name": "평일 15:00-15:20 5분",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [0, 160]
-    },
-    {
-      "parameters": {},
-      "id": "manual-test",
-      "name": "수동 테스트",
-      "type": "n8n-nodes-base.manualTrigger",
-      "typeVersion": 1,
-      "position": [0, 320]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://toss-trader-automation:8088/run-paper-cycle",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{}",
-        "options": {
-          "timeout": 600000
-        }
-      },
-      "id": "run-intraday-paper-cycle",
-      "name": "1분봉 Paper Cycle",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [340, 140]
-    }
+    {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "*/5 9-14 * * 1-5"}]}}, "id": "schedule-am", "name": "평일 09:00-14:55 5분", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0]},
+    {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "0-20/5 15 * * 1-5"}]}}, "id": "schedule-pm", "name": "평일 15:00-15:20 5분", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 160]},
+    {"parameters": {}, "id": "manual", "name": "수동 테스트", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 320]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/paper-rule-1m", "sendBody": true, "specifyBody": "json", "jsonBody": "{}", "options": {"timeout": 600000}}, "id": "rule", "name": "규칙 기반 1분봉 Cycle", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [300, 140]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/paper-hermes-1m", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"rule\": $json } }}", "options": {"timeout": 600000}}, "id": "hermes", "name": "Hermes 개입 1분봉 Cycle", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [560, 140]},
+    {"parameters": {"jsCode": "const rule = $('규칙 기반 1분봉 Cycle').first().json; const hermes = $('Hermes 개입 1분봉 Cycle').first().json; return [{ json: { rule, hermes } }];"}, "id": "combine", "name": "비교 결과 병합", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [820, 140]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/report-paper", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ $json }}", "options": {"timeout": 30000}}, "id": "report", "name": "특이사항 Telegram", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1080, 140]}
   ],
   "connections": {
-    "평일 09:00-14:55 5분": {
-      "main": [[{"node": "1분봉 Paper Cycle", "type": "main", "index": 0}]]
-    },
-    "평일 15:00-15:20 5분": {
-      "main": [[{"node": "1분봉 Paper Cycle", "type": "main", "index": 0}]]
-    },
-    "수동 테스트": {
-      "main": [[{"node": "1분봉 Paper Cycle", "type": "main", "index": 0}]]
-    }
+    "평일 09:00-14:55 5분": {"main": [[{"node": "규칙 기반 1분봉 Cycle", "type": "main", "index": 0}]]},
+    "평일 15:00-15:20 5분": {"main": [[{"node": "규칙 기반 1분봉 Cycle", "type": "main", "index": 0}]]},
+    "수동 테스트": {"main": [[{"node": "규칙 기반 1분봉 Cycle", "type": "main", "index": 0}]]},
+    "규칙 기반 1분봉 Cycle": {"main": [[{"node": "Hermes 개입 1분봉 Cycle", "type": "main", "index": 0}]]},
+    "Hermes 개입 1분봉 Cycle": {"main": [[{"node": "비교 결과 병합", "type": "main", "index": 0}]]},
+    "비교 결과 병합": {"main": [[{"node": "특이사항 Telegram", "type": "main", "index": 0}]]}
   },
-  "settings": {
-    "executionOrder": "v1",
-    "timezone": "Asia/Seoul"
-  },
+  "settings": {"executionOrder": "v1", "timezone": "Asia/Seoul", "errorWorkflow": "toss-trader-workflow-error"},
   "pinData": {},
-  "versionId": "7ad39f9e-3b3d-4b74-b836-d41814d84863"
+  "versionId": "11111111-3b3d-4b74-b836-d41814d84863"
 }
