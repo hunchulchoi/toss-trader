@@ -57,12 +57,12 @@ def toss_trade_costs(signal: TradeSignal) -> TradeCosts:
     if len(signal.symbol) == 6 and signal.symbol.isdigit():
         return TradeCosts(
             commission=_round_down(
-                signal.notional * TOSS_KRX_COMMISSION_RATE, Decimal("1")
+                signal.notional * TOSS_KRX_COMMISSION_RATE, Decimal(1)
             ),
             tax=(
                 _round_down(
                     signal.notional * KOREAN_STOCK_SELL_TAX_RATE_2026,
-                    Decimal("1"),
+                    Decimal(1),
                 )
                 if signal.side is Side.SELL
                 else Decimal(0)
