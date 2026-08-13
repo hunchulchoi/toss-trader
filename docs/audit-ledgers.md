@@ -36,7 +36,9 @@ Risk 판단은 `paper_risk_decisions`, 승인된 가상 체결은 `paper_fills`�
 선정 결과를 표시한다. `Queried Symbols`는 수집한 1분봉을 조회 구간 시작 대비
 등락률로 정규화해 15개 심볼을 함께 표시한다. 장전 scan은 Toss
 `GET /api/v1/stocks`를 한 번 호출해 회사명을 `market_symbols` 기준정보 테이블에
-갱신하고, Grafana는 이 테이블을 조회한다. `Paper Cycle Run Log`는 장중
+갱신하고, Grafana의 종목 표시는 `회사명 (코드)` 형식으로 이 테이블을 조회한다.
+`Recent Paper Fills`는 BUY/SELL, 수량·가격·금액과 전략 근거 `reason`을 함께
+표시한다. `Paper Cycle Run Log`는 장중
 5분마다 갱신되고 `Hermes Automation Run Log`는 Hermes를 호출하는 장전·마감
 실행에만 행이 추가된다.
 장부에는 API key, bearer token, 전체 Hermes prompt/response를 저장하지 않는다.

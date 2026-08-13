@@ -97,12 +97,12 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
       "fieldConfig": {"defaults": {"color": {"mode": "continuous-GrYlRd"}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "locale"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
       "id": 8,
       "options": {"displayMode": "gradient", "maxVizHeight": 300, "minVizHeight": 16, "minVizWidth": 8, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
-      "targets": [{"editorMode": "code", "expr": "toss_trader_paper_position_quantity", "instant": true, "legendFormat": "{{symbol}}", "range": false, "refId": "A"}],
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT COALESCE(s.display_name || ' (' || p.symbol || ')', p.symbol) AS security, p.quantity::double precision AS quantity FROM (SELECT symbol, SUM(CASE WHEN side = 'BUY' THEN quantity ELSE -quantity END) AS quantity FROM paper_fills GROUP BY symbol) p LEFT JOIN market_symbols s ON s.symbol = p.symbol WHERE p.quantity <> 0 ORDER BY security", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
       "title": "Open Paper Positions",
       "type": "bargauge"
     },
@@ -142,7 +142,7 @@
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 18},
       "id": 12,
       "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT evaluated_at AS time, symbol, side, notional, approved, violations::text AS violations, available_cash, position_notional, daily_return_rate, consecutive_api_errors, signal_id, decision_id FROM paper_risk_decisions WHERE $__timeFilter(evaluated_at) ORDER BY evaluated_at DESC LIMIT 100", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT d.evaluated_at AS time, COALESCE(s.display_name || ' (' || d.symbol || ')', d.symbol) AS security, d.side, d.notional, d.approved, d.violations::text AS violations, d.available_cash, d.position_notional, d.daily_return_rate, d.consecutive_api_errors, d.signal_reason AS reason, d.signal_id, d.decision_id FROM paper_risk_decisions d LEFT JOIN market_symbols s ON s.symbol = d.symbol WHERE $__timeFilter(d.evaluated_at) ORDER BY d.evaluated_at DESC LIMIT 100", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
       "title": "Recent RiskManager Decisions",
       "type": "table"
     },
@@ -205,7 +205,7 @@
       "gridPos": {"h": 9, "w": 24, "x": 0, "y": 68},
       "id": 16,
       "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT executed_at AS time, symbol, side, quantity, price, notional, signal_id, fill_id FROM paper_fills WHERE $__timeFilter(executed_at) ORDER BY executed_at DESC LIMIT 100", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT f.executed_at AS time, COALESCE(s.display_name || ' (' || f.symbol || ')', f.symbol) AS security, f.side, f.quantity, f.price, f.notional, f.reason, f.signal_id, f.fill_id FROM paper_fills f LEFT JOIN market_symbols s ON s.symbol = f.symbol WHERE $__timeFilter(f.executed_at) ORDER BY f.executed_at DESC LIMIT 100", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
       "title": "Recent Paper Fills",
       "type": "table"
     }
@@ -219,6 +219,6 @@
   "timezone": "browser",
   "title": "Toss Trader",
   "uid": "toss-trader",
-  "version": 8,
+  "version": 9,
   "weekStart": "monday"
 }

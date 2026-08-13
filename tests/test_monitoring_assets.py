@@ -29,7 +29,6 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertGreaterEqual(len(dashboard["panels"]), 8)
         self.assertIn("toss_trader_cycle_last_success", expressions)
         self.assertIn("toss_trader_cycle_last_daily_return_ratio", expressions)
-        self.assertIn("toss_trader_paper_position_quantity", expressions)
         self.assertIn("toss_trader_paper_initial_cash_krw", expressions)
         self.assertIn("toss_trader_paper_available_cash_krw", expressions)
         self.assertIn("toss_trader_paper_deployed_cash_krw", expressions)
@@ -79,6 +78,26 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertNotIn("CASE symbol", symbol_panel["targets"][0]["rawSql"])
         self.assertIn("Recent Paper Fills", titles)
         self.assertIn("Dynamic Universe Risk Decisions", titles)
+        positions_panel = next(
+            panel
+            for panel in dashboard["panels"]
+            if panel["title"] == "Open Paper Positions"
+        )
+        self.assertIn("market_symbols", positions_panel["targets"][0]["rawSql"])
+        self.assertIn("display_name", positions_panel["targets"][0]["rawSql"])
+        risk_panel = next(
+            panel
+            for panel in dashboard["panels"]
+            if panel["title"] == "Recent RiskManager Decisions"
+        )
+        self.assertIn("market_symbols", risk_panel["targets"][0]["rawSql"])
+        fills_panel = next(
+            panel
+            for panel in dashboard["panels"]
+            if panel["title"] == "Recent Paper Fills"
+        )
+        self.assertIn("market_symbols", fills_panel["targets"][0]["rawSql"])
+        self.assertIn("f.reason", fills_panel["targets"][0]["rawSql"])
         self.assertIn("Hermes Automation Run Log", titles)
         self.assertNotIn("DS_PROMETHEUS", dashboard)
 
