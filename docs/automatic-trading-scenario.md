@@ -7,7 +7,7 @@
 - `TRADING_ENABLED=false` 고정
 - 실제 주문 생성·정정·취소 코드 없음
 - 전략 신호가 승인되어도 DB에 가상 체결만 기록
-- Hermes는 매매 결정자가 아니라 일일 결과 분석기
+- 비교 실험에서 Hermes는 기술 신호를 승인/거부하지만 RiskManager가 항상 최종 결정
 - 실주문 전환은 별도 구현·검증·명시적 승인 필요
 
 ## 전체 흐름
@@ -23,8 +23,10 @@ Telegram 장전 리포트
 
 평일 09:00~15:20 KST n8n (5분 간격)
   -> POST /run-paper-cycle
-  -> 1분봉 MA20/MA60 + 일정·포트폴리오 조회
-  -> RiskManager 판단 감사 + paper 체결 + cycle 상태 저장
+  -> 동일 동적 universe로 규칙 기반/Hermes 개입 포트폴리오 실행
+  -> 각 포트폴리오 1,000,000원, 장부·현금·포지션 완전 분리
+  -> Hermes 포트폴리오만 신호 발생 시 LLM 승인/거부
+  -> RiskManager 최종 판단 감사 + paper 체결 + cycle 상태 저장
   -> 체결·거부·오류만 Telegram
 
 평일 15:40 KST n8n
@@ -85,9 +87,9 @@ discovery universe 안에서 발굴한다.
 
 - 평일 `09:00~15:20 KST`, 5분 간격 실행
 - `POST /run-paper-cycle`; host port 없이 `openclaw-net` 내부에서만 접근
-- automation process가 `run-paper-cycle --interval 1m`을 실행
+- automation process가 `rule`, `hermes` 두 `run-paper-cycle --interval 1m`을 순차 실행
 - 종목별 최근 1분봉 61개로 MA20/MA60 교차 계산
-- Hermes를 호출하지 않음
+- 규칙 기반은 Hermes를 호출하지 않고, Hermes 포트폴리오는 신호가 있을 때만 호출
 - 정상 무신호는 Telegram을 보내지 않음
 - 체결, 의미 있는 RiskManager 거부, 종목/API 오류만 즉시 보고
 - 동일 cycle 중복 요청은 `409`, 동일 캔들 신호는 `duplicate-signal`로 차단
@@ -104,8 +106,21 @@ discovery universe 안에서 발굴한다.
 
 ### 4. Toss paper cycle
 
-automation service가 별도 프로세스로 `run-paper-cycle`을 실행한다. 자식
+automation service가 별도 프로세스로 `run-paper-cycle --portfolio rule`과
+`run-paper-cycle --portfolio hermes --hermes-advisor`를 실행한다. 자식
 프로세스에도 `TRADING_ENABLED=false`를 강제로 넣는다.
+
+두 신규 포트폴리오는 각각 독립된 1,000,000원으로 시작한다. 기존 시험 체결은
+삭제하지 않고 `legacy` 포트폴리오로 보존하며 비교 성과에는 포함하지 않는다.
+운영 비교 시작일은 `PAPER_COMPARISON_START_DATE=2026-08-14`이며, 그 전 scheduler
+호출은 `comparison-not-started`로 안전하게 건너뛴다.
+`paper_portfolios`가 표시 이름·mode·초기자금을 저장하고, `paper_fills`,
+`paper_risk_decisions`, `paper_cycle_runs`는 `portfolio_id`로 격리한다.
+
+Hermes에는 주문 신호와 RiskContext JSON만 전달한다. 응답은 승인 여부와 한국어
+근거를 담은 JSON이어야 한다. 호출·파싱 장애는 기계적 판단으로 대체하지 않고
+`hermes-unavailable`로 RiskManager가 거부한다. 승인/거부 근거와 token 사용량은
+`automation_run_logs`의 `hermes_trade` 실행으로 조회한다.
 
 종목별 처리:
 

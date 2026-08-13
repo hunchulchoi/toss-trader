@@ -63,7 +63,8 @@ class MonitoringAssetsTest(unittest.TestCase):
         )
         self.assertEqual(cycle_panel["type"], "timeseries")
         self.assertEqual(cycle_panel["targets"][0]["format"], "time_series")
-        self.assertIn('AS "Duration (ms)"', cycle_panel["targets"][0]["rawSql"])
+        self.assertIn("paper_portfolios", cycle_panel["targets"][0]["rawSql"])
+        self.assertIn("portfolio_id IN ('rule', 'hermes')", cycle_panel["targets"][0]["rawSql"])
         symbol_panel = next(
             panel
             for panel in dashboard["panels"]

@@ -53,8 +53,12 @@ flowchart TD
     X -->|universe 갱신 + MA20 > MA60| B[최초 trend BUY]
     X -->|새 골든/데드크로스| CS[BUY/SELL]
     X -->|조건 없음| NS[신호 없음]
-    B --> RM[RiskManager 주문 판단]
-    CS --> RM
+    B --> SPLIT{포트폴리오}
+    CS --> SPLIT
+    SPLIT -->|규칙 기반| RM[RiskManager 최종 판단]
+    SPLIT -->|Hermes 개입| HA[Hermes 신호 승인·거부]
+    HA --> AL[(automation_run_logs\n근거 + token)]
+    HA --> RM
     RM --> RD[(paper_risk_decisions)]
     RM -->|승인| PF[(paper_fills)]
     RM -->|거부| NF[체결 없음]
@@ -109,6 +113,17 @@ erDiagram
     MARKET_SYMBOLS ||--o{ PAPER_RISK_DECISIONS : labels
     MARKET_SYMBOLS ||--o{ PAPER_FILLS : labels
     PAPER_RISK_DECISIONS ||--o| PAPER_FILLS : approves
+    PAPER_PORTFOLIOS ||--o{ PAPER_CYCLE_RUNS : owns
+    PAPER_PORTFOLIOS ||--o{ PAPER_RISK_DECISIONS : owns
+    PAPER_PORTFOLIOS ||--o{ PAPER_FILLS : owns
+
+    PAPER_PORTFOLIOS {
+        text portfolio_id PK
+        text display_name
+        text mode
+        numeric initial_cash
+        timestamptz created_at
+    }
 
     DYNAMIC_UNIVERSE_RUNS {
         uuid run_id PK
@@ -151,6 +166,7 @@ erDiagram
     }
     PAPER_CYCLE_RUNS {
         uuid run_id PK
+        text portfolio_id
         timestamptz started_at
         timestamptz finished_at
         text status
@@ -165,6 +181,7 @@ erDiagram
     }
     PAPER_RISK_DECISIONS {
         uuid decision_id PK
+        text portfolio_id
         text signal_id
         text symbol
         text side
@@ -181,6 +198,7 @@ erDiagram
     }
     PAPER_FILLS {
         uuid fill_id PK
+        text portfolio_id
         text signal_id UK
         text symbol
         text side
@@ -225,6 +243,7 @@ toss-trader/
 │   └── prometheus/            # scrape·alert rules
 ├── src/toss_trader/
 │   ├── automation.py          # HTTP endpoint, Hermes, Alertmanager, run log
+│   ├── advisor.py             # Hermes 신호 승인/거부와 token·근거 감사
 │   ├── calendar.py            # KR/US 장 일정
 │   ├── cli.py                 # command 조립과 dependency wiring
 │   ├── client.py              # Toss API, candle throttle/rate-limit
