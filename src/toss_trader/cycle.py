@@ -9,7 +9,12 @@ from .calendar import MarketCalendarService, MarketSession, country_for_symbol
 from .cycle_state import CycleStateStore
 from .errors import TossApiError
 from .execution import PaperExecutionResult, PaperTradingService
-from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
+from .market_data import (
+    CollectionResult,
+    InsufficientCandleHistory,
+    MarketCollector,
+    StoredMaStrategy,
+)
 from .models import PaperFill, Side, TradeSignal
 from .portfolio import DailyPortfolioPerformance, PortfolioPerformance
 from .risk import RiskDecision
@@ -25,6 +30,7 @@ class SymbolCycleResult:
     decision: RiskDecision | None = None
     decision_id: str | None = None
     fill: PaperFill | None = None
+    skip_reason: str | None = None
     error: str | None = None
 
 
@@ -35,6 +41,7 @@ class PaperCycleSnapshot:
     interval: str
     collections: tuple[CollectionResult | None, ...]
     signals: tuple[TradeSignal | None, ...]
+    skips: tuple[str | None, ...]
     errors: tuple[str | None, ...]
     api_failed: bool
     new_buys_allowed: bool
@@ -67,6 +74,10 @@ class PaperCycleResult:
     @property
     def failed_count(self) -> int:
         return sum(item.error is not None for item in self.items)
+
+    @property
+    def skipped_count(self) -> int:
+        return sum(item.skip_reason is not None for item in self.items)
 
 
 class PaperCycleRunner:
@@ -107,6 +118,7 @@ class PaperCycleRunner:
         size = len(symbols)
         collections: list[CollectionResult | None] = [None] * size
         signals: list[TradeSignal | None] = [None] * size
+        skips: list[str | None] = [None] * size
         errors: list[str | None] = [None] * size
         api_failed = False
 
@@ -135,6 +147,8 @@ class PaperCycleRunner:
                     allow_trend_entry=symbol in trend_entries,
                     entry_key=trend_entry_key,
                 )
+            except InsufficientCandleHistory as error:
+                skips[index] = str(error)
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
 
@@ -144,6 +158,7 @@ class PaperCycleRunner:
             interval=interval,
             collections=tuple(collections),
             signals=tuple(signals),
+            skips=tuple(skips),
             errors=tuple(errors),
             api_failed=api_failed,
             new_buys_allowed=new_buys_allowed,
@@ -237,6 +252,7 @@ class PaperCycleRunner:
         size = len(symbols)
         collections = list(snapshot.collections)
         signals = list(snapshot.signals)
+        skips = list(snapshot.skips)
         executions: list[PaperExecutionResult | None] = [None] * size
         errors = list(snapshot.errors)
         api_failed = snapshot.api_failed
@@ -313,6 +329,7 @@ class PaperCycleRunner:
                     executions[index].decision_id if executions[index] else None
                 ),
                 fill=executions[index].fill if executions[index] else None,
+                skip_reason=skips[index],
                 error=errors[index],
             )
             for index, symbol in enumerate(symbols)
@@ -408,7 +425,12 @@ def _validate_snapshot(
     size = len(symbols)
     if not all(
         len(values) == size
-        for values in (snapshot.collections, snapshot.signals, snapshot.errors)
+        for values in (
+            snapshot.collections,
+            snapshot.signals,
+            snapshot.skips,
+            snapshot.errors,
+        )
     ):
         raise ValueError("paper snapshot item counts do not match symbols")
 

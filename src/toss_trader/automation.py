@@ -396,6 +396,11 @@ class PaperCycleProcess:
                         for value in portfolios.values()
                         if isinstance(value, dict)
                     ),
+                    "skipped": sum(
+                        int(value.get("summary", {}).get("skipped", 0))
+                        for value in portfolios.values()
+                        if isinstance(value, dict)
+                    ),
                     "failed": sum(
                         int(value.get("summary", {}).get("failed", 0))
                         for value in portfolios.values()
@@ -1211,7 +1216,7 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "portfolios": portfolios,
             "summary": {
                 key: sum(int(summary.get(key, 0)) for summary in summaries)
-                for key in ("symbols", "signals", "fills", "failed")
+                for key in ("symbols", "signals", "fills", "skipped", "failed")
             },
         },
     }
@@ -1482,6 +1487,7 @@ def _record_automation_run_from_env(run: AutomationRunLog) -> str:
     ledger = open_paper_ledger(
         postgres_parameters=settings.postgres_connection_parameters(),
         sqlite_path=settings.paper_db_path,
+        initialize_schema=False,
     )
     try:
         return ledger.record_automation_run(
@@ -1574,7 +1580,7 @@ def _flow_audit_details(
         cycle = cycle if isinstance(cycle, dict) else {}
         summary = cycle.get("summary")
         summary = summary if isinstance(summary, dict) else {}
-        for key in ("symbols", "signals", "fills", "failed"):
+        for key in ("symbols", "signals", "fills", "skipped", "failed"):
             if key in summary:
                 details[key] = _non_negative_int(summary.get(key))
         decisions = sorted(set(_collect_decision_ids(result)))
@@ -1659,6 +1665,7 @@ def _daily_run_details(cycle: dict[str, Any]) -> dict[str, object]:
         "symbols": _non_negative_int(summary.get("symbols")),
         "signals": _non_negative_int(summary.get("signals")),
         "fills": _non_negative_int(summary.get("fills")),
+        "skipped": _non_negative_int(summary.get("skipped")),
         "failed": _non_negative_int(summary.get("failed")),
     }
 

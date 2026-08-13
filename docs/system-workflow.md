@@ -138,10 +138,19 @@ credential ID만 저장한다.
 - `toss-trader-hermes-auth`: Hermes bearer Header Auth
 - `toss-trader-toss-oauth2`: Toss Client Credentials OAuth2, body authentication
 - `toss-trader-risk-manager-auth`: RiskManager webhook bearer Header Auth
+- `toss-trader-manual-trigger-auth`: 수동 workflow 실행용 bearer Header Auth
 
 스크립트는 repo `.env`의 machine identity를 사용한다. access token과 secret은
 shell memory와 pipe로만 전달하며 plaintext credential 파일을 host에 만들지 않는다.
 Infisical 값 교체 후 스크립트를 다시 실행하면 같은 ID의 credential을 갱신한다.
+
+마감 리뷰 수동 실행은 실행 중인 n8n 컨테이너에서 `n8n execute`를 추가로 띄우지
+않는다. 인증된 `POST /webhook/toss-trader-daily-run`을 호출한다. 운영 n8n의 Task
+Broker `5679`와 충돌하지 않으며, 기존 15:40 schedule과 같은 첫 단계로 합류한다.
+`automation/n8n/run-daily-webhook.sh`는 Infisical에서 전용 token을 읽어 HTTP header
+stdin으로만 전달한다. token을 command argument나 host 파일에 기록하지 않는다.
+Webhook은 reverse proxy timeout을 피하도록 접수 즉시 응답한다. 실제 성공 여부는
+n8n execution, `automation_run_logs`, Hermes token 기록, Telegram 수신으로 확인한다.
 
 ## PostgreSQL ERD
 

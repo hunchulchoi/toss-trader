@@ -11,6 +11,10 @@ from .repository import MarketRepository
 from .strategy import ma_crossover_signal
 
 
+class InsufficientCandleHistory(ValueError):
+    """The request succeeded but the strategy lacks enough stored history."""
+
+
 class CandleClient(Protocol):
     def stocks(self, symbols: tuple[str, ...]) -> list[dict[str, Any]]: ...
 
@@ -116,7 +120,9 @@ class StoredMaStrategy:
             symbol, interval, limit=long_window + 1
         )
         if len(candles) < long_window + 1:
-            raise ValueError(f"need {long_window + 1} candles, found {len(candles)}")
+            raise InsufficientCandleHistory(
+                f"need {long_window + 1} candles, found {len(candles)}"
+            )
         return ma_crossover_signal(
             symbol=symbol,
             closes=[candle.close_price for candle in candles],

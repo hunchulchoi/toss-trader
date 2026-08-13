@@ -170,6 +170,35 @@ class PostgresPaperLedgerTest(unittest.TestCase):
         self.assertEqual(connection.commits, 2)
         self.assertTrue(connection.closed)
 
+    def test_skips_schema_ddl_for_runtime_audit_connection(self) -> None:
+        connection = FakePaperConnection()
+
+        ledger = PostgresPaperLedger(
+            {
+                "host": "postgres.internal",
+                "port": 5432,
+                "user": "trader",
+                "password": "secret",
+                "dbname": "toss_trader",
+            },
+            connect=lambda **_: connection,
+            initialize_schema=False,
+        )
+        ledger.record_automation_run(
+            run_type="n8n_flow",
+            status="succeeded",
+            stage="risk-manager-evaluate",
+            started_at=datetime(2026, 8, 13, 9, 0, tzinfo=UTC),
+            finished_at=datetime(2026, 8, 13, 9, 0, 1, tzinfo=UTC),
+        )
+
+        queries = [query for query, _ in connection.cursor_instance.executed]
+        self.assertEqual(len(queries), 1)
+        self.assertIn("INSERT INTO automation_run_logs", queries[0])
+        self.assertNotIn("CREATE TABLE", queries[0])
+        self.assertNotIn("ALTER TABLE", queries[0])
+        self.assertEqual(connection.commits, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

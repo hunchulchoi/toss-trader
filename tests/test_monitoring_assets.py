@@ -222,6 +222,11 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("/workflow/report-daily", encoded)
         self.assertIn("http://hermes-analysis:8642/v1/chat/completions", encoded)
         self.assertIn("toss-trader-hermes-auth", encoded)
+        self.assertIn("n8n-nodes-base.webhook", encoded)
+        self.assertIn('"path": "toss-trader-daily-run"', encoded)
+        self.assertIn('"authentication": "headerAuth"', encoded)
+        self.assertIn('"responseMode": "onReceived"', encoded)
+        self.assertIn("toss-trader-manual-trigger-auth", encoded)
         for branch in (
             "Rule 일봉 정상?",
             "Rule 일봉 체결 있음?",
@@ -355,8 +360,24 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn(
             "N8N_RISK_MANAGER_TOKEN=$(get_secret N8N_RISK_MANAGER_TOKEN)", script
         )
+        self.assertIn(
+            "N8N_MANUAL_TRIGGER_TOKEN=$(get_secret N8N_MANUAL_TRIGGER_TOKEN)", script
+        )
+        self.assertIn('id: "toss-trader-manual-trigger-auth"', script)
         self.assertNotIn("risk-token-long-enough", script)
         self.assertNotIn("secretValue", script)
+
+    def test_daily_webhook_runner_keeps_token_out_of_curl_arguments(self) -> None:
+        script = (
+            ROOT / "automation" / "n8n" / "run-daily-webhook.sh"
+        ).read_text()
+
+        self.assertIn("N8N_MANUAL_TRIGGER_TOKEN", script)
+        self.assertIn("--header @-", script)
+        self.assertIn("toss-trader-daily-run", script)
+        self.assertNotIn(
+            '--header "Authorization: Bearer $N8N_MANUAL_TRIGGER_TOKEN"', script
+        )
 
     def test_monitoring_images_embed_remote_deployment_assets(self) -> None:
         prometheus_dockerfile = (

@@ -302,6 +302,27 @@ class PaperCycleRunnerTest(unittest.TestCase):
 
         self.assertEqual(second.consecutive_api_errors, 2)
 
+    def test_skips_symbol_with_insufficient_ma_history(self) -> None:
+        client = WatchlistCandleClient({"487400": [Decimal(10)]})
+
+        result = self._runner(client).run(
+            symbols=("487400",),
+            interval="1d",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.failed_count, 0)
+        self.assertEqual(result.skipped_count, 1)
+        self.assertEqual(result.consecutive_api_errors, 0)
+        self.assertEqual(result.items[0].skip_reason, "need 4 candles, found 1")
+        self.assertIsNone(result.items[0].error)
+        latest = self.cycle_state.latest_run()
+        assert latest is not None
+        self.assertEqual(latest.status, "succeeded")
+
     def test_daily_loss_is_calculated_and_passed_to_risk_manager(self) -> None:
         self.paper_ledger.execute(
             TradeSignal(

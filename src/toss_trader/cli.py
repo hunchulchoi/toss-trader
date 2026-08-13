@@ -563,6 +563,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 "symbols": result.symbol_count,
                 "signals": result.signal_count,
                 "fills": result.fill_count,
+                "skipped": result.skipped_count,
                 "failed": result.failed_count,
             },
             "items": [asdict(item) for item in result.items],
@@ -606,6 +607,7 @@ def _cycle_snapshot_to_dict(snapshot: PaperCycleSnapshot) -> dict[str, Any]:
             )
             for item in snapshot.signals
         ],
+        "skips": list(snapshot.skips),
         "errors": list(snapshot.errors),
         "apiFailed": snapshot.api_failed,
         "newBuysAllowed": snapshot.new_buys_allowed,
@@ -632,12 +634,16 @@ def _read_cycle_snapshot() -> PaperCycleSnapshot:
     symbols = payload.get("symbols")
     collections = payload.get("collections")
     signals = payload.get("signals")
+    default_skips = [None] * len(symbols) if isinstance(symbols, list) else []
+    skips = payload.get("skips", default_skips)
     errors = payload.get("errors")
     if not isinstance(symbols, list) or not symbols:
         raise ValueError("shared snapshot symbols must be a non-empty list")
     if not all(isinstance(symbol, str) and symbol for symbol in symbols):
         raise ValueError("shared snapshot contains an invalid symbol")
-    if not all(isinstance(values, list) for values in (collections, signals, errors)):
+    if not all(
+        isinstance(values, list) for values in (collections, signals, skips, errors)
+    ):
         raise ValueError("shared snapshot arrays are missing")
     evaluated_at = datetime.fromisoformat(str(payload.get("evaluatedAt", "")))
     if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
@@ -679,6 +685,7 @@ def _read_cycle_snapshot() -> PaperCycleSnapshot:
         for item in signals
     )
     parsed_errors = tuple(None if error is None else str(error) for error in errors)
+    parsed_skips = tuple(None if reason is None else str(reason) for reason in skips)
     api_failed = payload.get("apiFailed")
     if not isinstance(api_failed, bool):
         raise TypeError("shared snapshot apiFailed must be boolean")
@@ -691,6 +698,7 @@ def _read_cycle_snapshot() -> PaperCycleSnapshot:
         interval=interval,
         collections=parsed_collections,
         signals=parsed_signals,
+        skips=parsed_skips,
         errors=parsed_errors,
         api_failed=api_failed,
         new_buys_allowed=new_buys_allowed,

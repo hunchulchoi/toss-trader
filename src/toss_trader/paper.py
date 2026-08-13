@@ -554,6 +554,7 @@ class PostgresPaperLedger:
         connect: Callable[..., Any] | None = None,
         database_error: type[Exception] | None = None,
         portfolio_id: str = "legacy",
+        initialize_schema: bool = True,
     ) -> None:
         self._portfolio_id = _validate_portfolio_id(portfolio_id)
         required = {"host", "port", "user", "password", "dbname"}
@@ -576,37 +577,40 @@ class PostgresPaperLedger:
             )
         except self._database_error as error:
             raise RuntimeError("PostgreSQL connection failed") from error
-        with self._connection.cursor() as cursor:
-            cursor.execute(POSTGRES_PAPER_SCHEMA)
-            cursor.execute(POSTGRES_PAPER_INDEX)
-            cursor.execute(POSTGRES_RISK_DECISION_SCHEMA)
-            cursor.execute(POSTGRES_RISK_DECISION_INDEX)
-            cursor.execute(
-                "ALTER TABLE paper_fills ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
-            )
-            cursor.execute(
-                "ALTER TABLE paper_risk_decisions ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
-            )
-            cursor.execute(POSTGRES_AUTOMATION_RUN_SCHEMA)
-            cursor.execute(POSTGRES_AUTOMATION_RUN_INDEX)
-            cursor.execute(POSTGRES_PORTFOLIO_SCHEMA)
-            if self._portfolio_id in {"rule", "hermes"}:
+        if initialize_schema:
+            with self._connection.cursor() as cursor:
+                cursor.execute(POSTGRES_PAPER_SCHEMA)
+                cursor.execute(POSTGRES_PAPER_INDEX)
+                cursor.execute(POSTGRES_RISK_DECISION_SCHEMA)
+                cursor.execute(POSTGRES_RISK_DECISION_INDEX)
                 cursor.execute(
-                    """
-                    INSERT INTO paper_portfolios (
-                        portfolio_id, display_name, mode, initial_cash, created_at
-                    ) VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (portfolio_id) DO NOTHING
-                    """,
-                    (
-                        self._portfolio_id,
-                        "규칙 기반" if self._portfolio_id == "rule" else "Hermes 개입",
-                        self._portfolio_id,
-                        Decimal(1000000),
-                        datetime.now(UTC),
-                    ),
+                    "ALTER TABLE paper_fills ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
                 )
-        self._connection.commit()
+                cursor.execute(
+                    "ALTER TABLE paper_risk_decisions ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
+                )
+                cursor.execute(POSTGRES_AUTOMATION_RUN_SCHEMA)
+                cursor.execute(POSTGRES_AUTOMATION_RUN_INDEX)
+                cursor.execute(POSTGRES_PORTFOLIO_SCHEMA)
+                if self._portfolio_id in {"rule", "hermes"}:
+                    cursor.execute(
+                        """
+                        INSERT INTO paper_portfolios (
+                            portfolio_id, display_name, mode, initial_cash, created_at
+                        ) VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (portfolio_id) DO NOTHING
+                        """,
+                        (
+                            self._portfolio_id,
+                            "규칙 기반"
+                            if self._portfolio_id == "rule"
+                            else "Hermes 개입",
+                            self._portfolio_id,
+                            Decimal(1000000),
+                            datetime.now(UTC),
+                        ),
+                    )
+            self._connection.commit()
 
     def close(self) -> None:
         self._connection.close()
@@ -903,9 +907,14 @@ def open_paper_ledger(
     postgres_parameters: Mapping[str, str | int] | None,
     sqlite_path: str,
     portfolio_id: str = "legacy",
+    initialize_schema: bool = True,
 ) -> PaperLedgerStore:
     if postgres_parameters:
-        return PostgresPaperLedger(postgres_parameters, portfolio_id=portfolio_id)
+        return PostgresPaperLedger(
+            postgres_parameters,
+            portfolio_id=portfolio_id,
+            initialize_schema=initialize_schema,
+        )
     return PaperLedger(sqlite_path, portfolio_id=portfolio_id)
 
 

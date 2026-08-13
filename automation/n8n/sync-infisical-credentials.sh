@@ -8,7 +8,8 @@ n8n_project_id=${N8N_PROJECT_ID:-YNUiWwcSPiect3LE}
 auth_error=$(mktemp /tmp/toss-trader-infisical-auth.XXXXXX)
 
 cleanup() {
-    unset INFISICAL_TOKEN HERMES_API_KEY TOSS_CLIENT_ID TOSS_CLIENT_SECRET N8N_RISK_MANAGER_TOKEN
+    unset INFISICAL_TOKEN HERMES_API_KEY TOSS_CLIENT_ID TOSS_CLIENT_SECRET \
+        N8N_RISK_MANAGER_TOKEN N8N_MANUAL_TRIGGER_TOKEN
     rm -f "$auth_error"
 }
 trap cleanup EXIT HUP INT TERM
@@ -50,7 +51,9 @@ HERMES_API_KEY=$(get_secret HERMES_API_KEY)
 TOSS_CLIENT_ID=$(get_secret TOSS_CLIENT_ID)
 TOSS_CLIENT_SECRET=$(get_secret TOSS_CLIENT_SECRET)
 N8N_RISK_MANAGER_TOKEN=$(get_secret N8N_RISK_MANAGER_TOKEN)
-export HERMES_API_KEY TOSS_CLIENT_ID TOSS_CLIENT_SECRET N8N_RISK_MANAGER_TOKEN
+N8N_MANUAL_TRIGGER_TOKEN=$(get_secret N8N_MANUAL_TRIGGER_TOKEN)
+export HERMES_API_KEY TOSS_CLIENT_ID TOSS_CLIENT_SECRET N8N_RISK_MANAGER_TOKEN \
+    N8N_MANUAL_TRIGGER_TOKEN
 
 if [ ${#HERMES_API_KEY} -lt 16 ]; then
     echo "Infisical HERMES_API_KEY is missing or invalid" >&2
@@ -66,6 +69,10 @@ if [ -z "$TOSS_CLIENT_SECRET" ]; then
 fi
 if [ ${#N8N_RISK_MANAGER_TOKEN} -lt 16 ]; then
     echo "Infisical N8N_RISK_MANAGER_TOKEN is missing or invalid" >&2
+    exit 1
+fi
+if [ ${#N8N_MANUAL_TRIGGER_TOKEN} -lt 16 ]; then
+    echo "Infisical N8N_MANUAL_TRIGGER_TOKEN is missing or invalid" >&2
     exit 1
 fi
 
@@ -103,6 +110,15 @@ jq -n '[
       name: "Authorization",
       value: ("Bearer " + env.N8N_RISK_MANAGER_TOKEN)
     }
+  },
+  {
+    id: "toss-trader-manual-trigger-auth",
+    name: "Toss Trader Manual Trigger Bearer",
+    type: "httpHeaderAuth",
+    data: {
+      name: "Authorization",
+      value: ("Bearer " + env.N8N_MANUAL_TRIGGER_TOKEN)
+    }
   }
 ]' | docker exec -i "$n8n_container" sh -c '
     set -eu
@@ -113,4 +129,4 @@ jq -n '[
     n8n import:credentials --input="$credential_file" --projectId="$1"
 ' sh "$n8n_project_id"
 
-echo "Synced 3 encrypted n8n credentials from Infisical"
+echo "Synced 4 encrypted n8n credentials from Infisical"

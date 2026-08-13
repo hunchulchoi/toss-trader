@@ -172,6 +172,7 @@ TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=-100...
 TELEGRAM_TOPIC=...
 N8N_RISK_MANAGER_TOKEN=...
+N8N_MANUAL_TRIGGER_TOKEN=...
 ```
 
 ```bash
@@ -209,10 +210,15 @@ infisical run --env=prod --path=/ -- docker compose run --rm trader \
 # 판단·실행·Hermes token 조회
 docker exec toss-trader-automation-1 toss-trader risk-decisions --limit 20
 docker exec toss-trader-automation-1 toss-trader automation-runs --limit 20
+
+# 운영 n8n Task Broker와 충돌 없는 인증 Webhook 마감 리뷰 실행
+./automation/n8n/run-daily-webhook.sh
 ```
 
 장중 endpoint는 항상 1분봉을 사용한다. 반복 수집해도 candle primary key와
 signal ID 때문에 중복 저장·중복 paper 체결되지 않는다.
+Toss candle 조회는 성공했지만 MA20/MA60 계산 이력이 부족한 신규 종목은
+`skipReason`을 남기고 해당 cycle의 실패나 API 오류 streak로 계산하지 않는다.
 
 ## 검증
 
