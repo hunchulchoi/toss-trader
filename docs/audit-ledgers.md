@@ -38,6 +38,7 @@ toss-trader automation-runs --type market_scan --status failed --limit 100
 | RiskManager | 신호 또는 universe 후보마다 승인/거부를 먼저 저장. 승인된 trade만 fill 생성 | `Dynamic Universe Risk Decisions`, 최근 `paper_risk_decisions`, `Recent Paper Fills` |
 
 Grafana `Toss Trader`: 장부 `toss-postgres`(ro), 상태 패널 `toss-prometheus`.
+첫 화면은 상태·Rule vs Hermes·체결. 1분 차트·universe·자동화는 접힘.
 
 | 패널 | 표시 내용 | 데이터 기준 |
 |---|---|---|

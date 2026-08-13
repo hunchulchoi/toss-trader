@@ -1,5 +1,7 @@
 {
-  "annotations": {"list": []},
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -7,248 +9,2080 @@
   "links": [],
   "panels": [
     {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "title": "상태",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "toss-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
           "mappings": [
-            {"options": {"0": {"text": "FAILED"}, "1": {"text": "OK"}}, "type": "value"}
-          ],
-          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+            {
+              "options": {
+                "0": {
+                  "text": "FAILED"
+                },
+                "1": {
+                  "text": "OK"
+                }
+              },
+              "type": "value"
+            }
+          ]
         },
         "overrides": []
       },
-      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
-      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "toss_trader_cycle_last_success", "instant": true, "legendFormat": "Last cycle", "range": false, "refId": "A"}],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "toss_trader_cycle_last_success",
+          "instant": true,
+          "legendFormat": "Last cycle",
+          "range": false,
+          "refId": "A"
+        }
+      ],
       "title": "Last Cycle",
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "toss-prometheus"
+      },
       "fieldConfig": {
-        "defaults": {"decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": -0.03}]}, "unit": "percentunit"},
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": -0.03
+              }
+            ]
+          },
+          "unit": "percentunit",
+          "decimals": 2
+        },
         "overrides": []
       },
-      "gridPos": {"h": 5, "w": 4, "x": 4, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
       "id": 2,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "toss_trader_cycle_last_daily_return_ratio", "instant": false, "legendFormat": "Daily return", "range": true, "refId": "A"}],
-      "title": "Daily Return",
-      "type": "stat"
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "toss_trader_cycle_last_daily_return_ratio",
+          "instant": false,
+          "legendFormat": "Daily return",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Daily Return (MTM)",
+      "type": "stat",
+      "description": "보유 전체 MTM. 오늘 체결 성과 아님."
     },
     {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "toss-prometheus"
+      },
       "fieldConfig": {
-        "defaults": {"decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 3}, {"color": "red", "value": 5}]}, "unit": "locale"},
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "locale",
+          "decimals": 0
+        },
         "overrides": []
       },
-      "gridPos": {"h": 5, "w": 4, "x": 8, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
       "id": 3,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "toss_trader_cycle_last_consecutive_api_errors", "instant": true, "legendFormat": "API errors", "range": false, "refId": "A"}],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "toss_trader_cycle_last_consecutive_api_errors",
+          "instant": true,
+          "legendFormat": "API errors",
+          "range": false,
+          "refId": "A"
+        }
+      ],
       "title": "API Error Streak",
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "toss-prometheus"
+      },
       "fieldConfig": {
-        "defaults": {"decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "locale"},
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "locale",
+          "decimals": 0
+        },
         "overrides": []
       },
-      "gridPos": {"h": 5, "w": 4, "x": 12, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
       "id": 4,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "toss_trader_cycle_last_failed", "instant": true, "legendFormat": "Failed symbols", "range": false, "refId": "A"}],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "toss_trader_cycle_last_failed",
+          "instant": true,
+          "legendFormat": "Failed symbols",
+          "range": false,
+          "refId": "A"
+        }
+      ],
       "title": "Failed Symbols",
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "toss-prometheus"
+      },
       "fieldConfig": {
-        "defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 86400}, {"color": "red", "value": 90000}]}, "unit": "s"},
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 86400
+              },
+              {
+                "color": "red",
+                "value": 90000
+              }
+            ]
+          },
+          "unit": "s"
+        },
         "overrides": []
       },
-      "gridPos": {"h": 5, "w": 4, "x": 16, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
       "id": 5,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "time() - toss_trader_cycle_last_finished_timestamp_seconds", "instant": true, "legendFormat": "Age", "range": false, "refId": "A"}],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "time() - toss_trader_cycle_last_finished_timestamp_seconds",
+          "instant": true,
+          "legendFormat": "Age",
+          "range": false,
+          "refId": "A"
+        }
+      ],
       "title": "Cycle Age",
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
-      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "locale"}, "overrides": []},
-      "gridPos": {"h": 5, "w": 4, "x": 20, "y": 0},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "toss-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "locale",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
       "id": 6,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "toss_trader_paper_fills_total", "instant": false, "legendFormat": "Paper fills", "range": true, "refId": "A"}],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "toss_trader_paper_fills_total",
+          "instant": false,
+          "legendFormat": "Paper fills",
+          "range": true,
+          "refId": "A"
+        }
+      ],
       "title": "Paper Fills",
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
-      "id": 7,
-      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
-      "targets": [{"editorMode": "code", "expr": "sum by (status) (toss_trader_cycle_runs_total)", "instant": false, "legendFormat": "{{status}}", "range": true, "refId": "A"}],
-      "title": "Cycle Runs by Status",
-      "type": "timeseries"
+      "datasource": {
+        "type": "prometheus",
+        "uid": "toss-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyKRW",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "toss_trader_paper_initial_cash_krw",
+          "instant": true,
+          "legendFormat": "Initial cash",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Initial Cash",
+      "type": "stat"
     },
     {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {"color": {"mode": "continuous-GrYlRd"}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "locale"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "toss-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 300000
+              },
+              {
+                "color": "green",
+                "value": 600000
+              }
+            ]
+          },
+          "unit": "currencyKRW",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 5
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "toss_trader_paper_available_cash_krw",
+          "instant": false,
+          "legendFormat": "Available cash",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Available Cash",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "toss-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyKRW",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "toss_trader_paper_deployed_cash_krw",
+          "instant": false,
+          "legendFormat": "Deployed cash",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Deployed Cash",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "id": 101,
+      "title": "Rule vs Hermes",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "toss-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": true,
+            "axisColorMode": "text",
+            "axisLabel": "Daily return (MTM)",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 10
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT r.started_at AS time, (r.daily_return_rate * 100)::double precision AS value, p.display_name AS metric FROM paper_cycle_runs r JOIN paper_portfolios p ON p.portfolio_id = r.portfolio_id WHERE r.portfolio_id IN ('rule', 'hermes') AND r.status <> 'running' AND $__timeFilter(r.started_at) ORDER BY 1",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Rule vs Hermes Daily Return",
+      "type": "timeseries",
+      "description": "보유 전체 MTM. 오늘 체결 성과 아님."
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "toss-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 300000
+              },
+              {
+                "color": "green",
+                "value": 600000
+              }
+            ]
+          },
+          "unit": "currencyKRW"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
+      "id": 21,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT p.display_name AS portfolio, (p.initial_cash + COALESCE(SUM(CASE WHEN f.side = 'BUY' THEN -f.notional ELSE f.notional END), 0))::double precision AS cash FROM paper_portfolios p LEFT JOIN paper_fills f ON f.portfolio_id = p.portfolio_id WHERE p.portfolio_id IN ('rule', 'hermes') GROUP BY p.portfolio_id, p.display_name, p.initial_cash ORDER BY p.display_name",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Rule vs Hermes Available Cash",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "toss-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "locale"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
       "id": 8,
-      "options": {"displayMode": "gradient", "maxVizHeight": 300, "minVizHeight": 16, "minVizWidth": 8, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT pf.display_name || ' · ' || COALESCE(s.display_name || ' (' || p.symbol || ')', p.symbol) AS security, p.quantity::double precision AS quantity FROM (SELECT portfolio_id, symbol, SUM(CASE WHEN side = 'BUY' THEN quantity ELSE -quantity END) AS quantity FROM paper_fills WHERE portfolio_id IN ('rule', 'hermes') GROUP BY portfolio_id, symbol) p JOIN paper_portfolios pf ON pf.portfolio_id = p.portfolio_id LEFT JOIN market_symbols s ON s.symbol = p.symbol WHERE p.quantity <> 0 ORDER BY security", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT pf.display_name || ' · ' || COALESCE(s.display_name || ' (' || p.symbol || ')', p.symbol) AS security, p.quantity::double precision AS quantity FROM (SELECT portfolio_id, symbol, SUM(CASE WHEN side = 'BUY' THEN quantity ELSE -quantity END) AS quantity FROM paper_fills WHERE portfolio_id IN ('rule', 'hermes') GROUP BY portfolio_id, symbol) p JOIN paper_portfolios pf ON pf.portfolio_id = p.portfolio_id LEFT JOIN market_symbols s ON s.symbol = p.symbol WHERE p.quantity <> 0 ORDER BY security",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
       "title": "Open Paper Positions",
       "type": "bargauge"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
-      "fieldConfig": {"defaults": {"decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "currencyKRW"}, "overrides": []},
-      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 13},
-      "id": 9,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "toss_trader_paper_initial_cash_krw", "instant": true, "legendFormat": "Initial cash", "range": false, "refId": "A"}],
-      "title": "Initial Paper Cash",
-      "type": "stat"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
-      "fieldConfig": {"defaults": {"decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 300000}, {"color": "green", "value": 600000}]}, "unit": "currencyKRW"}, "overrides": []},
-      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 13},
-      "id": 10,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "toss_trader_paper_available_cash_krw", "instant": false, "legendFormat": "Available cash", "range": true, "refId": "A"}],
-      "title": "Available Paper Cash",
-      "type": "stat"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "toss-prometheus"},
-      "fieldConfig": {"defaults": {"decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "currencyKRW"}, "overrides": []},
-      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 13},
-      "id": 11,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "toss_trader_paper_deployed_cash_krw", "instant": false, "legendFormat": "Deployed cash", "range": true, "refId": "A"}],
-      "title": "Deployed Paper Cash",
-      "type": "stat"
-    },
-    {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {}, "overrides": [{"matcher": {"id": "byRegexp", "options": "/^(notional|available_cash|position_notional|consecutive_api_errors)$/"}, "properties": [{"id": "unit", "value": "locale"}, {"id": "decimals", "value": 0}]}]},
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 18},
-      "id": 12,
-      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT d.evaluated_at AS time, COALESCE(p.display_name, d.portfolio_id) AS portfolio, COALESCE(s.display_name || ' (' || d.symbol || ')', d.symbol) AS security, d.side, d.notional, d.approved, COALESCE(NULLIF((SELECT string_agg(value, ', ') FROM jsonb_array_elements_text(d.violations) AS value), ''), '승인') AS \"판단 근거\", d.available_cash, d.position_notional, d.daily_return_rate, d.consecutive_api_errors, d.signal_reason AS signal_reason, d.signal_id, d.decision_id FROM paper_risk_decisions d LEFT JOIN paper_portfolios p ON p.portfolio_id = d.portfolio_id LEFT JOIN market_symbols s ON s.symbol = d.symbol WHERE $__timeFilter(d.evaluated_at) ORDER BY d.evaluated_at DESC LIMIT 200", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
-      "title": "Recent RiskManager Decisions",
-      "type": "table"
-    },
-    {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "bars", "fillOpacity": 20, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "normal"}, "thresholdsStyle": {"mode": "off"}}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "locale"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 28},
-      "id": 13,
-      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "time_series", "rawQuery": true, "rawSql": "SELECT $__timeGroupAlias(finished_at, '1d'), SUM(prompt_tokens) AS prompt, SUM(completion_tokens) AS completion FROM automation_run_logs WHERE $__timeFilter(finished_at) GROUP BY 1 ORDER BY 1", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
-      "title": "Hermes Token Usage",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {}, "overrides": [{"matcher": {"id": "byRegexp", "options": "/^(duration_ms|prompt_tokens|completion_tokens|total_tokens)$/"}, "properties": [{"id": "unit", "value": "locale"}, {"id": "decimals", "value": 0}]}]},
-      "gridPos": {"h": 8, "w": 16, "x": 8, "y": 28},
-      "id": 14,
-      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT finished_at AS time, run_type, status, stage, duration_ms, prompt_tokens, completion_tokens, total_tokens, error, details::text AS details, run_id FROM automation_run_logs WHERE $__timeFilter(finished_at) ORDER BY finished_at DESC LIMIT 100", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
-      "title": "Hermes Automation Run Log",
-      "type": "table"
-    },
-    {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {}, "overrides": [{"matcher": {"id": "byRegexp", "options": "/^(duration_ms|prompt_tokens|completion_tokens|total_tokens|symbols|signals|fills|failed)$/"}, "properties": [{"id": "unit", "value": "locale"}, {"id": "decimals", "value": 0}]}]},
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 36},
-      "id": 22,
-      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT finished_at AS time, details->>'workflowId' AS workflow, details->>'executionId' AS execution_id, stage, status, duration_ms, details->>'portfolioId' AS portfolio, details->>'interval' AS interval, details->>'symbols' AS symbols, details->>'signals' AS signals, details->>'fills' AS fills, details->>'failed' AS failed, prompt_tokens, completion_tokens, total_tokens, details->>'telegramAccepted' AS telegram_accepted, details->>'riskDecisionIds' AS risk_decision_ids, error, run_id FROM automation_run_logs WHERE run_type = 'n8n_flow' AND $__timeFilter(finished_at) ORDER BY finished_at DESC LIMIT 300", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
-      "title": "n8n Flow Review Log",
-      "type": "table"
-    },
-    {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {
-        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "auto", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "locale"},
-        "overrides": [{"matcher": {"id": "byName", "options": "Duration (ms)"}, "properties": [{"id": "unit", "value": "ms"}, {"id": "custom.axisPlacement", "value": "right"}, {"id": "custom.axisLabel", "value": "Duration"}]}]
+      "datasource": {
+        "type": "prometheus",
+        "uid": "toss-prometheus"
       },
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 44},
-      "id": 15,
-      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "time_series", "rawQuery": true, "rawSql": "SELECT r.started_at AS time, v.value::double precision AS value, p.display_name || ' · ' || v.metric AS metric FROM paper_cycle_runs r JOIN paper_portfolios p ON p.portfolio_id = r.portfolio_id CROSS JOIN LATERAL (VALUES ('Symbols', r.symbol_count), ('Signals', r.signal_count), ('Fills', r.fill_count), ('Failures', r.failed_count), ('API Errors', r.consecutive_api_errors)) v(metric, value) WHERE r.portfolio_id IN ('rule', 'hermes') AND $__timeFilter(r.started_at) ORDER BY 1", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
-      "title": "Paper Cycle Run Log",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (status) (toss_trader_cycle_runs_total)",
+          "instant": false,
+          "legendFormat": "{{status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cycle Runs by Status",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": true, "axisColorMode": "text", "axisLabel": "Change from range start", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 8, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 4, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "percent"}, "overrides": [{"matcher": {"id": "byRegexp", "options": "/ · (규칙 기반|Hermes 개입|legacy) (BUY|SELL)$/"}, "properties": [{"id": "custom.lineWidth", "value": 0}, {"id": "custom.showPoints", "value": "always"}, {"id": "custom.pointSize", "value": 10}]}, {"matcher": {"id": "byRegexp", "options": "/ BUY$/"}, "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]}, {"matcher": {"id": "byRegexp", "options": "/ SELL$/"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]}]},
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 54},
-      "id": 17,
-      "options": {"legend": {"calcs": ["lastNotNull", "min", "max"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "time_series", "rawQuery": true, "rawSql": "WITH candles AS (SELECT timestamp AS time, symbol, close_price, FIRST_VALUE(close_price) OVER (PARTITION BY symbol ORDER BY timestamp) AS base_price FROM market_candles WHERE interval = '1m' AND symbol IN (${trade_symbol:sqlstring}) AND $__timeFilter(timestamp)) SELECT c.time, (((c.close_price / NULLIF(c.base_price, 0)) - 1) * 100)::double precision AS value, COALESCE(s.display_name || ' (' || c.symbol || ')', c.symbol) AS metric FROM candles c LEFT JOIN market_symbols s ON s.symbol = c.symbol ORDER BY c.time", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}, {"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "time_series", "rawQuery": true, "rawSql": "WITH bases AS (SELECT symbol, (ARRAY_AGG(close_price ORDER BY timestamp))[1] AS base_price FROM market_candles WHERE interval = '1m' AND symbol IN (${trade_symbol:sqlstring}) AND $__timeFilter(timestamp) GROUP BY symbol) SELECT f.executed_at AS time, (((f.price / NULLIF(b.base_price, 0)) - 1) * 100)::double precision AS value, COALESCE(s.display_name || ' (' || f.symbol || ')', f.symbol) || ' · ' || COALESCE(p.display_name, f.portfolio_id) || ' ' || f.side AS metric FROM paper_fills f JOIN bases b ON b.symbol = f.symbol LEFT JOIN market_symbols s ON s.symbol = f.symbol LEFT JOIN paper_portfolios p ON p.portfolio_id = f.portfolio_id WHERE f.symbol IN (${trade_symbol:sqlstring}) AND $__timeFilter(f.executed_at) ORDER BY f.executed_at", "refId": "B", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
-      "title": "Symbols (1m, BUY/SELL Marked · $trade_filter)",
-      "type": "timeseries"
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "id": 102,
+      "title": "체결 · 판단",
+      "type": "row"
     },
     {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {}, "overrides": [{"matcher": {"id": "byRegexp", "options": "/^(amount_rank|gainer_rank|trading_amount|reference_price)$/"}, "properties": [{"id": "unit", "value": "locale"}, {"id": "decimals", "value": 0}]}]},
-      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 64},
-      "id": 18,
-      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT d.evaluated_at AS time, COALESCE(s.display_name || ' (' || d.symbol || ')', d.symbol) AS security, d.score, d.amount_rank, d.gainer_rank, d.change_rate, d.trading_amount, d.reference_price, d.risk_approved, d.selected, d.violations::text AS violations, r.status AS refresh_status, d.run_id FROM dynamic_universe_decisions d JOIN dynamic_universe_runs r ON r.run_id = d.run_id LEFT JOIN market_symbols s ON s.symbol = d.symbol WHERE $__timeFilter(d.evaluated_at) ORDER BY d.evaluated_at DESC, d.score DESC LIMIT 500", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
-      "title": "Dynamic Universe Risk Decisions",
-      "type": "table"
-    },
-    {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {}, "overrides": [{"matcher": {"id": "byRegexp", "options": "/^(quantity|price|notional)$/"}, "properties": [{"id": "unit", "value": "locale"}, {"id": "decimals", "value": 0}]}]},
-      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 76},
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "toss-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^(quantity|price|notional)$/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "signal_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fill_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
       "id": 16,
-      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT f.executed_at AS time, COALESCE(p.display_name, f.portfolio_id) AS portfolio, COALESCE(s.display_name || ' (' || f.symbol || ')', f.symbol) AS security, f.side, f.quantity, f.price, f.notional, f.reason, f.signal_id, f.fill_id FROM paper_fills f LEFT JOIN paper_portfolios p ON p.portfolio_id = f.portfolio_id LEFT JOIN market_symbols s ON s.symbol = f.symbol WHERE $__timeFilter(f.executed_at) ORDER BY f.executed_at DESC LIMIT 200", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "time"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT f.executed_at AS time, COALESCE(p.display_name, f.portfolio_id) AS portfolio, COALESCE(s.display_name || ' (' || f.symbol || ')', f.symbol) AS security, f.side, f.quantity, f.price, f.notional, f.reason, f.signal_id, f.fill_id FROM paper_fills f LEFT JOIN paper_portfolios p ON p.portfolio_id = f.portfolio_id LEFT JOIN market_symbols s ON s.symbol = f.symbol WHERE $__timeFilter(f.executed_at) ORDER BY f.executed_at DESC LIMIT 200",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
       "title": "Recent Paper Fills",
       "type": "table"
     },
     {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": true, "axisColorMode": "text", "axisLabel": "Daily return", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 10, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "auto", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "percent"}, "overrides": []},
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 85},
-      "id": 20,
-      "options": {"legend": {"calcs": ["lastNotNull", "min", "max"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "time_series", "rawQuery": true, "rawSql": "SELECT r.started_at AS time, (r.daily_return_rate * 100)::double precision AS value, p.display_name AS metric FROM paper_cycle_runs r JOIN paper_portfolios p ON p.portfolio_id = r.portfolio_id WHERE r.portfolio_id IN ('rule', 'hermes') AND r.status <> 'running' AND $__timeFilter(r.started_at) ORDER BY 1", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
-      "title": "Rule vs Hermes Daily Return",
-      "type": "timeseries"
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "toss-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^(notional|available_cash|position_notional|consecutive_api_errors)$/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "available_cash"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "position_notional"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "consecutive_api_errors"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "signal_reason"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "signal_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "decision_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "id": 12,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "time"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT d.evaluated_at AS time, COALESCE(p.display_name, d.portfolio_id) AS portfolio, COALESCE(s.display_name || ' (' || d.symbol || ')', d.symbol) AS security, d.side, d.notional, d.approved, COALESCE(NULLIF((SELECT string_agg(value, ', ') FROM jsonb_array_elements_text(d.violations) AS value), ''), '승인') AS \"판단 근거\", d.available_cash, d.position_notional, d.daily_return_rate, d.consecutive_api_errors, d.signal_reason AS signal_reason, d.signal_id, d.decision_id FROM paper_risk_decisions d LEFT JOIN paper_portfolios p ON p.portfolio_id = d.portfolio_id LEFT JOIN market_symbols s ON s.symbol = d.symbol WHERE $__timeFilter(d.evaluated_at) ORDER BY d.evaluated_at DESC LIMIT 200",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Recent RiskManager Decisions",
+      "type": "table",
+      "description": "한도 거부는 여기만. Hermes token 행 없음."
     },
     {
-      "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {"color": {"mode": "continuous-GrYlRd"}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 300000}, {"color": "green", "value": 600000}]}, "unit": "currencyKRW"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 95},
-      "id": 21,
-      "options": {"displayMode": "gradient", "maxVizHeight": 300, "minVizHeight": 16, "minVizWidth": 8, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT p.display_name AS portfolio, (p.initial_cash + COALESCE(SUM(CASE WHEN f.side = 'BUY' THEN -f.notional ELSE f.notional END), 0))::double precision AS cash FROM paper_portfolios p LEFT JOIN paper_fills f ON f.portfolio_id = p.portfolio_id WHERE p.portfolio_id IN ('rule', 'hermes') GROUP BY p.portfolio_id, p.display_name, p.initial_cash ORDER BY p.display_name", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
-      "title": "Rule vs Hermes Available Cash",
-      "type": "bargauge"
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "id": 103,
+      "title": "1분 차트",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": true,
+                "axisColorMode": "text",
+                "axisLabel": "Change from range start",
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 12,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "percent",
+              "decimals": 2
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/ · (규칙 기반|Hermes 개입|legacy) (BUY|SELL)$/"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 0
+                  },
+                  {
+                    "id": "custom.showPoints",
+                    "value": "always"
+                  },
+                  {
+                    "id": "custom.pointSize",
+                    "value": 10
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/ BUY$/"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "green",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/ SELL$/"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "red",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 44
+          },
+          "id": 17,
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "toss-postgres"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "WITH candles AS (SELECT timestamp AS time, symbol, close_price, FIRST_VALUE(close_price) OVER (PARTITION BY symbol ORDER BY timestamp) AS base_price FROM market_candles WHERE interval = '1m' AND symbol IN (${trade_symbol:sqlstring}) AND $__timeFilter(timestamp)) SELECT c.time, (((c.close_price / NULLIF(c.base_price, 0)) - 1) * 100)::double precision AS value, COALESCE(s.display_name || ' (' || c.symbol || ')', c.symbol) AS metric FROM candles c LEFT JOIN market_symbols s ON s.symbol = c.symbol ORDER BY c.time",
+              "refId": "A",
+              "sql": {
+                "columns": [
+                  {
+                    "parameters": [],
+                    "type": "function"
+                  }
+                ],
+                "groupBy": [
+                  {
+                    "property": {
+                      "type": "string"
+                    },
+                    "type": "groupBy"
+                  }
+                ],
+                "limit": 50
+              }
+            },
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "toss-postgres"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "WITH bases AS (SELECT symbol, (ARRAY_AGG(close_price ORDER BY timestamp))[1] AS base_price FROM market_candles WHERE interval = '1m' AND symbol IN (${trade_symbol:sqlstring}) AND $__timeFilter(timestamp) GROUP BY symbol) SELECT f.executed_at AS time, (((f.price / NULLIF(b.base_price, 0)) - 1) * 100)::double precision AS value, COALESCE(s.display_name || ' (' || f.symbol || ')', f.symbol) || ' · ' || COALESCE(p.display_name, f.portfolio_id) || ' ' || f.side AS metric FROM paper_fills f JOIN bases b ON b.symbol = f.symbol LEFT JOIN market_symbols s ON s.symbol = f.symbol LEFT JOIN paper_portfolios p ON p.portfolio_id = f.portfolio_id WHERE f.symbol IN (${trade_symbol:sqlstring}) AND $__timeFilter(f.executed_at) ORDER BY f.executed_at",
+              "refId": "B",
+              "sql": {
+                "columns": [
+                  {
+                    "parameters": [],
+                    "type": "function"
+                  }
+                ],
+                "groupBy": [
+                  {
+                    "property": {
+                      "type": "string"
+                    },
+                    "type": "groupBy"
+                  }
+                ],
+                "limit": 50
+              }
+            }
+          ],
+          "title": "Symbols (1m, BUY/SELL Marked · $trade_filter)",
+          "type": "timeseries"
+        }
+      ]
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "id": 104,
+      "title": "Universe",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/^(amount_rank|gainer_rank|trading_amount|reference_price)$/"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "locale"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "run_id"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 55
+          },
+          "id": 18,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "time"
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "toss-postgres"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT d.evaluated_at AS time, COALESCE(s.display_name || ' (' || d.symbol || ')', d.symbol) AS security, d.score, d.amount_rank, d.gainer_rank, d.change_rate, d.trading_amount, d.reference_price, d.risk_approved, d.selected, d.violations::text AS violations, r.status AS refresh_status, d.run_id FROM dynamic_universe_decisions d JOIN dynamic_universe_runs r ON r.run_id = d.run_id LEFT JOIN market_symbols s ON s.symbol = d.symbol WHERE $__timeFilter(d.evaluated_at) ORDER BY d.evaluated_at DESC, d.score DESC LIMIT 500",
+              "refId": "A",
+              "sql": {
+                "columns": [
+                  {
+                    "parameters": [],
+                    "type": "function"
+                  }
+                ],
+                "groupBy": [
+                  {
+                    "property": {
+                      "type": "string"
+                    },
+                    "type": "groupBy"
+                  }
+                ],
+                "limit": 50
+              }
+            }
+          ],
+          "title": "Dynamic Universe Risk Decisions",
+          "type": "table"
+        }
+      ]
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "id": 105,
+      "title": "자동화 · token",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "drawStyle": "bars",
+                "fillOpacity": 20,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "locale",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 66
+          },
+          "id": 13,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "toss-postgres"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT $__timeGroupAlias(finished_at, '1d'), SUM(prompt_tokens) AS prompt, SUM(completion_tokens) AS completion FROM automation_run_logs WHERE $__timeFilter(finished_at) GROUP BY 1 ORDER BY 1",
+              "refId": "A",
+              "sql": {
+                "columns": [
+                  {
+                    "parameters": [],
+                    "type": "function"
+                  }
+                ],
+                "groupBy": [
+                  {
+                    "property": {
+                      "type": "string"
+                    },
+                    "type": "groupBy"
+                  }
+                ],
+                "limit": 50
+              }
+            }
+          ],
+          "title": "Hermes Token Usage",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/^(duration_ms|prompt_tokens|completion_tokens|total_tokens)$/"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "locale"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "run_id"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 16,
+            "x": 8,
+            "y": 66
+          },
+          "id": 14,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "time"
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "toss-postgres"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT finished_at AS time, run_type, status, stage, duration_ms, prompt_tokens, completion_tokens, total_tokens, error, run_id FROM automation_run_logs WHERE run_type IN ('hermes_trade', 'market_scan', 'daily') AND $__timeFilter(finished_at) ORDER BY finished_at DESC LIMIT 100",
+              "refId": "A",
+              "sql": {
+                "columns": [
+                  {
+                    "parameters": [],
+                    "type": "function"
+                  }
+                ],
+                "groupBy": [
+                  {
+                    "property": {
+                      "type": "string"
+                    },
+                    "type": "groupBy"
+                  }
+                ],
+                "limit": 50
+              }
+            }
+          ],
+          "title": "Hermes Automation Run Log",
+          "type": "table",
+          "description": "실제 advisor 호출만. 한도 preflight 거부 없음."
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/^(duration_ms|prompt_tokens|completion_tokens|total_tokens|symbols|signals|fills|failed)$/"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "locale"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "risk_decision_ids"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "run_id"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "prompt_tokens"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "completion_tokens"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 74
+          },
+          "id": 22,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "time"
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "toss-postgres"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT finished_at AS time, details->>'workflowId' AS workflow, details->>'executionId' AS execution_id, stage, status, duration_ms, details->>'portfolioId' AS portfolio, details->>'interval' AS interval, details->>'symbols' AS symbols, details->>'signals' AS signals, details->>'fills' AS fills, details->>'failed' AS failed, prompt_tokens, completion_tokens, total_tokens, details->>'telegramAccepted' AS telegram_accepted, details->>'riskDecisionIds' AS risk_decision_ids, error, run_id FROM automation_run_logs WHERE run_type = 'n8n_flow' AND $__timeFilter(finished_at) ORDER BY finished_at DESC LIMIT 300",
+              "refId": "A",
+              "sql": {
+                "columns": [
+                  {
+                    "parameters": [],
+                    "type": "function"
+                  }
+                ],
+                "groupBy": [
+                  {
+                    "property": {
+                      "type": "string"
+                    },
+                    "type": "groupBy"
+                  }
+                ],
+                "limit": 50
+              }
+            }
+          ],
+          "title": "n8n Flow Review Log",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "toss-postgres"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 12,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "locale",
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Duration (ms)"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "ms"
+                  },
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  },
+                  {
+                    "id": "custom.axisLabel",
+                    "value": "Duration"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 82
+          },
+          "id": 15,
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "toss-postgres"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT r.started_at AS time, v.value::double precision AS value, p.display_name || ' · ' || v.metric AS metric FROM paper_cycle_runs r JOIN paper_portfolios p ON p.portfolio_id = r.portfolio_id CROSS JOIN LATERAL (VALUES ('Symbols', r.symbol_count), ('Signals', r.signal_count), ('Fills', r.fill_count), ('Failures', r.failed_count), ('API Errors', r.consecutive_api_errors)) v(metric, value) WHERE r.portfolio_id IN ('rule', 'hermes') AND $__timeFilter(r.started_at) ORDER BY 1",
+              "refId": "A",
+              "sql": {
+                "columns": [
+                  {
+                    "parameters": [],
+                    "type": "function"
+                  }
+                ],
+                "groupBy": [
+                  {
+                    "property": {
+                      "type": "string"
+                    },
+                    "type": "groupBy"
+                  }
+                ],
+                "limit": 50
+              }
+            }
+          ],
+          "title": "Paper Cycle Run Log",
+          "type": "timeseries"
+        }
+      ]
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["trading", "paper", "toss"],
-  "templating": {"list": [{"current": {"selected": true, "text": "체결 종목만", "value": "traded"}, "hide": 0, "includeAll": false, "label": "종목 범위", "multi": false, "name": "trade_filter", "options": [{"selected": true, "text": "체결 종목만", "value": "traded"}, {"selected": false, "text": "전체 조회 종목", "value": "all"}], "query": "체결 종목만 : traded, 전체 조회 종목 : all", "skipUrlSync": false, "type": "custom"}, {"allValue": null, "current": {"selected": true, "text": "All", "value": ["$__all"]}, "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "definition": "SELECT COALESCE(s.display_name || ' (' || c.symbol || ')', c.symbol) AS __text, c.symbol AS __value FROM (SELECT DISTINCT symbol FROM market_candles WHERE interval = '1m') c LEFT JOIN market_symbols s ON s.symbol = c.symbol WHERE '${trade_filter}' = 'all' OR EXISTS (SELECT 1 FROM paper_fills f WHERE f.symbol = c.symbol) ORDER BY __text", "hide": 0, "includeAll": true, "label": "종목", "multi": true, "name": "trade_symbol", "options": [], "query": "SELECT COALESCE(s.display_name || ' (' || c.symbol || ')', c.symbol) AS __text, c.symbol AS __value FROM (SELECT DISTINCT symbol FROM market_candles WHERE interval = '1m') c LEFT JOIN market_symbols s ON s.symbol = c.symbol WHERE '${trade_filter}' = 'all' OR EXISTS (SELECT 1 FROM paper_fills f WHERE f.symbol = c.symbol) ORDER BY __text", "refresh": 1, "regex": "", "skipUrlSync": false, "sort": 1, "type": "query"}]},
-  "time": {"from": "now-7d", "to": "now"},
+  "tags": [
+    "trading",
+    "paper",
+    "toss"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "체결 종목만",
+          "value": "traded"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "종목 범위",
+        "multi": false,
+        "name": "trade_filter",
+        "options": [
+          {
+            "selected": true,
+            "text": "체결 종목만",
+            "value": "traded"
+          },
+          {
+            "selected": false,
+            "text": "전체 조회 종목",
+            "value": "all"
+          }
+        ],
+        "query": "체결 종목만 : traded, 전체 조회 종목 : all",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "allValue": null,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "toss-postgres"
+        },
+        "definition": "SELECT COALESCE(s.display_name || ' (' || c.symbol || ')', c.symbol) AS __text, c.symbol AS __value FROM (SELECT DISTINCT symbol FROM market_candles WHERE interval = '1m') c LEFT JOIN market_symbols s ON s.symbol = c.symbol WHERE '${trade_filter}' = 'all' OR EXISTS (SELECT 1 FROM paper_fills f WHERE f.symbol = c.symbol) ORDER BY __text",
+        "hide": 0,
+        "includeAll": true,
+        "label": "종목",
+        "multi": true,
+        "name": "trade_symbol",
+        "options": [],
+        "query": "SELECT COALESCE(s.display_name || ' (' || c.symbol || ')', c.symbol) AS __text, c.symbol AS __value FROM (SELECT DISTINCT symbol FROM market_candles WHERE interval = '1m') c LEFT JOIN market_symbols s ON s.symbol = c.symbol WHERE '${trade_filter}' = 'all' OR EXISTS (SELECT 1 FROM paper_fills f WHERE f.symbol = c.symbol) ORDER BY __text",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-2d",
+    "to": "now"
+  },
   "timepicker": {},
-  "timezone": "browser",
+  "timezone": "Asia/Seoul",
   "title": "Toss Trader",
   "uid": "toss-trader",
-  "version": 9,
+  "version": 10,
   "weekStart": "monday"
 }
