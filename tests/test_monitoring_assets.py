@@ -68,7 +68,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         symbol_panel = next(
             panel
             for panel in dashboard["panels"]
-            if panel["title"].startswith("Queried Symbols")
+            if panel["title"].startswith("Traded Symbols")
         )
         self.assertEqual(symbol_panel["type"], "timeseries")
         self.assertEqual(symbol_panel["fieldConfig"]["defaults"]["unit"], "percent")
@@ -76,7 +76,18 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("interval = '1m'", symbol_panel["targets"][0]["rawSql"])
         self.assertIn("market_symbols", symbol_panel["targets"][0]["rawSql"])
         self.assertIn("display_name", symbol_panel["targets"][0]["rawSql"])
+        self.assertEqual(len(symbol_panel["targets"]), 2)
+        self.assertIn("paper_fills", symbol_panel["targets"][1]["rawSql"])
+        self.assertIn("f.executed_at AS time", symbol_panel["targets"][1]["rawSql"])
+        self.assertIn("${trade_symbol:sqlstring}", symbol_panel["targets"][0]["rawSql"])
         self.assertNotIn("CASE symbol", symbol_panel["targets"][0]["rawSql"])
+        trade_variable = next(
+            variable
+            for variable in dashboard["templating"]["list"]
+            if variable["name"] == "trade_symbol"
+        )
+        self.assertIn("SELECT DISTINCT symbol FROM paper_fills", trade_variable["query"])
+        self.assertEqual(trade_variable["label"], "체결 종목")
         self.assertIn("Recent Paper Fills", titles)
         self.assertIn("Dynamic Universe Risk Decisions", titles)
         positions_panel = next(
