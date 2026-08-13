@@ -158,6 +158,75 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(latest.status, "succeeded")
         self.assertEqual(latest.fill_count, 1)
 
+    def test_reuses_one_market_snapshot_across_portfolios(self) -> None:
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+        now = datetime(2026, 8, 12, 7, 0, tzinfo=UTC)
+        rule_runner = self._runner(client)
+        snapshot = rule_runner.prepare(
+            symbols=("005930",),
+            interval="1d",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=now,
+        )
+        rule_result = rule_runner.run(
+            symbols=("005930",),
+            interval="1d",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=now,
+            signal_namespace="rule",
+            snapshot=snapshot,
+        )
+
+        hermes_ledger = PaperLedger(":memory:", portfolio_id="hermes")
+        hermes_state = SqliteCycleStateStore(":memory:", portfolio_id="hermes")
+        try:
+            hermes_runner = PaperCycleRunner(
+                collector=MarketCollector(
+                    client=client, repository=self.market_repository
+                ),
+                strategy=StoredMaStrategy(self.market_repository),
+                trading=PaperTradingService(
+                    ledger=hermes_ledger,
+                    risk_manager=RiskManager(RiskLimits()),
+                ),
+                calendar=MarketCalendarService(client),
+                performance=PortfolioPerformance(
+                    ledger=hermes_ledger,
+                    market_repository=self.market_repository,
+                ),
+                state=hermes_state,
+                clock=lambda: datetime(2026, 8, 12, 7, 0, 3, tzinfo=UTC),
+            )
+            hermes_result = hermes_runner.run(
+                symbols=("005930",),
+                interval="1d",
+                short_window=2,
+                long_window=3,
+                quantity=Decimal(1),
+                now=now,
+                signal_namespace="hermes",
+                snapshot=snapshot,
+            )
+        finally:
+            hermes_ledger.close()
+            hermes_state.close()
+
+        self.assertEqual(client.calls, [("005930", 4)])
+        self.assertEqual(rule_result.fill_count, 1)
+        self.assertEqual(hermes_result.fill_count, 1)
+        assert rule_result.items[0].signal is not None
+        assert hermes_result.items[0].signal is not None
+        self.assertTrue(rule_result.items[0].signal.signal_id.startswith("rule:"))
+        self.assertTrue(
+            hermes_result.items[0].signal.signal_id.startswith("hermes:")
+        )
+
     def test_enters_existing_uptrend_only_on_universe_refresh(self) -> None:
         client = WatchlistCandleClient(
             {"005930": [Decimal(10), Decimal(11), Decimal(12), Decimal(13)]}

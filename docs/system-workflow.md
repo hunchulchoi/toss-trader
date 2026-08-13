@@ -99,9 +99,12 @@ flowchart LR
     REPORT_OK -->|아니오| FAIL
 ```
 
-장중·마감 workflow도 `Rule 정상 → Rule 체결 유무 → Hermes 정상 → Hermes
-체결 유무`를 독립 분기로 표시한다. 양쪽 체결 유무 경로는 동일한 Hermes 비교
-단계로 다시 합쳐져 universe와 진입 신호가 달라지지 않는다. 마감 workflow는
+장중·마감 workflow는 `시장 Snapshot + Rule → Rule 체결 유무 → 공유
+Snapshot + Hermes → Hermes 체결 유무`로 실행한다. 첫 단계가 Toss candles와
+MA20/MA60 원시 신호를 한 번만 만들며, Hermes 포트폴리오는 같은 평가시각·종목·
+수집 결과·원시 신호·universe BUY 허용 상태를 재사용한다. 각 포트폴리오의
+보유수량 필터, RiskManager 판단, Hermes advisor, paper 체결과 장부만 분리된다.
+따라서 15종목 기준 전략 candle 조회는 30회가 아니라 15회다. 마감 workflow는
 비교 병합 뒤 `Hermes 마감 분석 정상?`과 `마감 Telegram 정상?`을 추가 확인한다.
 HTTP 응답 오류는 해당 단계 실패 Telegram으로, network/timeout처럼 응답 자체가
 없는 오류는 공통 `Toss Trader Workflow Error Reporter`로 전달한다.

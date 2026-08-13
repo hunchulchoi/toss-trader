@@ -248,6 +248,8 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("/workflow/paper-hermes-1m", encoded)
         self.assertIn("/workflow/report-paper", encoded)
         self.assertIn("비교 결과 병합", encoded)
+        self.assertIn("시장 Snapshot + Rule 1분봉", encoded)
+        self.assertIn("공유 Snapshot + Hermes 1분봉", encoded)
         for branch in (
             "Rule Cycle 정상?",
             "Rule 체결 있음?",

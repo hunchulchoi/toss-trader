@@ -424,15 +424,21 @@ class PaperPortfolioProcess:
             "--interval",
             interval,
         ]
+        snapshot_input: str | None = None
         if portfolio_id == "hermes":
-            command.append("--hermes-advisor")
-            _append_rule_seed(command, rule_cycle)
+            command.extend(("--hermes-advisor", "--snapshot-stdin"))
+            snapshot_input = json.dumps(
+                _rule_shared_snapshot(rule_cycle),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
         environment = dict(os.environ)
         environment["TRADING_ENABLED"] = "false"
         completed = subprocess.run(
             command,
             capture_output=True,
             text=True,
+            input=snapshot_input,
             timeout=self._timeout_seconds,
             env=environment,
             check=False,
@@ -444,26 +450,17 @@ class PaperPortfolioProcess:
         return {"exitCode": completed.returncode, "cycle": payload}
 
 
-def _append_rule_seed(
-    command: list[str], rule_cycle: dict[str, Any] | None
-) -> None:
+def _rule_shared_snapshot(rule_cycle: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(rule_cycle, dict):
         raise TypeError("Hermes paper task requires rule cycle JSON")
     cycle = rule_cycle.get("cycle")
     cycle = cycle if isinstance(cycle, dict) else rule_cycle
-    universe = cycle.get("universe")
-    if not isinstance(universe, dict):
-        raise TypeError("rule cycle is missing universe")
-    symbols = universe.get("symbols")
-    if not isinstance(symbols, list) or not symbols:
-        raise ValueError("rule cycle universe is missing symbols")
-    command.extend(("--symbols", *(str(value) for value in symbols)))
-    entries = universe.get("entrySymbols")
-    if isinstance(entries, list) and entries:
-        command.extend(("--trend-entry-symbols", *(str(value) for value in entries)))
-    run_id = universe.get("runId")
-    if run_id:
-        command.extend(("--trend-entry-key", str(run_id)))
+    snapshot = cycle.get("sharedSnapshot")
+    if not isinstance(snapshot, dict):
+        raise TypeError("rule cycle is missing shared market snapshot")
+    if snapshot.get("version") != 1:
+        raise ValueError("rule cycle snapshot version is unsupported")
+    return snapshot
 
 
 class IntradayPaperAutomation:

@@ -29,6 +29,18 @@ class SymbolCycleResult:
 
 
 @dataclass(frozen=True, slots=True)
+class PaperCycleSnapshot:
+    evaluated_at: datetime
+    symbols: tuple[str, ...]
+    interval: str
+    collections: tuple[CollectionResult | None, ...]
+    signals: tuple[TradeSignal | None, ...]
+    errors: tuple[str | None, ...]
+    api_failed: bool
+    new_buys_allowed: bool
+
+
+@dataclass(frozen=True, slots=True)
 class PaperCycleResult:
     run_id: str
     started_at: datetime
@@ -38,6 +50,7 @@ class PaperCycleResult:
     currency_returns: dict[str, Decimal]
     consecutive_api_errors: int
     items: tuple[SymbolCycleResult, ...]
+    snapshot: PaperCycleSnapshot
 
     @property
     def symbol_count(self) -> int:
@@ -76,6 +89,66 @@ class PaperCycleRunner:
         self._state = state
         self._clock = clock or (lambda: datetime.now(UTC))
 
+    def prepare(
+        self,
+        *,
+        symbols: tuple[str, ...],
+        interval: str,
+        short_window: int,
+        long_window: int,
+        quantity: Decimal,
+        now: datetime,
+        trend_entry_symbols: tuple[str, ...] = (),
+        trend_entry_key: str | None = None,
+        new_buys_allowed: bool = True,
+    ) -> PaperCycleSnapshot:
+        if not symbols:
+            raise ValueError("watchlist must not be empty")
+        size = len(symbols)
+        collections: list[CollectionResult | None] = [None] * size
+        signals: list[TradeSignal | None] = [None] * size
+        errors: list[str | None] = [None] * size
+        api_failed = False
+
+        for index, symbol in enumerate(symbols):
+            try:
+                collections[index] = self._collector.collect(
+                    symbol=symbol,
+                    interval=interval,
+                    count=long_window + 1,
+                )
+            except HANDLED_CYCLE_ERRORS as error:
+                errors[index] = str(error)
+                api_failed = True
+
+        trend_entries = frozenset(trend_entry_symbols)
+        for index, symbol in enumerate(symbols):
+            if errors[index] is not None:
+                continue
+            try:
+                signals[index] = self._strategy.evaluate(
+                    symbol=symbol,
+                    interval=interval,
+                    quantity=quantity,
+                    short_window=short_window,
+                    long_window=long_window,
+                    allow_trend_entry=symbol in trend_entries,
+                    entry_key=trend_entry_key,
+                )
+            except HANDLED_CYCLE_ERRORS as error:
+                errors[index] = str(error)
+
+        return PaperCycleSnapshot(
+            evaluated_at=now,
+            symbols=symbols,
+            interval=interval,
+            collections=tuple(collections),
+            signals=tuple(signals),
+            errors=tuple(errors),
+            api_failed=api_failed,
+            new_buys_allowed=new_buys_allowed,
+        )
+
     def run(
         self,
         *,
@@ -89,6 +162,7 @@ class PaperCycleRunner:
         trend_entry_symbols: tuple[str, ...] = (),
         trend_entry_key: str | None = None,
         signal_namespace: str | None = None,
+        snapshot: PaperCycleSnapshot | None = None,
     ) -> PaperCycleResult:
         if not symbols:
             raise ValueError("watchlist must not be empty")
@@ -99,19 +173,27 @@ class PaperCycleRunner:
             symbol_count=len(symbols),
         )
         try:
-            result = self._run_started(
-                run_id=run_id,
+            prepared = snapshot or self.prepare(
                 symbols=symbols,
                 interval=interval,
                 short_window=short_window,
                 long_window=long_window,
                 quantity=quantity,
                 now=now,
-                previous_api_errors=previous_api_errors,
-                new_buys_allowed=new_buys_allowed,
-                trend_entry_symbols=frozenset(trend_entry_symbols),
+                trend_entry_symbols=trend_entry_symbols,
                 trend_entry_key=trend_entry_key,
+                new_buys_allowed=new_buys_allowed,
+            )
+            _validate_snapshot(prepared, symbols=symbols, interval=interval, now=now)
+            result = self._run_started(
+                run_id=run_id,
+                symbols=symbols,
+                interval=interval,
+                now=now,
+                previous_api_errors=previous_api_errors,
+                new_buys_allowed=prepared.new_buys_allowed,
                 signal_namespace=signal_namespace,
+                snapshot=prepared,
             )
         except Exception as error:
             self._state.finish_run(
@@ -146,33 +228,18 @@ class PaperCycleRunner:
         run_id: str,
         symbols: tuple[str, ...],
         interval: str,
-        short_window: int,
-        long_window: int,
-        quantity: Decimal,
         now: datetime,
         previous_api_errors: int,
         new_buys_allowed: bool,
-        trend_entry_symbols: frozenset[str],
-        trend_entry_key: str | None,
         signal_namespace: str | None,
+        snapshot: PaperCycleSnapshot,
     ) -> PaperCycleResult:
         size = len(symbols)
-        collections: list[CollectionResult | None] = [None] * size
-        signals: list[TradeSignal | None] = [None] * size
+        collections = list(snapshot.collections)
+        signals = list(snapshot.signals)
         executions: list[PaperExecutionResult | None] = [None] * size
-        errors: list[str | None] = [None] * size
-        api_failed = False
-
-        for index, symbol in enumerate(symbols):
-            try:
-                collections[index] = self._collector.collect(
-                    symbol=symbol,
-                    interval=interval,
-                    count=long_window + 1,
-                )
-            except HANDLED_CYCLE_ERRORS as error:
-                errors[index] = str(error)
-                api_failed = True
+        errors = list(snapshot.errors)
+        api_failed = snapshot.api_failed
 
         performance, performance_error, mark_api_failed = self._performance_for_cycle(
             symbols=symbols,
@@ -188,29 +255,17 @@ class PaperCycleRunner:
         for index, symbol in enumerate(symbols):
             if errors[index] is not None:
                 continue
-            try:
-                signals[index] = self._strategy.evaluate(
-                    symbol=symbol,
-                    interval=interval,
-                    quantity=quantity,
-                    short_window=short_window,
-                    long_window=long_window,
-                    allow_trend_entry=symbol in trend_entry_symbols,
-                    entry_key=trend_entry_key,
+            if (
+                signals[index] is not None
+                and signals[index].side is Side.SELL
+                and not self._trading.has_position(symbol)
+            ):
+                signals[index] = None
+            if signals[index] is not None and signal_namespace is not None:
+                signals[index] = replace(
+                    signals[index],
+                    signal_id=f"{signal_namespace}:{signals[index].signal_id}",
                 )
-                if (
-                    signals[index] is not None
-                    and signals[index].side is Side.SELL
-                    and not self._trading.has_position(symbol)
-                ):
-                    signals[index] = None
-                if signals[index] is not None and signal_namespace is not None:
-                    signals[index] = replace(
-                        signals[index],
-                        signal_id=f"{signal_namespace}:{signals[index].signal_id}",
-                    )
-            except HANDLED_CYCLE_ERRORS as error:
-                errors[index] = str(error)
 
         sessions: dict[str, MarketSession] = {}
         countries = {
@@ -271,6 +326,7 @@ class PaperCycleRunner:
             currency_returns=performance.currency_returns,
             consecutive_api_errors=consecutive_api_errors,
             items=items,
+            snapshot=snapshot,
         )
 
     def _performance_for_cycle(
@@ -334,6 +390,27 @@ def _status(result: PaperCycleResult) -> str:
     if result.failed_count == result.symbol_count:
         return "failed"
     return "partial_failure"
+
+
+def _validate_snapshot(
+    snapshot: PaperCycleSnapshot,
+    *,
+    symbols: tuple[str, ...],
+    interval: str,
+    now: datetime,
+) -> None:
+    if snapshot.symbols != symbols:
+        raise ValueError("paper snapshot symbols do not match cycle symbols")
+    if snapshot.interval != interval:
+        raise ValueError("paper snapshot interval does not match cycle interval")
+    if snapshot.evaluated_at != now:
+        raise ValueError("paper snapshot time does not match cycle time")
+    size = len(symbols)
+    if not all(
+        len(values) == size
+        for values in (snapshot.collections, snapshot.signals, snapshot.errors)
+    ):
+        raise ValueError("paper snapshot item counts do not match symbols")
 
 
 def _error_message(items: tuple[SymbolCycleResult, ...]) -> str | None:

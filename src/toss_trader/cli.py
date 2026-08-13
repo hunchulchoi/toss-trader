@@ -23,11 +23,11 @@ from .automation import (
 from .calendar import MarketCalendarService
 from .client import TossClient
 from .config import Settings
-from .cycle import PaperCycleRunner
+from .cycle import PaperCycleRunner, PaperCycleSnapshot
 from .cycle_state import open_cycle_state_store
 from .errors import TossApiError
 from .execution import PaperTradingService
-from .market_data import MarketCollector, StoredMaStrategy
+from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
 from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
 from .paper import DuplicatePaperOrder, open_paper_ledger
@@ -139,6 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     cycle.add_argument("--hermes-advisor", action="store_true")
     cycle.add_argument("--trend-entry-symbols", nargs="+")
     cycle.add_argument("--trend-entry-key")
+    cycle.add_argument("--snapshot-stdin", action="store_true")
 
     market_scan = subparsers.add_parser(
         "run-market-scan",
@@ -394,12 +395,21 @@ def _scan_ma(settings: Settings, args: argparse.Namespace) -> int:
 def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
     if args.hermes_advisor and args.portfolio != "hermes":
         raise ValueError("Hermes advisor is only valid for the hermes portfolio")
+    if args.snapshot_stdin and args.portfolio != "hermes":
+        raise ValueError("shared snapshot input is only valid for the hermes portfolio")
+    snapshot = _read_cycle_snapshot() if args.snapshot_stdin else None
     explicit_symbols = (
-        tuple(symbol.upper() for symbol in args.symbols)
-        if args.symbols
-        else None
+        snapshot.symbols
+        if snapshot is not None
+        else (
+            tuple(symbol.upper() for symbol in args.symbols)
+            if args.symbols
+            else None
+        )
     )
-    interval = args.interval or settings.strategy_interval
+    interval = snapshot.interval if snapshot is not None else (
+        args.interval or settings.strategy_interval
+    )
     short_window = args.short_window or settings.strategy_short_window
     long_window = args.long_window or settings.strategy_long_window
     quantity = args.quantity or settings.paper_order_quantity
@@ -409,7 +419,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
         raise ValueError("quantity must be positive")
 
     postgres_parameters = settings.postgres_connection_parameters()
-    now = datetime.now(UTC)
+    now = snapshot.evaluated_at if snapshot is not None else datetime.now(UTC)
     with ExitStack() as stack:
         client = _client(settings)
         market_repository = open_market_repository(
@@ -522,6 +532,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             signal_namespace=(
                 args.portfolio if args.portfolio in {"rule", "hermes"} else None
             ),
+            snapshot=snapshot,
         )
         cash_balance = paper_ledger.cash_balance(settings.paper_initial_cash)
     _emit(
@@ -536,6 +547,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             "initialCash": settings.paper_initial_cash,
             "cashBalance": cash_balance,
             "consecutiveApiErrors": result.consecutive_api_errors,
+            "sharedSnapshot": _cycle_snapshot_to_dict(result.snapshot),
             "universe": (
                 {
                     "runId": universe_result.run_id,
@@ -557,6 +569,125 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
         }
     )
     return 3 if result.failed_count else 0
+
+
+def _cycle_snapshot_to_dict(snapshot: PaperCycleSnapshot) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "evaluatedAt": snapshot.evaluated_at,
+        "symbols": list(snapshot.symbols),
+        "interval": snapshot.interval,
+        "collections": [
+            (
+                {
+                    "symbol": item.symbol,
+                    "interval": item.interval,
+                    "received": item.received,
+                    "upserted": item.upserted,
+                    "nextBefore": item.next_before,
+                }
+                if item is not None
+                else None
+            )
+            for item in snapshot.collections
+        ],
+        "signals": [
+            (
+                {
+                    "signalId": item.signal_id,
+                    "symbol": item.symbol,
+                    "side": item.side.value,
+                    "referencePrice": item.reference_price,
+                    "quantity": item.quantity,
+                    "reason": item.reason,
+                }
+                if item is not None
+                else None
+            )
+            for item in snapshot.signals
+        ],
+        "errors": list(snapshot.errors),
+        "apiFailed": snapshot.api_failed,
+        "newBuysAllowed": snapshot.new_buys_allowed,
+    }
+
+
+def _read_cycle_snapshot() -> PaperCycleSnapshot:
+    try:
+        payload = json.load(sys.stdin)
+    except (json.JSONDecodeError, UnicodeError) as error:
+        raise ValueError("shared snapshot stdin must contain JSON") from error
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise ValueError("shared snapshot version is unsupported")
+    symbols = payload.get("symbols")
+    collections = payload.get("collections")
+    signals = payload.get("signals")
+    errors = payload.get("errors")
+    if not isinstance(symbols, list) or not symbols:
+        raise ValueError("shared snapshot symbols must be a non-empty list")
+    if not all(isinstance(symbol, str) and symbol for symbol in symbols):
+        raise ValueError("shared snapshot contains an invalid symbol")
+    if not all(isinstance(values, list) for values in (collections, signals, errors)):
+        raise ValueError("shared snapshot arrays are missing")
+    evaluated_at = datetime.fromisoformat(str(payload.get("evaluatedAt", "")))
+    if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
+        raise ValueError("shared snapshot evaluatedAt must include timezone")
+    interval = payload.get("interval")
+    if interval not in {"1m", "1d"}:
+        raise ValueError("shared snapshot interval is invalid")
+    parsed_collections = tuple(
+        (
+            CollectionResult(
+                symbol=str(item["symbol"]),
+                interval=str(item["interval"]),
+                received=int(item["received"]),
+                upserted=int(item["upserted"]),
+                next_before=(
+                    str(item["nextBefore"])
+                    if item.get("nextBefore") is not None
+                    else None
+                ),
+            )
+            if isinstance(item, dict)
+            else None
+        )
+        for item in collections
+    )
+    parsed_signals = tuple(
+        (
+            TradeSignal(
+                signal_id=str(item["signalId"]),
+                symbol=str(item["symbol"]),
+                side=Side(str(item["side"])),
+                reference_price=Decimal(str(item["referencePrice"])),
+                quantity=Decimal(str(item["quantity"])),
+                reason=str(item["reason"]),
+            )
+            if isinstance(item, dict)
+            else None
+        )
+        for item in signals
+    )
+    parsed_errors = tuple(
+        None if error is None else str(error)
+        for error in errors
+    )
+    api_failed = payload.get("apiFailed")
+    if not isinstance(api_failed, bool):
+        raise ValueError("shared snapshot apiFailed must be boolean")
+    new_buys_allowed = payload.get("newBuysAllowed")
+    if not isinstance(new_buys_allowed, bool):
+        raise ValueError("shared snapshot newBuysAllowed must be boolean")
+    return PaperCycleSnapshot(
+        evaluated_at=evaluated_at,
+        symbols=tuple(symbol.upper() for symbol in symbols),
+        interval=interval,
+        collections=parsed_collections,
+        signals=parsed_signals,
+        errors=parsed_errors,
+        api_failed=api_failed,
+        new_buys_allowed=new_buys_allowed,
+    )
 
 
 def _run_market_scan(settings: Settings, args: argparse.Namespace) -> int:

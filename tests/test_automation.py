@@ -172,7 +172,7 @@ class IntradayPaperAutomationTest(unittest.TestCase):
         self.assertEqual(environment["TRADING_ENABLED"], "false")
         self.assertEqual(result["cycle"]["interval"], "1m")
 
-    def test_hermes_task_reuses_rule_universe_and_entry_signals(self) -> None:
+    def test_hermes_task_reuses_rule_market_snapshot(self) -> None:
         completed = subprocess.CompletedProcess(
             args=[], returncode=0, stdout='{"summary":{}}', stderr=""
         )
@@ -182,7 +182,18 @@ class IntradayPaperAutomationTest(unittest.TestCase):
                     "runId": "universe-1",
                     "symbols": ["005930", "000660"],
                     "entrySymbols": ["005930"],
-                }
+                },
+                "sharedSnapshot": {
+                    "version": 1,
+                    "symbols": ["005930", "000660"],
+                    "interval": "1m",
+                    "evaluatedAt": "2026-08-13T05:00:00+00:00",
+                    "collections": [None, None],
+                    "signals": [None, None],
+                    "errors": [None, None],
+                    "apiFailed": False,
+                    "newBuysAllowed": True,
+                },
             }
         }
 
@@ -193,11 +204,11 @@ class IntradayPaperAutomationTest(unittest.TestCase):
 
         command = run.call_args.args[0]
         self.assertIn("--hermes-advisor", command)
-        symbols_start = command.index("--symbols") + 1
-        entries_start = command.index("--trend-entry-symbols")
-        self.assertEqual(command[symbols_start:entries_start], ["005930", "000660"])
-        self.assertIn("--trend-entry-symbols", command)
-        self.assertIn("--trend-entry-key", command)
+        self.assertIn("--snapshot-stdin", command)
+        self.assertNotIn("--symbols", command)
+        submitted = json.loads(run.call_args.kwargs["input"])
+        self.assertEqual(submitted["symbols"], ["005930", "000660"])
+        self.assertEqual(submitted["interval"], "1m")
         self.assertEqual(result["exitCode"], 0)
 
 class DailyAutomationNoticeTest(unittest.TestCase):
