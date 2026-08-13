@@ -168,13 +168,16 @@
     },
     {
       "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},
-      "fieldConfig": {"defaults": {}, "overrides": []},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "auto", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "short"},
+        "overrides": [{"matcher": {"id": "byName", "options": "Duration (ms)"}, "properties": [{"id": "unit", "value": "ms"}, {"id": "custom.axisPlacement", "value": "right"}, {"id": "custom.axisLabel", "value": "Duration"}]}]
+      },
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 36},
       "id": 15,
-      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "time"}]},
-      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "table", "rawQuery": true, "rawSql": "SELECT started_at AS time, interval, status, symbol_count, signal_count, fill_count, failed_count, consecutive_api_errors, ROUND(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000) AS duration_ms, daily_return_rate, error_message, run_id FROM paper_cycle_runs WHERE $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 200", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"}, "editorMode": "code", "format": "time_series", "rawQuery": true, "rawSql": "SELECT started_at AS time, symbol_count::double precision AS \"Symbols\", signal_count::double precision AS \"Signals\", fill_count::double precision AS \"Fills\", failed_count::double precision AS \"Failures\", consecutive_api_errors::double precision AS \"API Errors\", ROUND(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)::double precision AS \"Duration (ms)\" FROM paper_cycle_runs WHERE $__timeFilter(started_at) ORDER BY 1", "refId": "A", "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}}],
       "title": "Paper Cycle Run Log",
-      "type": "table"
+      "type": "timeseries"
     },
     {
       "datasource": {"type": "grafana-postgresql-datasource", "uid": "toss-postgres"},

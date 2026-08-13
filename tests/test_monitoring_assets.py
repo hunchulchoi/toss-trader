@@ -51,6 +51,14 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertTrue(any("prompt_tokens" in query for query in sql_queries))
         titles = {panel["title"] for panel in dashboard["panels"]}
         self.assertIn("Paper Cycle Run Log", titles)
+        cycle_panel = next(
+            panel
+            for panel in dashboard["panels"]
+            if panel["title"] == "Paper Cycle Run Log"
+        )
+        self.assertEqual(cycle_panel["type"], "timeseries")
+        self.assertEqual(cycle_panel["targets"][0]["format"], "time_series")
+        self.assertIn('AS "Duration (ms)"', cycle_panel["targets"][0]["rawSql"])
         self.assertIn("Recent Paper Fills", titles)
         self.assertIn("Hermes Automation Run Log", titles)
         self.assertNotIn("DS_PROMETHEUS", dashboard)
