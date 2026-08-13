@@ -3,17 +3,14 @@
 Toss Trader는 PostgreSQL 사용 시 아래 장부를 운영 DB에 영구 저장한다.
 SQLite 개발 모드에서도 같은 인터페이스와 필드를 제공한다.
 
-- `paper_risk_decisions`: 승인·거부 여부, 위반 규칙, 신호, 포지션, 가용 현금,
-  일일 수익률, Toss API 오류 연속 횟수, 장 상태와 판단 시각
-- `automation_run_logs`: daily/market scan과 모든 n8n HTTP stage의 성공·실패·skip,
-  `workflowId`, n8n `executionId`, trigger, portfolio/interval, 소요 시간, Hermes
-  prompt/completion/total token, Telegram 결과, RiskManager `decision_id` 목록
-- `paper_cycle_runs`: 장중·마감 cycle의 interval, 성공 여부, 신호·체결·실패 수,
-  API 오류 연속 횟수와 일일 수익률
-- `paper_fills`: 승인된 신호의 가상 체결. 실제 주문 내역이 아님
-- `dynamic_universe_runs`: 30분 단위 동적 종목군 갱신 성공·실패와 후보·승인·선정 수
-- `dynamic_universe_decisions`: 후보별 랭킹 점수, 가격, RiskManager 승인·거부,
-  위반 규칙과 최종 선정 여부
+| 장부 | 기록 내용 | 기록 시점 | 운영 조회 목적 |
+|---|---|---|---|
+| `paper_risk_decisions` | 승인·거부, 위반 규칙, 신호, 포지션, 가용 현금, 일일 수익률, Toss API 오류 연속 횟수, 장 상태, 판단 시각 | 신호별 RiskManager 판단 직후 | 체결 허용/차단 근거 확인 |
+| `automation_run_logs` | daily/market scan과 n8n HTTP stage의 성공·실패·skip, `workflowId`, n8n `executionId`, trigger, portfolio/interval, 소요 시간, Hermes prompt/completion/total token, Telegram 결과, RiskManager `decision_id` 목록 | 각 automation/n8n 단계 완료 또는 실패 시 | execution 단위 흐름·token·Telegram 결과 사후 검토 |
+| `paper_cycle_runs` | 장중·마감 cycle의 interval, 성공 여부, 신호·체결·실패 수, API 오류 연속 횟수, 일일 수익률 | 포트폴리오 cycle 시작·종료 시 | cycle 상태·실패 추이·성과 확인 |
+| `paper_fills` | 승인 신호의 가상 체결, BUY/SELL, 수량·가격·금액·근거·체결 시각 | RiskManager 승인 및 판단 장부 저장 후 | paper 포지션·현금·체결 근거 확인. 실제 주문 내역 아님 |
+| `dynamic_universe_runs` | 30분 단위 동적 종목군 갱신 성공·실패, 후보·승인·선정 수 | universe refresh 시 | 후보 발굴 정상 여부와 규모 확인 |
+| `dynamic_universe_decisions` | 후보별 랭킹 점수, 가격, RiskManager 승인·거부, 위반 규칙, 최종 선정 여부 | 각 universe 후보 평가 시 | 왜 특정 종목이 선정/제외됐는지 추적 |
 
 RiskManager 판단은 paper fill보다 먼저 기록한다. 판단 기록에 실패하면 해당
 paper fill도 실행하지 않는다. 실제 주문은 지원하지 않으며
