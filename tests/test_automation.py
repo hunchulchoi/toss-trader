@@ -15,6 +15,7 @@ from toss_trader.automation import (
     IntradayPaperAutomation,
     MarketScanAutomation,
     PaperCycleProcess,
+    PaperPortfolioProcess,
     automation_response,
     paper_cycle_notice,
 )
@@ -170,6 +171,34 @@ class IntradayPaperAutomationTest(unittest.TestCase):
         self.assertEqual(command[-2:], ["--interval", "1m"])
         self.assertEqual(environment["TRADING_ENABLED"], "false")
         self.assertEqual(result["cycle"]["interval"], "1m")
+
+    def test_hermes_task_reuses_rule_universe_and_entry_signals(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout='{"summary":{}}', stderr=""
+        )
+        rule = {
+            "cycle": {
+                "universe": {
+                    "runId": "universe-1",
+                    "symbols": ["005930", "000660"],
+                    "entrySymbols": ["005930"],
+                }
+            }
+        }
+
+        with patch("subprocess.run", return_value=completed) as run:
+            result = PaperPortfolioProcess().run(
+                portfolio_id="hermes", interval="1m", rule_cycle=rule
+            )
+
+        command = run.call_args.args[0]
+        self.assertIn("--hermes-advisor", command)
+        symbols_start = command.index("--symbols") + 1
+        entries_start = command.index("--trend-entry-symbols")
+        self.assertEqual(command[symbols_start:entries_start], ["005930", "000660"])
+        self.assertIn("--trend-entry-symbols", command)
+        self.assertIn("--trend-entry-key", command)
+        self.assertEqual(result["exitCode"], 0)
 
 class DailyAutomationNoticeTest(unittest.TestCase):
     def test_reports_noteworthy_cycle_before_hermes(self) -> None:
@@ -592,6 +621,30 @@ class AutomationHttpTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["cycle"]["cycle"]["interval"], "1m")
+
+    def test_routes_n8n_workflow_task_with_json_payload(self) -> None:
+        daily = DailyAutomation(run_cycle=dict, analyze=lambda _: "ok", report=lambda _: {})
+        calls: list[tuple[str, dict[str, object]]] = []
+
+        class WorkflowStub:
+            def run(self, path: str, payload: dict[str, object]) -> dict[str, object]:
+                calls.append((path, payload))
+                return {"exitCode": 0, "cycle": {"portfolioId": "hermes"}}
+
+        status, payload = automation_response(
+            "POST",
+            "/workflow/paper-hermes-1m",
+            daily,
+            workflow_service=WorkflowStub(),  # type: ignore[arg-type]
+            payload={"rule": {"exitCode": 0}},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["cycle"]["portfolioId"], "hermes")
+        self.assertEqual(
+            calls,
+            [("/workflow/paper-hermes-1m", {"rule": {"exitCode": 0}})],
+        )
 
 
 if __name__ == "__main__":

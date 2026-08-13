@@ -399,6 +399,73 @@ class PaperCycleProcess:
         }
 
 
+class PaperPortfolioProcess:
+    def __init__(self, *, timeout_seconds: int = 600) -> None:
+        self._timeout_seconds = timeout_seconds
+
+    def run(
+        self,
+        *,
+        portfolio_id: str,
+        interval: str,
+        rule_cycle: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if portfolio_id not in {"rule", "hermes"}:
+            raise ValueError("workflow paper portfolio must be rule or hermes")
+        if interval not in {"1m", "1d"}:
+            raise ValueError("workflow paper interval must be 1m or 1d")
+        command = [
+            sys.executable,
+            "-m",
+            "toss_trader",
+            "run-paper-cycle",
+            "--portfolio",
+            portfolio_id,
+            "--interval",
+            interval,
+        ]
+        if portfolio_id == "hermes":
+            command.append("--hermes-advisor")
+            _append_rule_seed(command, rule_cycle)
+        environment = dict(os.environ)
+        environment["TRADING_ENABLED"] = "false"
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=self._timeout_seconds,
+            env=environment,
+            check=False,
+        )
+        raw = completed.stdout.strip() or completed.stderr.strip()
+        payload = _load_json(raw)
+        if payload is None:
+            payload = {"ok": False, "error": (raw or "paper cycle produced no output")[:4000]}
+        return {"exitCode": completed.returncode, "cycle": payload}
+
+
+def _append_rule_seed(
+    command: list[str], rule_cycle: dict[str, Any] | None
+) -> None:
+    if not isinstance(rule_cycle, dict):
+        raise TypeError("Hermes paper task requires rule cycle JSON")
+    cycle = rule_cycle.get("cycle")
+    cycle = cycle if isinstance(cycle, dict) else rule_cycle
+    universe = cycle.get("universe")
+    if not isinstance(universe, dict):
+        raise TypeError("rule cycle is missing universe")
+    symbols = universe.get("symbols")
+    if not isinstance(symbols, list) or not symbols:
+        raise ValueError("rule cycle universe is missing symbols")
+    command.extend(("--symbols", *(str(value) for value in symbols)))
+    entries = universe.get("entrySymbols")
+    if isinstance(entries, list) and entries:
+        command.extend(("--trend-entry-symbols", *(str(value) for value in entries)))
+    run_id = universe.get("runId")
+    if run_id:
+        command.extend(("--trend-entry-key", str(run_id)))
+
+
 class IntradayPaperAutomation:
     def __init__(
         self,
@@ -827,6 +894,230 @@ def create_market_scan_automation_from_env() -> MarketScanAutomation:
     )
 
 
+class WorkflowTaskService:
+    def __init__(
+        self,
+        *,
+        paper: PaperPortfolioProcess,
+        market_scan: MarketScanProcess,
+        market_analyzer: HermesAnalyzer,
+        daily_analyzer: HermesAnalyzer,
+        market_reporter: AlertmanagerReporter,
+        paper_reporter: AlertmanagerReporter,
+        daily_reporter: AlertmanagerReporter,
+        failure_reporter: AlertmanagerReporter,
+        audit: Callable[[AutomationRunLog], str] | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._paper = paper
+        self._market_scan = market_scan
+        self._market_analyzer = market_analyzer
+        self._daily_analyzer = daily_analyzer
+        self._market_reporter = market_reporter
+        self._paper_reporter = paper_reporter
+        self._daily_reporter = daily_reporter
+        self._failure_reporter = failure_reporter
+        self._audit = audit
+        self._clock = clock or (lambda: datetime.now(UTC))
+
+    def run(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if path == "/workflow/market-scan":
+            return self._market_scan.run()
+        if path == "/workflow/paper-rule-1m":
+            return self._paper.run(portfolio_id="rule", interval="1m")
+        if path == "/workflow/paper-rule-1d":
+            return self._paper.run(portfolio_id="rule", interval="1d")
+        if path == "/workflow/paper-hermes-1m":
+            return self._paper.run(
+                portfolio_id="hermes", interval="1m", rule_cycle=payload.get("rule")
+            )
+        if path == "/workflow/paper-hermes-1d":
+            return self._paper.run(
+                portfolio_id="hermes", interval="1d", rule_cycle=payload.get("rule")
+            )
+        if path == "/workflow/hermes-market":
+            return self._analyze_market(payload)
+        if path == "/workflow/hermes-daily":
+            return self._analyze_daily(payload)
+        if path == "/workflow/report-market":
+            return self._market_reporter.report(_required_result(payload))
+        if path == "/workflow/report-paper":
+            return self._report_paper(payload)
+        if path == "/workflow/report-daily":
+            return self._daily_reporter.report(_required_result(payload))
+        if path == "/workflow/report-failure":
+            return self._failure_reporter.report(
+                {
+                    "ok": False,
+                    "stage": "n8n-workflow",
+                    "error": json.dumps(payload, ensure_ascii=False, default=str)[:3500],
+                }
+            )
+        raise ValueError("unknown workflow task")
+
+    def _analyze_market(self, payload: dict[str, Any]) -> dict[str, Any]:
+        scan = payload.get("scan")
+        scan = scan.get("scan") if isinstance(scan, dict) else None
+        if not isinstance(scan, dict):
+            raise TypeError("market workflow is missing scan JSON")
+        started_at = self._clock()
+        try:
+            usage = self._market_analyzer.analyze(scan)
+        except Exception as error:
+            self._audit_failure("market_scan", started_at, error)
+            raise
+        result = {
+            "ok": True,
+            "scan": payload["scan"],
+            "opinion": usage.content,
+            "analysis": format_market_scan_report(payload["scan"], opinion=usage.content),
+            "hermesUsage": _hermes_usage(usage),
+            "finishedAt": self._clock().isoformat(),
+        }
+        self._audit_usage("market_scan", started_at, usage, result)
+        return result
+
+    def _analyze_daily(self, payload: dict[str, Any]) -> dict[str, Any]:
+        comparison = _comparison_payload(payload)
+        started_at = self._clock()
+        try:
+            usage = self._daily_analyzer.analyze(comparison)
+        except Exception as error:
+            self._audit_failure("daily", started_at, error)
+            raise
+        result = {
+            "ok": True,
+            "cycle": comparison,
+            "analysis": usage.content,
+            "hermesUsage": _hermes_usage(usage),
+            "finishedAt": self._clock().isoformat(),
+        }
+        self._audit_usage("daily", started_at, usage, result)
+        return result
+
+    def _report_paper(self, payload: dict[str, Any]) -> dict[str, Any]:
+        comparison = _comparison_payload(payload)
+        notice = paper_cycle_notice(comparison)
+        if notice is None:
+            return {"accepted": False, "skipped": True, "reason": "no-notice"}
+        return self._paper_reporter.report(
+            {
+                "ok": comparison.get("exitCode") == 0,
+                "cycle": comparison,
+                "analysis": "\n".join(notice.lines),
+                "severity": notice.severity,
+            }
+        )
+
+    def _audit_usage(
+        self,
+        run_type: str,
+        started_at: datetime,
+        usage: HermesAnalysis,
+        result: dict[str, Any],
+    ) -> None:
+        if self._audit is None:
+            return
+        self._audit(
+            AutomationRunLog(
+                run_type=run_type,
+                status="succeeded",
+                stage="completed",
+                started_at=started_at,
+                finished_at=self._clock(),
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                details={"orchestrator": "n8n", "ok": bool(result.get("ok"))},
+            )
+        )
+
+    def _audit_failure(
+        self, run_type: str, started_at: datetime, error: Exception
+    ) -> None:
+        if self._audit is None:
+            return
+        self._audit(
+            AutomationRunLog(
+                run_type=run_type,
+                status="failed",
+                stage="hermes",
+                started_at=started_at,
+                finished_at=self._clock(),
+                error=_safe_error(error),
+                details={"orchestrator": "n8n"},
+            )
+        )
+
+
+def create_workflow_task_service_from_env() -> WorkflowTaskService:
+    api_key = os.environ.get("HERMES_API_KEY", "")
+    base_url = os.environ.get("HERMES_API_BASE_URL", "http://hermes-analysis:8642")
+    alertmanager_url = os.environ.get(
+        "ALERTMANAGER_API_URL", "http://alertmanager:9093/api/v2/alerts"
+    )
+    return WorkflowTaskService(
+        paper=PaperPortfolioProcess(),
+        market_scan=MarketScanProcess(),
+        market_analyzer=HermesAnalyzer(
+            api_key=api_key,
+            base_url=base_url,
+            system_prompt=(
+                "너는 한국 주식시장 장전 리포트 분석가다. 제공된 JSON만 해석하라. "
+                "한국어 2~4문장으로 시장 간 엇갈림, 모멘텀, 거래량, 후보 강도와 "
+                "주의점을 설명하라. 직접 매수·매도 지시와 수익 보장은 금지한다."
+            ),
+        ),
+        daily_analyzer=HermesAnalyzer(api_key=api_key, base_url=base_url),
+        market_reporter=AlertmanagerReporter(
+            url=alertmanager_url,
+            alert_name="TossTraderMarketScan",
+            summary="Toss Trader 시장분석·종목발굴",
+        ),
+        paper_reporter=AlertmanagerReporter(
+            url=alertmanager_url,
+            alert_name="TossTraderPaperCycleNotice",
+            summary="Toss Trader 장중 paper cycle 특이사항",
+        ),
+        daily_reporter=AlertmanagerReporter(url=alertmanager_url),
+        failure_reporter=AlertmanagerReporter(
+            url=alertmanager_url,
+            alert_name="TossTraderWorkflowFailure",
+            summary="Toss Trader n8n workflow 실패",
+        ),
+        audit=_record_automation_run_from_env,
+    )
+
+
+def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    rule = payload.get("rule")
+    hermes = payload.get("hermes")
+    if not isinstance(rule, dict) or not isinstance(hermes, dict):
+        raise TypeError("comparison workflow requires rule and hermes JSON")
+    portfolios = {"rule": rule.get("cycle", rule), "hermes": hermes.get("cycle", hermes)}
+    summaries = [
+        value.get("summary", {}) for value in portfolios.values() if isinstance(value, dict)
+    ]
+    return {
+        "exitCode": max(int(rule.get("exitCode", 1)), int(hermes.get("exitCode", 1))),
+        "cycle": {
+            "comparison": True,
+            "portfolios": portfolios,
+            "summary": {
+                key: sum(int(summary.get(key, 0)) for summary in summaries)
+                for key in ("symbols", "signals", "fills", "failed")
+            },
+        },
+    }
+
+
+def _required_result(payload: dict[str, Any]) -> dict[str, Any]:
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise TypeError("workflow report requires result JSON")
+    return result
+
+
 def automation_response(
     method: str,
     path: str,
@@ -834,12 +1125,23 @@ def automation_response(
     *,
     market_service: MarketScanAutomation | None = None,
     intraday_service: IntradayPaperAutomation | None = None,
+    workflow_service: WorkflowTaskService | None = None,
+    payload: dict[str, Any] | None = None,
 ) -> tuple[int, dict[str, Any]]:
     normalized = urlsplit(path).path
     if normalized == "/healthz":
         if method != "GET":
             return 405, {"ok": False, "error": "method not allowed"}
         return 200, {"status": "ok"}
+    if normalized.startswith("/workflow/") and workflow_service is not None:
+        if method != "POST":
+            return 405, {"ok": False, "error": "method not allowed"}
+        try:
+            return 200, workflow_service.run(normalized, payload or {})
+        except AutomationBusy as error:
+            return 409, {"ok": False, "error": str(error)}
+        except (RuntimeError, TypeError, ValueError) as error:
+            return 502, {"ok": False, "error": str(error)}
     if normalized == "/run-daily":
         selected_service: (
             DailyAutomation | MarketScanAutomation | IntradayPaperAutomation
@@ -867,6 +1169,7 @@ def serve_automation(
     service: DailyAutomation,
     market_service: MarketScanAutomation | None = None,
     intraday_service: IntradayPaperAutomation | None = None,
+    workflow_service: WorkflowTaskService | None = None,
 ) -> None:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -876,13 +1179,31 @@ def serve_automation(
             self._respond("POST")
 
         def _respond(self, method: str) -> None:
+            payload: dict[str, Any] = {}
+            if method == "POST":
+                length = int(self.headers.get("Content-Length", "0"))
+                if length:
+                    raw = self.rfile.read(min(length, 1_048_576))
+                    try:
+                        decoded = json.loads(raw)
+                    except json.JSONDecodeError:
+                        decoded = None
+                    if not isinstance(decoded, dict):
+                        self._write(400, {"ok": False, "error": "invalid JSON body"})
+                        return
+                    payload = decoded
             status, payload = automation_response(
                 method,
                 self.path,
                 service,
                 market_service=market_service,
                 intraday_service=intraday_service,
+                workflow_service=workflow_service,
+                payload=payload,
             )
+            self._write(status, payload)
+
+        def _write(self, status: int, payload: dict[str, Any]) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")

@@ -17,6 +17,7 @@ from .automation import (
     create_daily_automation_from_env,
     create_intraday_paper_automation_from_env,
     create_market_scan_automation_from_env,
+    create_workflow_task_service_from_env,
     serve_automation,
 )
 from .calendar import MarketCalendarService
@@ -650,6 +651,7 @@ def _serve_automation(args: argparse.Namespace) -> int:
             service=service,
             market_service=market_service,
             intraday_service=intraday_service,
+            workflow_service=create_workflow_task_service_from_env(),
         )
     except KeyboardInterrupt:
         return 0
