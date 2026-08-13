@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
-from toss_trader.execution import PaperTradingService
+from toss_trader.execution import PaperTradingService, TradeAdvice
 from toss_trader.models import Side, TradeSignal
 from toss_trader.paper import PaperLedger
 from toss_trader.risk import RiskLimits, RiskManager
@@ -121,6 +121,112 @@ class PaperTradingServiceTest(unittest.TestCase):
         self.assertEqual(
             decisions[0]["violations"], ["insufficient-paper-cash"]
         )
+
+    def test_hard_preflight_rejection_skips_advisor_and_remote_risk(self) -> None:
+        advisor_calls: list[str] = []
+        risk_calls: list[str] = []
+
+        class Advisor:
+            def advise(self, signal, context):  # type: ignore[no-untyped-def]
+                advisor_calls.append(signal.signal_id)
+                return TradeAdvice(approved=True, rationale="approve")
+
+        class RemoteRisk:
+            def evaluate(self, signal, context):  # type: ignore[no-untyped-def]
+                risk_calls.append(signal.signal_id)
+                return RiskManager(RiskLimits()).evaluate(signal, context)
+
+        service = PaperTradingService(
+            ledger=self.ledger,
+            risk_manager=RemoteRisk(),  # type: ignore[arg-type]
+            advisor=Advisor(),
+        )
+
+        result = service.submit(
+            TradeSignal(
+                signal_id="preflight-too-large",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(310000),
+                quantity=Decimal(1),
+                reason="test",
+            ),
+            now=self.now,
+        )
+
+        self.assertFalse(result.decision.approved)
+        self.assertEqual(result.decision.violations, ("max-order-notional",))
+        self.assertEqual(advisor_calls, [])
+        self.assertEqual(risk_calls, [])
+        self.assertEqual(len(self.ledger.recent_risk_decisions()), 1)
+
+    def test_preflight_pass_calls_advisor_then_remote_risk_once(self) -> None:
+        calls: list[str] = []
+
+        class Advisor:
+            def advise(self, signal, context):  # type: ignore[no-untyped-def]
+                calls.append("advisor")
+                return TradeAdvice(approved=False, rationale="strategy rejected")
+
+        class RemoteRisk:
+            def evaluate(self, signal, context):  # type: ignore[no-untyped-def]
+                calls.append("risk")
+                return RiskManager(RiskLimits()).evaluate(signal, context)
+
+        service = PaperTradingService(
+            ledger=self.ledger,
+            risk_manager=RemoteRisk(),  # type: ignore[arg-type]
+            advisor=Advisor(),
+        )
+
+        result = service.submit(
+            TradeSignal(
+                signal_id="preflight-pass",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(70000),
+                quantity=Decimal(1),
+                reason="test",
+            ),
+            now=self.now,
+        )
+
+        self.assertFalse(result.decision.approved)
+        self.assertEqual(
+            result.decision.violations,
+            ("Hermes 거부: strategy rejected",),
+        )
+        self.assertEqual(calls, ["advisor", "risk"])
+        self.assertEqual(len(self.ledger.recent_risk_decisions()), 1)
+
+    def test_rule_path_calls_configured_risk_once_without_preflight(self) -> None:
+        risk_calls: list[str] = []
+
+        class RemoteRisk:
+            def evaluate(self, signal, context):  # type: ignore[no-untyped-def]
+                risk_calls.append(signal.signal_id)
+                return RiskManager(RiskLimits()).evaluate(signal, context)
+
+        service = PaperTradingService(
+            ledger=self.ledger,
+            risk_manager=RemoteRisk(),  # type: ignore[arg-type]
+        )
+
+        result = service.submit(
+            TradeSignal(
+                signal_id="rule-too-large",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(310000),
+                quantity=Decimal(1),
+                reason="test",
+            ),
+            now=self.now,
+        )
+
+        self.assertFalse(result.decision.approved)
+        self.assertEqual(risk_calls, ["rule-too-large"])
+        self.assertEqual(len(self.ledger.recent_risk_decisions()), 1)
 
 
 if __name__ == "__main__":

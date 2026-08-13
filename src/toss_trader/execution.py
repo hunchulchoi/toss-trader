@@ -7,7 +7,7 @@ from typing import Protocol
 
 from .models import PaperFill, TradeSignal
 from .paper import PaperLedgerStore
-from .risk import RiskContext, RiskDecision, RiskManager
+from .risk import RiskContext, RiskDecision, RiskLimits, RiskManager
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +40,7 @@ class PaperTradingService:
             raise ValueError("paper initial cash must be positive")
         self._ledger = ledger
         self._risk_manager = risk_manager
+        self._preflight_risk_manager = RiskManager(RiskLimits())
         self._initial_cash = initial_cash
         self._advisor = advisor
 
@@ -73,7 +74,12 @@ class PaperTradingService:
             seen_signal_ids=self._ledger.seen_signal_ids(),
             new_buys_allowed=new_buys_allowed,
         )
+        decision: RiskDecision | None = None
         if self._advisor is not None:
+            preflight = self._preflight_risk_manager.evaluate(signal, context)
+            if not preflight.approved:
+                decision = preflight
+        if self._advisor is not None and decision is None:
             try:
                 advice = self._advisor.advise(signal, context)
                 context = replace(
@@ -83,7 +89,8 @@ class PaperTradingService:
                 )
             except Exception:  # noqa: BLE001
                 context = replace(context, advisor_status="unavailable")
-        decision = self._risk_manager.evaluate(signal, context)
+        if decision is None:
+            decision = self._risk_manager.evaluate(signal, context)
         decision_id = self._ledger.record_risk_decision(
             signal,
             decision,
