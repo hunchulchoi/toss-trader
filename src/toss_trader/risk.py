@@ -71,7 +71,7 @@ class RiskManager:
             violations.append("daily-loss-limit")
         if context.consecutive_api_errors >= self._limits.max_consecutive_api_errors:
             violations.append("api-error-kill-switch")
-        if signal.side is Side.BUY and not context.market_is_business_day:
+        if not context.market_is_business_day:
             violations.append("market-closed")
         if (
             signal.side is Side.BUY

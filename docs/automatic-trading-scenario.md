@@ -21,6 +21,10 @@
         ▼
 Telegram 장전 리포트
 
+평일 09:00~15:20 KST n8n (5분 간격)
+  -> POST /run-paper-cycle
+  -> 1분봉 MA20/MA60 + RiskManager + paper 체결
+
 평일 15:40 KST n8n
         │
         ▼
@@ -152,10 +156,20 @@ Docker socket을 가진 기존 공용 Hermes 컨테이너와 그 credential은 �
 성공 시 Hermes 요약을 `TossTraderDailyReport` alert로 Alertmanager에 보낸다.
 실패 시 실패 stage(`cycle`, `hermes`, `report`)를 보고한다.
 
+paper cycle JSON은 Hermes 호출 전에 규칙 기반으로 검사한다. 아래 이벤트가
+있으면 `TossTraderPaperCycleNotice`를 별도 전송한다.
+
+- paper 체결: `info`
+- RiskManager 거부, 종목 처리 실패, Toss API 오류 연속: `warning`
+- 일일 손실 -3% 이하, API 오류 5회 이상, 비정상 프로세스 종료: `critical`
+- `duplicate-signal` 단독 거부는 정상 멱등 재실행으로 보고 제외
+- 특이사항 전송 실패도 Hermes 일일 분석과 기존 일일 보고는 계속 실행
+
 - destination: `TELEGRAM_CHAT_ID`
 - forum topic: `TELEGRAM_TOPIC`
 - 일일 보고는 `send_resolved=false`
 - 시장분석·종목발굴 보고도 `send_resolved=false`
+- paper cycle 특이사항도 `send_resolved=false`
 - 일반 장애 alert는 firing/resolved 모두 전송
 
 ## 모니터링 시나리오

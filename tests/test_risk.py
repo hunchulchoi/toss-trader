@@ -74,10 +74,14 @@ class RiskManagerTest(unittest.TestCase):
 
         self.assertTrue(decision.approved)
 
-    def test_rejects_buy_on_market_holiday(self) -> None:
+    def test_rejects_all_trades_on_market_holiday(self) -> None:
         decision = self.manager.evaluate(
-            signal(),
-            RiskContext(now=NOW, market_is_business_day=False),
+            signal(side=Side.SELL),
+            RiskContext(
+                now=NOW,
+                market_is_business_day=False,
+                position_quantity=Decimal(3),
+            ),
         )
 
         self.assertFalse(decision.approved)

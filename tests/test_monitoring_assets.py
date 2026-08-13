@@ -144,6 +144,25 @@ class MonitoringAssetsTest(unittest.TestCase):
             json.dumps(nodes["Paper + Hermes + Telegram"]),
         )
 
+    def test_n8n_workflow_runs_intraday_paper_every_five_minutes(self) -> None:
+        workflow = json.loads(
+            (
+                ROOT
+                / "automation"
+                / "n8n"
+                / "toss-trader-intraday-paper.json"
+            ).read_text()
+        )
+        encoded = json.dumps(workflow, ensure_ascii=False)
+
+        self.assertFalse(workflow["active"])
+        self.assertEqual(workflow["settings"]["timezone"], "Asia/Seoul")
+        self.assertIn("*/5 9-14 * * 1-5", encoded)
+        self.assertIn("0-20/5 15 * * 1-5", encoded)
+        self.assertIn(
+            "http://toss-trader-automation:8088/run-paper-cycle", encoded
+        )
+
     def test_n8n_workflow_sends_weekday_market_discovery_report(self) -> None:
         workflow = json.loads(
             (ROOT / "automation" / "n8n" / "toss-trader-market-scan.json").read_text()
@@ -192,6 +211,8 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("__TELEGRAM_CHAT_ID__", template)
         self.assertIn("message_thread_id: __TELEGRAM_TOPIC__", template)
         self.assertIn("TossTraderMarketScan", template)
+        self.assertIn("TossTraderPaperCycleNotice", template)
+        self.assertIn("group_wait: 0s", template)
         self.assertIn("umask 077", renderer.read_text())
         self.assertIn("unset TELEGRAM_BOT_TOKEN", renderer.read_text())
         self.assertIn("TELEGRAM_TOPIC must be a positive integer", renderer.read_text())

@@ -166,6 +166,15 @@ Telegram 비밀값으로 생성한 Alertmanager 설정은 container tmpfs에만 
 n8n은 평일 `08:30 KST`에 장전 시장분석·종목발굴 리포트, 국내 장 마감 뒤
 `15:40 KST`에 paper cycle·마감 리포트를 실행한다.
 
+장중에는 평일 `09:00~15:20 KST`에 5분마다 1분봉 MA20/MA60 paper cycle을
+실행한다. 신호는 RiskManager 승인 후에만 100만원 가상 장부에 반영하며 실제
+주문은 실행하지 않는다. 정상 무신호 cycle은 Telegram을 보내지 않는다.
+
+paper cycle에서 체결, RiskManager 거부, 종목 처리 실패, Toss API 연속 오류,
+일일 손실 한도가 감지되면 `TossTraderPaperCycleNotice`로 즉시 Telegram에
+추가 보고한다. 정상 무신호 cycle과 정상적인 `duplicate-signal` 재실행은
+추가 보고하지 않는다.
+
 ```bash
 infisical run --env=prod --path=/ -- docker compose run --rm trader \
   run-paper-cycle

@@ -12,6 +12,7 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
@@ -25,6 +26,12 @@ logger = logging.getLogger(__name__)
 
 class AutomationBusy(RuntimeError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class PaperCycleNotice:
+    severity: str
+    lines: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +56,82 @@ class AutomationRunLog:
     details: dict[str, object] | None = None
 
 
+def paper_cycle_notice(job: dict[str, Any]) -> PaperCycleNotice | None:
+    lines: list[str] = []
+    severity = "info"
+    exit_code = job.get("exitCode")
+    if exit_code != 0:
+        lines.append(f"cycle 종료 코드: {exit_code}")
+        severity = "warning" if exit_code == 3 else "critical"
+
+    cycle = job.get("cycle")
+    if not isinstance(cycle, dict):
+        lines.append("cycle 결과 JSON 누락")
+        return PaperCycleNotice(severity="critical", lines=tuple(lines))
+    if cycle.get("ok") is False:
+        lines.append(f"cycle 실행 실패: {cycle.get('error', '원인 미상')}")
+        severity = "critical"
+
+    summary = cycle.get("summary")
+    summary = summary if isinstance(summary, dict) else {}
+    failed = _non_negative_int(summary.get("failed"))
+    symbols = _non_negative_int(summary.get("symbols"))
+    if failed:
+        lines.append(f"종목 처리 실패: {failed}/{symbols or '?'}")
+        severity = _higher_severity(severity, "warning")
+
+    api_errors = _non_negative_int(cycle.get("consecutiveApiErrors"))
+    if api_errors:
+        lines.append(f"Toss API 오류 연속: {api_errors}회")
+        target = "critical" if api_errors >= 5 else "warning"
+        severity = _higher_severity(severity, target)
+
+    daily_return = _decimal(cycle.get("dailyReturnRate"))
+    if daily_return is not None and daily_return <= Decimal("-0.03"):
+        lines.append(f"일일 손실 한도 도달: {daily_return:.2%}")
+        severity = "critical"
+
+    items = cycle.get("items")
+    if isinstance(items, list):
+        for raw_item in items:
+            if not isinstance(raw_item, dict):
+                continue
+            symbol = str(raw_item.get("symbol") or "unknown")
+            error = raw_item.get("error")
+            if error:
+                lines.append(f"{symbol} 오류: {str(error)[:500]}")
+                severity = _higher_severity(severity, "warning")
+            fill = raw_item.get("fill")
+            if isinstance(fill, dict):
+                side = str(fill.get("side") or "?")
+                quantity = str(fill.get("quantity") or "?")
+                price = str(fill.get("price") or "?")
+                lines.append(f"paper 체결: {symbol} {side} {quantity} @ {price}")
+            decision = raw_item.get("decision")
+            if not isinstance(decision, dict) or decision.get("approved") is not False:
+                continue
+            violations = decision.get("violations")
+            violations = violations if isinstance(violations, list) else []
+            noteworthy = [
+                str(violation)
+                for violation in violations
+                if violation != "duplicate-signal"
+            ]
+            if noteworthy:
+                lines.append(f"{symbol} RiskManager 거부: {', '.join(noteworthy)}")
+                target = (
+                    "critical"
+                    if {"daily-loss-limit", "api-error-kill-switch"}
+                    & set(noteworthy)
+                    else "warning"
+                )
+                severity = _higher_severity(severity, target)
+
+    if not lines:
+        return None
+    return PaperCycleNotice(severity=severity, lines=tuple(lines))
+
+
 class DailyAutomation:
     def __init__(
         self,
@@ -56,12 +139,14 @@ class DailyAutomation:
         run_cycle: Callable[[], dict[str, Any]],
         analyze: Callable[[dict[str, Any]], str | HermesAnalysis],
         report: Callable[[dict[str, Any]], dict[str, Any]],
+        report_notice: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         audit: Callable[[AutomationRunLog], str] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._run_cycle = run_cycle
         self._analyze = analyze
         self._report = report
+        self._report_notice = report_notice
         self._audit = audit
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = threading.Lock()
@@ -74,6 +159,23 @@ class DailyAutomation:
         stage = "cycle"
         try:
             cycle = self._run_cycle()
+            notice = paper_cycle_notice(cycle)
+            notice_reported: dict[str, Any] | None = None
+            notice_report_error: str | None = None
+            if notice is not None and self._report_notice is not None:
+                try:
+                    notice_reported = self._report_notice(
+                        {
+                            "ok": True,
+                            "cycle": cycle,
+                            "analysis": "\n".join(notice.lines),
+                            "severity": notice.severity,
+                            "finishedAt": self._clock().isoformat(),
+                        }
+                    )
+                except Exception as error:  # noqa: BLE001
+                    notice_report_error = _safe_error(error)
+                    logger.warning("paper cycle notice could not be sent")
             stage = "hermes"
             usage = _hermes_analysis(self._analyze(cycle))
             stage = "report"
@@ -82,8 +184,13 @@ class DailyAutomation:
                 "cycle": cycle,
                 "analysis": usage.content,
                 "hermesUsage": _hermes_usage(usage),
+                "notices": list(notice.lines) if notice is not None else [],
                 "finishedAt": self._clock().isoformat(),
             }
+            if notice_reported is not None:
+                result["noticeReported"] = notice_reported
+            if notice_report_error is not None:
+                result["noticeReportError"] = notice_report_error
             reported = self._report(result)
             result = {**result, "reported": reported}
             stage = "audit"
@@ -176,14 +283,22 @@ class DailyAutomation:
 
 
 class PaperCycleProcess:
-    def __init__(self, *, timeout_seconds: int = 600) -> None:
+    def __init__(
+        self, *, interval: str | None = None, timeout_seconds: int = 600
+    ) -> None:
+        if interval not in {None, "1m", "1d"}:
+            raise ValueError("paper cycle interval must be 1m or 1d")
+        self._interval = interval
         self._timeout_seconds = timeout_seconds
 
     def run(self) -> dict[str, Any]:
         environment = dict(os.environ)
         environment["TRADING_ENABLED"] = "false"
+        command = [sys.executable, "-m", "toss_trader", "run-paper-cycle"]
+        if self._interval is not None:
+            command.extend(("--interval", self._interval))
         completed = subprocess.run(
-            [sys.executable, "-m", "toss_trader", "run-paper-cycle"],
+            command,
             capture_output=True,
             text=True,
             timeout=self._timeout_seconds,
@@ -201,6 +316,61 @@ class PaperCycleProcess:
                 ],
             }
         return {"exitCode": completed.returncode, "cycle": payload}
+
+
+class IntradayPaperAutomation:
+    def __init__(
+        self,
+        *,
+        run_cycle: Callable[[], dict[str, Any]],
+        report_notice: Callable[[dict[str, Any]], dict[str, Any]],
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._run_cycle = run_cycle
+        self._report_notice = report_notice
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._lock = threading.Lock()
+
+    def run(self) -> dict[str, Any]:
+        if not self._lock.acquire(blocking=False):
+            raise AutomationBusy("intraday paper cycle is already running")
+        try:
+            cycle = self._run_cycle()
+            notice = paper_cycle_notice(cycle)
+            result: dict[str, Any] = {
+                "ok": cycle.get("exitCode") == 0,
+                "cycle": cycle,
+                "notices": list(notice.lines) if notice is not None else [],
+                "finishedAt": self._clock().isoformat(),
+            }
+            if notice is not None:
+                result["noticeReported"] = self._report_notice(
+                    {
+                        "ok": result["ok"],
+                        "cycle": cycle,
+                        "analysis": "\n".join(notice.lines),
+                        "severity": notice.severity,
+                        "finishedAt": result["finishedAt"],
+                    }
+                )
+            return result
+        except AutomationBusy:
+            raise
+        except Exception as error:
+            try:
+                self._report_notice(
+                    {
+                        "ok": False,
+                        "stage": "intraday-cycle",
+                        "error": _safe_error(error),
+                        "finishedAt": self._clock().isoformat(),
+                    }
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("intraday paper cycle failure could not be reported")
+            raise RuntimeError("intraday-cycle stage failed") from error
+        finally:
+            self._lock.release()
 
 
 class MarketScanProcess:
@@ -459,6 +629,9 @@ class AlertmanagerReporter:
         severity = "info" if ok and exit_code == 0 else "warning"
         if not ok:
             severity = "critical"
+        requested_severity = result.get("severity")
+        if requested_severity in {"info", "warning", "critical"}:
+            severity = str(requested_severity)
         if ok:
             description = str(result.get("analysis", ""))
         elif result.get("stage") == "hermes":
@@ -502,6 +675,10 @@ class AlertmanagerReporter:
 
 def create_daily_automation_from_env() -> DailyAutomation:
     api_key = os.environ.get("HERMES_API_KEY", "")
+    alertmanager_url = os.environ.get(
+        "ALERTMANAGER_API_URL",
+        "http://alertmanager:9093/api/v2/alerts",
+    )
     return DailyAutomation(
         run_cycle=PaperCycleProcess().run,
         analyze=HermesAnalyzer(
@@ -511,12 +688,28 @@ def create_daily_automation_from_env() -> DailyAutomation:
             ),
         ).analyze,
         report=AlertmanagerReporter(
+            url=alertmanager_url,
+        ).report,
+        report_notice=AlertmanagerReporter(
+            url=alertmanager_url,
+            alert_name="TossTraderPaperCycleNotice",
+            summary="Toss Trader paper cycle 특이사항",
+        ).report,
+        audit=_record_automation_run_from_env,
+    )
+
+
+def create_intraday_paper_automation_from_env() -> IntradayPaperAutomation:
+    return IntradayPaperAutomation(
+        run_cycle=PaperCycleProcess(interval="1m").run,
+        report_notice=AlertmanagerReporter(
             url=os.environ.get(
                 "ALERTMANAGER_API_URL",
                 "http://alertmanager:9093/api/v2/alerts",
-            )
+            ),
+            alert_name="TossTraderPaperCycleNotice",
+            summary="Toss Trader 장중 paper cycle 특이사항",
         ).report,
-        audit=_record_automation_run_from_env,
     )
 
 
@@ -556,6 +749,7 @@ def automation_response(
     service: DailyAutomation,
     *,
     market_service: MarketScanAutomation | None = None,
+    intraday_service: IntradayPaperAutomation | None = None,
 ) -> tuple[int, dict[str, Any]]:
     normalized = urlsplit(path).path
     if normalized == "/healthz":
@@ -563,9 +757,13 @@ def automation_response(
             return 405, {"ok": False, "error": "method not allowed"}
         return 200, {"status": "ok"}
     if normalized == "/run-daily":
-        selected_service: DailyAutomation | MarketScanAutomation = service
+        selected_service: (
+            DailyAutomation | MarketScanAutomation | IntradayPaperAutomation
+        ) = service
     elif normalized == "/run-market-scan" and market_service is not None:
         selected_service = market_service
+    elif normalized == "/run-paper-cycle" and intraday_service is not None:
+        selected_service = intraday_service
     else:
         return 404, {"ok": False, "error": "not found"}
     if method != "POST":
@@ -584,6 +782,7 @@ def serve_automation(
     port: int,
     service: DailyAutomation,
     market_service: MarketScanAutomation | None = None,
+    intraday_service: IntradayPaperAutomation | None = None,
 ) -> None:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -598,6 +797,7 @@ def serve_automation(
                 self.path,
                 service,
                 market_service=market_service,
+                intraday_service=intraday_service,
             )
             body = json.dumps(payload, ensure_ascii=False).encode()
             self.send_response(status)
@@ -704,6 +904,19 @@ def _non_negative_int(value: Any) -> int:
     except (TypeError, ValueError):
         return 0
     return max(parsed, 0)
+
+
+def _decimal(value: Any) -> Decimal | None:
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return parsed if parsed.is_finite() else None
+
+
+def _higher_severity(current: str, candidate: str) -> str:
+    rank = {"info": 0, "warning": 1, "critical": 2}
+    return candidate if rank[candidate] > rank[current] else current
 
 
 def _safe_error(error: Exception) -> str:

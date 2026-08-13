@@ -13,6 +13,7 @@ from typing import Any
 
 from .automation import (
     create_daily_automation_from_env,
+    create_intraday_paper_automation_from_env,
     create_market_scan_automation_from_env,
     serve_automation,
 )
@@ -537,6 +538,7 @@ def _serve_automation(args: argparse.Namespace) -> int:
     if not 1 <= port <= 65535:
         raise ValueError("automation port must be between 1 and 65535")
     service = create_daily_automation_from_env()
+    intraday_service = create_intraday_paper_automation_from_env()
     market_service = create_market_scan_automation_from_env()
     print(
         json.dumps({"automationServer": "listening", "host": host, "port": port}),
@@ -548,6 +550,7 @@ def _serve_automation(args: argparse.Namespace) -> int:
             port=port,
             service=service,
             market_service=market_service,
+            intraday_service=intraday_service,
         )
     except KeyboardInterrupt:
         return 0
