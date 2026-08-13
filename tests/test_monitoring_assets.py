@@ -342,8 +342,49 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("n8n-nodes-base.webhook", encoded)
         self.assertIn('"authentication": "headerAuth"', encoded)
         self.assertIn("toss-trader-risk-manager-auth", encoded)
-        self.assertIn("/workflow/risk-manager-evaluate", encoded)
+        self.assertNotIn("/workflow/risk-manager-evaluate", encoded)
         self.assertIn("parentExecutionId", encoded)
+
+    def test_n8n_risk_manager_branches_and_evaluates_policy_in_workflow(self) -> None:
+        workflow = json.loads(
+            (ROOT / "automation" / "n8n" / "toss-trader-risk-manager.json").read_text()
+        )
+        encoded = json.dumps(workflow, ensure_ascii=False)
+        node_names = {node["name"] for node in workflow["nodes"]}
+
+        self.assertTrue(
+            {
+                "Trade 요청?",
+                "Universe 요청?",
+                "Trade 정책 계산",
+                "Universe 정책 계산",
+                "승인?",
+                "승인 응답 구성",
+                "거부 응답 구성",
+            }.issubset(node_names)
+        )
+        self.assertGreaterEqual(encoded.count("n8n-nodes-base.if"), 3)
+        self.assertNotIn("n8n-nodes-base.httpRequest", encoded)
+        for violation in (
+            "duplicate-signal",
+            "universe-refresh-failed",
+            "max-order-notional",
+            "insufficient-paper-cash",
+            "max-position-notional",
+            "insufficient-position",
+            "max-daily-buys",
+            "max-open-positions",
+            "daily-loss-limit",
+            "api-error-kill-switch",
+            "market-closed",
+            "market-close-window",
+            "unsupported-security-type",
+            "not-common-share",
+            "stock-not-active",
+            "trading-suspended",
+            "invalid-reference-price",
+        ):
+            self.assertIn(violation, encoded)
 
     def test_n8n_credentials_sync_from_infisical_without_literals(self) -> None:
         script = (
