@@ -976,13 +976,12 @@ class WorkflowTaskService:
         if path == "/workflow/report-daily":
             return self._daily_reporter.report(_required_result(payload))
         if path == "/workflow/report-failure":
+            failure = _workflow_failure(payload)
             return self._failure_reporter.report(
                 {
                     "ok": False,
                     "stage": "n8n-workflow",
-                    "error": json.dumps(payload, ensure_ascii=False, default=str)[
-                        :3500
-                    ],
+                    "analysis": failure["message"],
                 }
             )
         if path == "/workflow/risk-manager-evaluate":
@@ -1601,13 +1600,96 @@ def _flow_audit_details(
         if isinstance(entity, dict) and isinstance(entity.get("symbol"), str):
             details["symbol"] = entity["symbol"]
     if path == "/workflow/report-failure":
-        response = payload.get("response")
-        response = response if isinstance(response, dict) else payload
-        for key in ("statusCode", "httpCode", "executionId"):
-            value = response.get(key)
-            if isinstance(value, (str, int, float, bool)):
-                details[f"upstream{key[0].upper()}{key[1:]}"] = value
+        details["failure"] = _workflow_failure(payload)["details"]
     return details
+
+
+def _workflow_failure(payload: dict[str, Any]) -> dict[str, object]:
+    """Build a Telegram-safe failure summary and a compact audit record."""
+    context = payload.get("_workflow")
+    context = context if isinstance(context, dict) else {}
+    response = payload.get("response")
+    response = response if isinstance(response, dict) else {}
+    cycle = response.get("cycle")
+    cycle = cycle if isinstance(cycle, dict) else {}
+    summary = cycle.get("summary")
+    summary = summary if isinstance(summary, dict) else {}
+
+    lines = ["n8n workflow 실패"]
+    workflow_id = _compact_text(context.get("workflowId")) or "unknown"
+    execution_id = _compact_text(context.get("executionId")) or "unknown"
+    stage = _compact_text(context.get("stage")) or "unknown"
+    lines.append(f"workflow: {workflow_id} / execution: {execution_id}")
+    scope = " · ".join(
+        value
+        for value in (
+            _compact_text(context.get("portfolioId")),
+            _compact_text(context.get("interval")),
+        )
+        if value
+    )
+    lines.append(f"단계: {stage}" + (f" ({scope})" if scope else ""))
+
+    details: dict[str, object] = {"stage": stage}
+    exit_code = response.get("exitCode")
+    if isinstance(exit_code, int):
+        lines.append(f"cycle 종료 코드: {exit_code}")
+        details["exitCode"] = exit_code
+    for key in ("statusCode", "httpCode", "executionId"):
+        value = response.get(key)
+        if isinstance(value, (str, int, float, bool)):
+            details[f"upstream{key[0].upper()}{key[1:]}"] = value
+
+    if summary:
+        symbols = _non_negative_int(summary.get("symbols"))
+        failed = _non_negative_int(summary.get("failed"))
+        if failed:
+            lines.append(f"종목 처리 실패: {failed}/{symbols or '?'}")
+        details["summary"] = {
+            key: _non_negative_int(summary.get(key))
+            for key in ("symbols", "signals", "fills", "skipped", "failed")
+            if key in summary
+        }
+
+    errors = _workflow_failure_errors(response, cycle)
+    if errors:
+        lines.extend(f"{symbol} 오류: {error}" for symbol, error in errors)
+        details["errors"] = [
+            {"symbol": symbol, "error": error} for symbol, error in errors
+        ]
+    elif error := _compact_text(cycle.get("error") or response.get("error"), 300):
+        lines.append(f"원인: {error}")
+        details["error"] = error
+    else:
+        lines.append("상세 원인: n8n execution 및 automation_run_logs 확인")
+
+    return {"message": "\n".join(lines), "details": details}
+
+
+def _workflow_failure_errors(
+    response: dict[str, Any], cycle: dict[str, Any]
+) -> list[tuple[str, str]]:
+    values: list[tuple[str, str]] = []
+    items = cycle.get("items")
+    items = items if isinstance(items, list) else response.get("items")
+    if not isinstance(items, list):
+        return values
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        error = _compact_text(item.get("error"), 300)
+        if error:
+            values.append((_compact_text(item.get("symbol")) or "unknown", error))
+        if len(values) == 5:
+            break
+    return values
+
+
+def _compact_text(value: object, limit: int = 120) -> str | None:
+    if not isinstance(value, (str, int, float, bool)):
+        return None
+    text = str(value).replace("\n", " ").strip()
+    return text[:limit] if text else None
 
 
 def _collect_decision_ids(value: object) -> list[str]:

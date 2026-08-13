@@ -119,6 +119,59 @@ class WorkflowTaskServiceTest(unittest.TestCase):
         self.assertEqual(audits[0].details["executionId"], "321")  # type: ignore[index]
         self.assertNotIn("authorization", json.dumps(audits[0].details))
 
+    def test_failure_report_is_compact_and_keeps_error_details_in_audit(self) -> None:
+        audits: list[AutomationRunLog] = []
+        reports: list[dict[str, object]] = []
+
+        class StubReporter:
+            def report(self, value: dict[str, object]) -> dict[str, object]:
+                reports.append(value)
+                return {"accepted": True}
+
+        service = WorkflowTaskService(
+            paper=None,  # type: ignore[arg-type]
+            market_scan=None,  # type: ignore[arg-type]
+            market_analyzer=None,  # type: ignore[arg-type]
+            daily_analyzer=None,  # type: ignore[arg-type]
+            market_reporter=StubReporter(),
+            paper_reporter=StubReporter(),
+            daily_reporter=StubReporter(),
+            failure_reporter=StubReporter(),
+            audit=lambda run: audits.append(run) or "audit-1",
+            clock=lambda: datetime(2026, 8, 13, 0, 0, tzinfo=UTC),
+        )
+
+        service.run(
+            "/workflow/report-failure",
+            {
+                "_workflow": {
+                    "workflowId": "toss-trader-daily",
+                    "executionId": "162",
+                    "stage": "rule-cycle",
+                    "portfolioId": "rule",
+                    "interval": "1d",
+                    "status": "failed",
+                },
+                "response": {
+                    "exitCode": 3,
+                    "cycle": {
+                        "summary": {"symbols": 17, "failed": 1, "fills": 0},
+                        "items": [
+                            {"symbol": "487400", "error": "daily candles unavailable"}
+                        ],
+                    },
+                },
+            },
+        )
+
+        message = str(reports[0]["analysis"])
+        self.assertIn("workflow: toss-trader-daily / execution: 162", message)
+        self.assertIn("단계: rule-cycle (rule · 1d)", message)
+        self.assertIn("종목 처리 실패: 1/17", message)
+        self.assertIn("487400 오류: daily candles unavailable", message)
+        self.assertNotIn('"sharedSnapshot"', message)
+        self.assertEqual(audits[0].details["failure"]["errors"][0]["symbol"], "487400")  # type: ignore[index]
+
     def test_rejects_direct_hermes_response_without_content(self) -> None:
         class Stub:
             def report(self, _: dict[str, object]) -> dict[str, object]:
