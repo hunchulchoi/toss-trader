@@ -96,7 +96,7 @@ port·tool/plugin/MCP/context tool이 없다.
 
 | 시각(KST) | n8n workflow | endpoint | 역할 |
 |---|---|---|---|
-| 평일 08:30 | Market Analysis + Discovery | `/run-market-scan` | 시장·후보 JSON을 Hermes가 해석하고 Telegram 전송 |
+| 평일 08:30 | Market Analysis + Discovery | `/workflow/market-scan` | 시장·후보 JSON을 Hermes가 해석하고 Telegram 전송 |
 | 평일 09:00~15:20, 5분 간격 | Intraday Paper Cycle | n8n rule→Hermes task | 동적 universe, 1분봉, 전략, RiskManager, paper 체결 |
 | 평일 15:40 | Daily Paper + Hermes | n8n rule→Hermes→분석 task | 일봉 paper cycle, Hermes 마감 분석, Telegram 전송 |
 
@@ -133,6 +133,139 @@ flowchart LR
 전용 bearer credential을 통과한 요청을 받고 즉시 접수 응답한다. 모든 bearer 값과
 OAuth2 credential은 Infisical에서 n8n encrypted credential 또는 프로세스 환경으로
 주입하며, workflow JSON·로그·Git에는 저장하지 않는다.
+
+## API별 flow
+
+모든 n8n HTTP node는 `_workflow`에 workflow/execution/stage/portfolio/interval을
+넣는다. automation은 이 메타데이터와 결과 집계만 `automation_run_logs`에 기록하고,
+요청 body·bearer·전체 Hermes prompt/response는 기록하지 않는다.
+
+### 1. 수동 마감 Webhook
+
+```mermaid
+sequenceDiagram
+    participant O as 운영자
+    participant N as n8n
+    participant A as automation
+    O->>N: POST /webhook/toss-trader-daily-run (Header Auth)
+    N-->>O: 200 Workflow was started
+    N->>A: POST /workflow/paper-rule-1d
+    N->>A: 이후 일일 flow 계속
+```
+
+Webhook은 접수만 비동기로 반환한다. 완료 여부는 n8n execution과 후속
+`automation_run_logs`로 확인한다.
+
+### 2. 장전 시장분석·종목발굴
+
+```mermaid
+sequenceDiagram
+    participant N as n8n
+    participant A as automation
+    participant H as Hermes
+    participant AM as Alertmanager
+    N->>A: POST /workflow/market-scan
+    A-->>N: {exitCode, scan}
+    alt exitCode = 0
+        N->>H: POST /v1/chat/completions (scan JSON only)
+        H-->>N: {choices, usage}
+        N->>A: POST /workflow/hermes-market-result
+        A-->>N: {ok, analysis, hermesUsage}
+        alt ok = true
+            N->>A: POST /workflow/report-market
+            A->>AM: POST /api/v2/alerts
+            AM-->>A: HTTP 2xx
+            A-->>N: {accepted}
+        else Hermes 응답 오류
+            N->>A: POST /workflow/report-failure
+        end
+    else scan 오류
+        N->>A: POST /workflow/report-failure
+    end
+```
+
+### 3. 장중 1분봉 rule/Hermes 비교
+
+```mermaid
+sequenceDiagram
+    participant N as n8n
+    participant A as automation
+    participant H as Hermes
+    participant R as RiskManager webhook
+    participant AM as Alertmanager
+    N->>A: POST /workflow/paper-rule-1m
+    A-->>N: {exitCode, cycle, sharedSnapshot}
+    N->>A: POST /workflow/paper-hermes-1m (rule 결과)
+    A->>H: 신호가 있을 때만 advisor 호출
+    A->>R: trade/universe 판단 요청
+    R-->>A: {approved, violations}
+    A-->>N: {exitCode, cycle}
+    N->>A: POST /workflow/report-paper (rule + hermes)
+    alt 특이사항 있음
+        A->>AM: POST /api/v2/alerts
+        A-->>N: {accepted: true}
+    else 정상 무신호
+        A-->>N: {accepted: false, skipped: true, reason: no-notice}
+    end
+```
+
+rule과 Hermes는 같은 `sharedSnapshot`을 재사용하므로 candle 수집을 두 번 하지
+않는다. `exitCode=3`은 partial cycle이며 실패 flow로 전달되지만 Telegram severity는
+`warning`이다.
+
+### 4. 마감 일봉·Hermes 분석
+
+```mermaid
+sequenceDiagram
+    participant N as n8n
+    participant A as automation
+    participant H as Hermes
+    participant AM as Alertmanager
+    N->>A: POST /workflow/paper-rule-1d
+    A-->>N: {exitCode, cycle, sharedSnapshot}
+    N->>A: POST /workflow/paper-hermes-1d (rule 결과)
+    A-->>N: {exitCode, cycle}
+    N->>H: POST /v1/chat/completions (rule/hermes 비교 JSON only)
+    H-->>N: {choices, usage}
+    N->>A: POST /workflow/hermes-daily-result
+    A-->>N: {ok, analysis, hermesUsage}
+    N->>A: POST /workflow/report-daily
+    A->>AM: POST /api/v2/alerts
+    A-->>N: {accepted}
+```
+
+rule cycle, Hermes cycle, Hermes 응답 검증, Telegram 각 단계가 실패하면 다음 정상
+단계로 진행하지 않고 `/workflow/report-failure`로 분기한다.
+
+### 5. RiskManager sub-workflow
+
+```mermaid
+sequenceDiagram
+    participant A as automation subprocess
+    participant N as n8n
+    participant W as automation workflow service
+    participant DB as PostgreSQL
+    A->>N: POST /webhook/toss-trader-risk-manager (Bearer)
+    N->>W: POST /workflow/risk-manager-evaluate
+    W-->>N: {ok, approved, violations}
+    N-->>A: {approved, violations}
+    A->>DB: paper_risk_decisions 기록
+    alt approved
+        A->>DB: paper_fills 기록
+    else rejected 또는 호출 오류
+        Note over A: fill 없음; 호출 오류는 risk-manager-workflow-unavailable
+    end
+```
+
+### 6. 공통 failure·운영 검증
+
+| API | 성공 응답/판단 | 실패 처리·감사 |
+|---|---|---|
+| `POST /workflow/report-failure` | Alertmanager `{accepted: true}` | Telegram에는 workflow·execution·stage·종목 오류 최대 5건만 요약. 원본 n8n 응답은 execution에, compact detail은 audit에 남김 |
+| `GET /healthz` | `200 {"status":"ok"}` | service healthcheck와 n8n 운영 점검에 사용 |
+| `GET /v1/toolsets` | enabled tool 0, resolved tool 0 | Hermes healthcheck가 실패하면 container unhealthy |
+| Toss OAuth2/market/candle API | 조회 데이터 | 종목별 오류는 cycle에 기록; 나머지 종목은 계속. 연속 오류 5회면 RiskManager가 차단 |
+| `POST /api/v2/alerts` | Alertmanager accepted | automation은 `502`를 반환하고 n8n failure flow가 기록 |
 
 ## 장중 paper cycle
 
