@@ -12,11 +12,13 @@ flowchart TB
         AM[Alertmanager]
         METRICS[toss-trader-metrics]
         PROM[Prometheus]
+        PAPERMCP[paper-mcp]
     end
 
     subgraph OPENCLAW[외부 Docker network: openclaw-net]
         N8N[n8n orchestration]
-        HERMES[Hermes analysis sidecar]
+        HERMES[hermes-analysis sidecar]
+        PUBHERMES[공용 Hermes Telegram]
     end
 
     N8N -->|내부 HTTP| AUTO
@@ -26,18 +28,22 @@ flowchart TB
     AUTO -->|paper 장부·감사 로그| DB
     AUTO -->|알림 이벤트| AM
     AM -->|Bot API| TELEGRAM[Telegram topic]
+    PUBHERMES -->|MCP toss-paper| PAPERMCP
+    PAPERMCP -->|read-only SQL| DB
     DB --> METRICS
     METRICS --> PROM
     DB --> GRAFANA[Grafana :3001]
     PROM --> GRAFANA
 ```
 
-- `automation`, `hermes-analysis`는 `openclaw-net` 내부에서만 통신한다.
-- Hermes `8642`는 host port를 publish하지 않으며 Docker socket도 없다.
-- Hermes API server의 toolset·plugin·MCP·context tool은 모두 0개다.
+- `automation`, `hermes-analysis`, `paper-mcp`는 `openclaw-net` 내부에서 통신한다.
+- `hermes-analysis`의 `8642`와 `paper-mcp`의 `8090`은 host port를 publish하지 않는다.
+- 분석 sidecar는 Docker socket이 없고 toolset·plugin·MCP·context tool이 모두 0개다.
+- 공용 Hermes Telegram만 `paper-mcp` MCP를 붙인다. 상세는
+  [`paper-mcp.md`](paper-mcp.md).
 - 실제 주문 코드는 없고 모든 서비스에서 `TRADING_ENABLED=false`를 유지한다.
 - 관측용 Grafana·Prometheus·metrics·Alertmanager는 운영망에서 조회할 수 있다.
-  automation과 Hermes는 host port를 publish하지 않는다.
+  automation과 두 Hermes, paper-mcp는 host port를 publish하지 않는다.
 
 ## Docker Compose 구성도
 
@@ -57,11 +63,15 @@ flowchart TB
         subgraph OPENCLAW[external openclaw-net]
             N8N[n8n\n별도 운영 container]
             HERMES[hermes-analysis\n:8642 expose only]
+            PAPERMCP[paper-mcp\n:8090 expose only]
+            PUBHERMES[공용 Hermes]
         end
 
         AUTO <-->|내부 HTTP| N8N
         N8N -->|Bearer| HERMES
         AUTO -->|Bearer| HERMES
+        PUBHERMES -->|MCP| PAPERMCP
+        PAPERMCP -->|read-only SQL| PG
 
         PAPER[(paper-data)] --- TRADER
         PAPER --- AUTO
@@ -82,15 +92,17 @@ flowchart TB
 |---|---|---|---|---|
 | `trader` | default | `paper-data` read/write | 없음 | 수동 CLI·개발용 one-shot 실행 |
 | `automation` | default + `openclaw-net` | `paper-data` read/write | 없음 (`8088` expose) | n8n task, paper cycle, RiskManager callback, 알림 감사 |
+| `paper-mcp` | `openclaw-net`만 | 없음 | 없음 (`8090` expose) | 공용 Hermes Telegram용 paper 장부 read-only MCP |
 | `hermes-analysis` | `openclaw-net`만 | `hermes-analysis-data` | 없음 (`8642` expose) | zero-tool 분석 전용 LLM API |
 | `metrics` | default | `paper-data` read-only | Tailscale `:9108` | Prometheus 지표·health |
 | `prometheus` | default | `prometheus-data` | Tailscale `:19090` | metrics scrape·alert rule 평가 |
 | `alertmanager` | default | `alertmanager-data` | Tailscale `:19093` | Telegram topic 전달·실패 counter |
 
-n8n, PostgreSQL, Grafana는 이 compose가 생성하지 않는 기존 운영 구성이다. Grafana는
-현재 운영 container에서 Prometheus·PostgreSQL을 datasource로 조회한다. compose의
-`automation`은 두 network에 붙는 유일한 bridge이며, Hermes에는 Docker socket·host
-port·tool/plugin/MCP/context tool이 없다.
+n8n, PostgreSQL, Grafana, 공용 Hermes는 이 compose가 생성하지 않는 기존 운영
+구성이다. Grafana는 현재 운영 container에서 Prometheus·PostgreSQL을 datasource로
+조회한다. compose의 `automation`은 default와 `openclaw-net`에 붙는 유일한
+bridge다. 분석 sidecar `hermes-analysis`에는 Docker socket·host port·
+tool/plugin/MCP/context tool이 없다. Telegram 질의용 MCP는 `paper-mcp`다.
 
 ## 스케줄
 
@@ -114,8 +126,11 @@ flowchart LR
     AUTO -->|OAuth2 + market/candle API| TOSS[Toss Open API]
     AUTO -->|POST /api/v2/alerts| ALERT[Alertmanager]
     ALERT -->|Telegram Bot API| TG[Telegram topic]
+    ASK[운영자 Telegram 질의] -->|대화| PUB[공용 Hermes]
+    PUB -->|HTTP MCP /mcp| MCP[paper-mcp :8090]
     AUTO -->|SQL| DB[(PostgreSQL)]
-    HERMES -->|GET /v1/toolsets\n운영 검증만| TOOLSET{enabled = 0\nresolved = 0}
+    MCP -->|read-only SQL| DB
+    HERMES -->|GET /v1/toolsets 운영 검증만| TOOLSET[enabled 0 / resolved 0]
 ```
 
 | 경계 | 호출 | 인증 | 용도 |
@@ -125,11 +140,14 @@ flowchart LR
 | automation → n8n | `POST /webhook/toss-trader-risk-manager` | 전용 bearer Header Auth | RiskManager sub-workflow 요청 |
 | n8n → Hermes | `POST /v1/chat/completions` | Hermes bearer | 시장분석 JSON 또는 paper 비교 JSON 해석 |
 | 운영 검증 → Hermes | `GET /v1/toolsets` | Hermes bearer | enabled/resolved tool이 모두 0인지 확인 |
+| 운영자 Telegram → 공용 Hermes | 대화 | 공용 Hermes Telegram 세션 | paper 진행·보유·손익 질의 |
+| 공용 Hermes → paper-mcp | `POST /mcp` | `openclaw-net` 내부 | `toss_paper_status` / `holdings` / `pnl` |
+| paper-mcp → PostgreSQL | 고정 SELECT | DB 계정, session read-only | `rule`/`hermes` paper 장부 조회 |
 | automation → Toss | OAuth2 token·시장·캔들 API | Toss OAuth2 credential | 조회 전용 시장 데이터 수집 |
 | automation → Alertmanager | `POST /api/v2/alerts` | 내부망 | 성공·실패·paper 체결 이벤트 전달 |
 | Alertmanager → Telegram | Telegram Bot API | bot credential | 지정 topic에 리포트·장애 알림 전송 |
 
-`/workflow/*`와 Hermes `:8642`는 외부에 공개하지 않는다. n8n의 수동 webhook만
+`/workflow/*`, 분석 sidecar `:8642`, `paper-mcp` `:8090`은 외부에 공개하지 않는다. n8n의 수동 webhook만
 전용 bearer credential을 통과한 요청을 받고 즉시 접수 응답한다. 모든 bearer 값과
 OAuth2 credential은 Infisical에서 n8n encrypted credential 또는 프로세스 환경으로
 주입하며, workflow JSON·로그·Git에는 저장하지 않는다.
@@ -610,7 +628,10 @@ toss-trader/
 ├── docs/
 │   ├── audit-ledgers.md       # 감사 장부와 조회 원칙
 │   ├── automatic-trading-scenario.md
+│   ├── backtesting.md         # MA 백테스트 체결 가정
 │   ├── operations-runbook.md  # 수동 실행·장애 대응·운영 검증
+│   ├── paper-mcp.md           # 공용 Hermes Telegram paper 조회 MCP
+│   ├── pnl-engine.md          # 이동평균 원가·손익
 │   ├── system-workflow.md     # 현재 문서
 │   └── validation-history.md  # 과거 검증 snapshot
 ├── monitoring/
@@ -632,6 +653,7 @@ toss-trader/
 │   ├── metrics.py             # PostgreSQL/SQLite → Prometheus
 │   ├── models.py              # Candle, signal, fill model
 │   ├── paper.py               # fill·Risk·automation 감사 장부
+│   ├── paper_mcp.py           # Telegram용 read-only paper MCP
 │   ├── portfolio.py           # 포지션·일일 수익률
 │   ├── repository.py          # candle·회사명 repository
 │   ├── risk.py                # RiskManager 정책

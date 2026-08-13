@@ -41,6 +41,8 @@ toss-trader automation-runs --type market_scan --status failed --limit 100
 
 Grafana `Toss Trader`: 장부 `toss-postgres`(ro), 상태 패널 `toss-prometheus`.
 첫 화면은 상태·Rule vs Hermes·체결. 1분 차트·universe·자동화는 접힘.
+Telegram 질의는 같은 paper 장부를 [`paper-mcp.md`](paper-mcp.md) 경로로 읽는다.
+MCP holdings/pnl은 조회 시점 fills 재생이라 Grafana snapshot 패널과 다를 수 있다.
 
 | 패널 | 표시 내용 | 데이터 기준 |
 |---|---|---|
@@ -49,7 +51,7 @@ Grafana `Toss Trader`: 장부 `toss-postgres`(ro), 상태 패널 `toss-prometheu
 | `Dynamic Universe Risk Decisions` | 후보별 점수, RiskManager 판단, 최종 선정 여부 | `dynamic_universe_runs`, `dynamic_universe_decisions` |
 | `Rule Trades (1m)` / `Hermes Trades (1m)` | 각 포트폴리오가 기간 내 체결한 종목 1분 등락률과 BUY/SELL 시점 | `market_candles`, `market_symbols`, `paper_fills` (`portfolio_id` 필터) |
 | `Symbols (1m, BUY/SELL Marked · $trade_filter)` | 수집 1분봉의 조회 구간 시작 대비 정규화 등락률, 회사명·코드, BUY/SELL mark | `market_candles`, `market_symbols`, `paper_fills`; filter에 따라 체결 종목 또는 전체 조회 종목 |
-| `Recent Paper Fills` | BUY/SELL, 수량·가격·금액, 전략 근거 `reason` | `paper_fills`, `market_symbols` |
+| `Recent Paper Fills` | BUY/SELL, 수량·가격·금액, 수수료·세금. SELL은 이동평균 원가, 포지션 첫 매수시각, 해당 매도 실현손익 | `paper_fills` 이동평균 재생, `market_symbols` |
 | `Paper Cycle Run Log` | rule/Hermes 포트폴리오별 cycle 상태, 신호·체결·실패·제외 수 | `paper_cycle_runs` |
 | `Hermes Automation Run Log` | 장전·마감·실제 advisor token. 한도 preflight 거부는 없음 | `automation_run_logs`의 `market_scan`, `daily`, `hermes_trade` |
 

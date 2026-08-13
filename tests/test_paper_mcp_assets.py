@@ -27,6 +27,22 @@ class PaperMcpAssetsTest(unittest.TestCase):
 
         self.assertIn("mcp_servers: {}", config)
 
+    def test_docs_keep_paper_mcp_on_public_hermes_only(self) -> None:
+        paper_mcp = (ROOT / "docs" / "paper-mcp.md").read_text()
+        workflow = (ROOT / "docs" / "system-workflow.md").read_text()
+        runbook = (ROOT / "docs" / "operations-runbook.md").read_text()
+        scenario = (ROOT / "docs" / "automatic-trading-scenario.md").read_text()
+
+        self.assertIn("toss_paper_status", paper_mcp)
+        self.assertIn("toss_paper_holdings", paper_mcp)
+        self.assertIn("toss_paper_pnl", paper_mcp)
+        self.assertIn("mcp_servers: {}", paper_mcp)
+        self.assertIn("hermes-analysis", paper_mcp)
+        self.assertNotIn("TOSS_CLIENT", paper_mcp)
+        self.assertIn("paper-mcp", workflow)
+        self.assertIn("toss-trader-paper-mcp", runbook)
+        self.assertIn("### 8. Telegram 질의", scenario)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -136,6 +136,9 @@ cycle은 주문 전 손익으로 RiskManager를 평가한다. 체결이 생기�
 SQLite와 PostgreSQL 구현은 같은 계산 규칙과 필드를 제공한다. snapshot은 같은
 `(portfolio_id, captured_at)`이면 최신 계산값으로 갱신한다.
 
+Telegram MCP `toss_paper_holdings`와 `toss_paper_pnl`도 이 이동평균 재생을
+쓴다. 스냅샷 테이블을 읽지 않고 조회 시점에 `paper_fills`를 다시 계산한다.
+
 ## 현재 제한
 
 - 이동평균법만 지원한다. FIFO·세무 신고 원가는 지원하지 않는다.

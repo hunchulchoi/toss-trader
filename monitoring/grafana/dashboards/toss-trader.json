@@ -148,9 +148,9 @@
           "refId": "A"
         }
       ],
-      "title": "Daily Return (MTM)",
+      "title": "Daily Return",
       "type": "stat",
-      "description": "보유 전체 MTM. 오늘 체결 성과 아님."
+      "description": "UTC 일자 시작 총자산 대비 현재 총자산. 수수료·세금 포함."
     },
     {
       "datasource": {
@@ -654,6 +654,26 @@
                 "value": true
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ · (실현손익|미실현손익)$/"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "손익 (KRW)"
+              },
+              {
+                "id": "custom.axisCenteredZero",
+                "value": true
+              }
+            ]
           }
         ]
       },
@@ -687,7 +707,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "WITH runs AS (SELECT r.started_at, r.portfolio_id, p.display_name, p.initial_cash FROM paper_cycle_runs r JOIN paper_portfolios p ON p.portfolio_id = r.portfolio_id WHERE r.portfolio_id IN ('rule', 'hermes') AND r.status <> 'running' AND $__timeFilter(r.started_at)), cash AS (SELECT runs.started_at, runs.portfolio_id, runs.display_name, runs.initial_cash, runs.initial_cash + COALESCE(SUM(CASE WHEN f.side = 'BUY' THEN -f.notional ELSE f.notional END), 0) AS cash FROM runs LEFT JOIN paper_fills f ON f.portfolio_id = runs.portfolio_id AND f.executed_at <= runs.started_at GROUP BY runs.started_at, runs.portfolio_id, runs.display_name, runs.initial_cash), pos AS (SELECT runs.started_at, runs.portfolio_id, f.symbol, SUM(CASE WHEN f.side = 'BUY' THEN f.quantity ELSE -f.quantity END) AS qty FROM runs JOIN paper_fills f ON f.portfolio_id = runs.portfolio_id AND f.executed_at <= runs.started_at GROUP BY runs.started_at, runs.portfolio_id, f.symbol HAVING SUM(CASE WHEN f.side = 'BUY' THEN f.quantity ELSE -f.quantity END) <> 0), marked AS (SELECT pos.started_at, pos.portfolio_id, SUM(pos.qty * c.close_price) AS mtm FROM pos LEFT JOIN LATERAL (SELECT m.close_price FROM market_candles m WHERE m.symbol = pos.symbol AND m.interval = '1m' AND m.timestamp <= pos.started_at ORDER BY m.timestamp DESC LIMIT 1) c ON TRUE GROUP BY pos.started_at, pos.portfolio_id) SELECT cash.started_at AS time, v.value::double precision AS value, cash.display_name || ' · ' || v.metric AS metric FROM cash LEFT JOIN marked ON marked.started_at = cash.started_at AND marked.portfolio_id = cash.portfolio_id CROSS JOIN LATERAL (VALUES ('평가금액', cash.cash + COALESCE(marked.mtm, 0)), ('손익', cash.cash + COALESCE(marked.mtm, 0) - cash.initial_cash)) v(metric, value) ORDER BY 1",
+          "rawSql": "SELECT s.captured_at AS time, v.value::double precision AS value, p.display_name || ' · ' || v.metric AS metric FROM paper_portfolio_snapshots s JOIN paper_portfolios p ON p.portfolio_id = s.portfolio_id CROSS JOIN LATERAL (VALUES ('평가금액', s.equity), ('손익', s.equity - p.initial_cash), ('실현손익', s.realized_pnl), ('미실현손익', s.unrealized_pnl)) v(metric, value) WHERE s.portfolio_id IN ('rule', 'hermes') AND $__timeFilter(s.captured_at) ORDER BY 1",
           "refId": "A",
           "sql": {
             "columns": [
@@ -710,7 +730,7 @@
       ],
       "title": "Rule vs Hermes 평가금액 · 손익",
       "type": "timeseries",
-      "description": "평가금액=현금+보유 1분 MTM. 손익=평가금액-시작현금. 일일 % 아님."
+      "description": "총자산=비용 반영 현금+평가. 손익=총자산-시작현금. 실현/미실현은 이동평균 원가."
     },
     {
       "datasource": {
@@ -1274,7 +1294,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/^(quantity|price|notional)$/"
+              "options": "/^(quantity|price|notional|수수료|세금)$/"
             },
             "properties": [
               {
@@ -1284,6 +1304,22 @@
               {
                 "id": "decimals",
                 "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^(평균원가|실현손익)$/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 2
               }
             ]
           },
@@ -1347,7 +1383,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT f.executed_at AS time, COALESCE(p.display_name, f.portfolio_id) AS portfolio, COALESCE(s.display_name || ' (' || f.symbol || ')', f.symbol) AS security, f.side, f.quantity, f.price, f.notional, f.reason, f.signal_id, f.fill_id FROM paper_fills f LEFT JOIN paper_portfolios p ON p.portfolio_id = f.portfolio_id LEFT JOIN market_symbols s ON s.symbol = f.symbol WHERE $__timeFilter(f.executed_at) ORDER BY f.executed_at DESC LIMIT 200",
+          "rawSql": "WITH RECURSIVE ordered AS (SELECT f.fill_id, f.portfolio_id, f.symbol, f.side, f.quantity, f.price, f.notional, COALESCE(f.commission, 0) AS commission, COALESCE(f.tax, 0) AS tax, f.reason, f.signal_id, f.executed_at, ROW_NUMBER() OVER (PARTITION BY f.portfolio_id, f.symbol ORDER BY f.executed_at, f.fill_sequence) AS step FROM paper_fills f), walk AS (SELECT fill_id, portfolio_id, symbol, side, quantity, price, notional, commission, tax, reason, signal_id, executed_at, step, CASE WHEN side = 'BUY' THEN quantity ELSE 0 END AS held, CASE WHEN side = 'BUY' THEN notional + commission + tax ELSE 0 END AS basis, CASE WHEN side = 'BUY' THEN executed_at END AS opened_after, NULL::numeric AS avg_cost, NULL::timestamptz AS opened_at, NULL::numeric AS realized_pnl FROM ordered WHERE step = 1 UNION ALL SELECT n.fill_id, n.portfolio_id, n.symbol, n.side, n.quantity, n.price, n.notional, n.commission, n.tax, n.reason, n.signal_id, n.executed_at, n.step, CASE WHEN n.side = 'BUY' THEN w.held + n.quantity ELSE w.held - n.quantity END, CASE WHEN n.side = 'BUY' THEN w.basis + n.notional + n.commission + n.tax WHEN w.held - n.quantity = 0 THEN 0 ELSE w.basis - (w.basis * n.quantity / NULLIF(w.held, 0)) END, CASE WHEN n.side = 'BUY' AND w.held = 0 THEN n.executed_at WHEN n.side = 'SELL' AND w.held - n.quantity = 0 THEN NULL ELSE w.opened_after END, CASE WHEN n.side = 'SELL' THEN w.basis / NULLIF(w.held, 0) END, CASE WHEN n.side = 'SELL' THEN w.opened_after END, CASE WHEN n.side = 'SELL' THEN n.notional - n.commission - n.tax - (w.basis * n.quantity / NULLIF(w.held, 0)) END FROM walk w JOIN ordered n ON n.portfolio_id = w.portfolio_id AND n.symbol = w.symbol AND n.step = w.step + 1) SELECT w.executed_at AS time, COALESCE(p.display_name, w.portfolio_id) AS portfolio, COALESCE(s.display_name || ' (' || w.symbol || ')', w.symbol) AS security, w.side, w.quantity, w.price, w.notional, w.commission AS \"수수료\", w.tax AS \"세금\", w.avg_cost AS \"평균원가\", w.opened_at AS \"매수시각\", w.realized_pnl AS \"실현손익\", w.reason, w.signal_id, w.fill_id FROM walk w LEFT JOIN paper_portfolios p ON p.portfolio_id = w.portfolio_id LEFT JOIN market_symbols s ON s.symbol = w.symbol WHERE $__timeFilter(w.executed_at) ORDER BY w.executed_at DESC LIMIT 200",
           "refId": "A",
           "sql": {
             "columns": [
@@ -1369,7 +1405,8 @@
         }
       ],
       "title": "Recent Paper Fills",
-      "type": "table"
+      "type": "table",
+      "description": "SELL은 이동평균 원가·포지션 첫 매수시각·해당 매도 실현손익. 수수료·세금 포함."
     },
     {
       "datasource": {
@@ -2388,6 +2425,6 @@
   "timezone": "Asia/Seoul",
   "title": "Toss Trader",
   "uid": "toss-trader",
-  "version": 13,
+  "version": 14,
   "weekStart": "monday"
 }

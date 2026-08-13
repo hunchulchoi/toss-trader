@@ -55,6 +55,9 @@ PYTHONPATH=src python3 -m toss_trader accounts
 PYTHONPATH=src python3 -m toss_trader holdings --symbol 005930
 ```
 
+CLI `holdings`는 Toss 실계좌다. paper Rule/Hermes 보유·손익은 Telegram 공용
+Hermes MCP로 조회한다. [`docs/paper-mcp.md`](docs/paper-mcp.md).
+
 캔들 수집과 저장 데이터 스캔:
 
 ```bash

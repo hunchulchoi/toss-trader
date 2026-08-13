@@ -233,6 +233,14 @@ paper cycle JSON은 Hermes 호출 전에 규칙 기반으로 검사한다. 아�
 - paper cycle 특이사항도 `send_resolved=false`
 - 일반 장애 alert는 firing/resolved 모두 전송
 
+### 8. Telegram 질의
+
+Alertmanager 보고와 별개로, 운영자는 공용 Hermes Telegram에 paper 진행·보유·
+손익을 물을 수 있다. 공용 Hermes는 `openclaw-net`의 `paper-mcp`만 호출한다.
+분석 sidecar `hermes-analysis`에는 tool이 없다.
+
+상세와 등록 명령은 [`paper-mcp.md`](paper-mcp.md)를 따른다.
+
 ## 모니터링 시나리오
 
 Prometheus가 다음 상태를 감시한다.
@@ -255,6 +263,7 @@ Grafana는 Tailscale 주소로만 접근한다. 현재 기본 port:
 
 Grafana `Toss Trader`: 상태 패널 `toss-prometheus`, 장부 `toss-postgres` (SELECT only).
 한도 거부는 `paper_risk_decisions`만. `Hermes Automation Run Log`에는 advisor 호출만.
+Telegram에서 진행·보유·손익을 묻는 경로는 [`paper-mcp.md`](paper-mcp.md).
 
 ## 장애 처리
 

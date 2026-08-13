@@ -8,6 +8,8 @@
 - PostgreSQL volume, n8n volume, 운영 장부를 초기화하지 않는다.
 - Toss DB는 `common-postgres`의 호스트 포트 `5431`만 사용한다.
 - `5432`의 `dgst_postgres`에는 Toss Trader를 연결하지 않는다.
+- Grafana `toss-postgres` URL은 `100.74.208.69:5431`이다. `postgres:5432`는 `dgst_postgres`다.
+- 공용 Hermes Telegram 질의는 `paper-mcp`만 사용한다. 분석 sidecar에는 MCP를 붙이지 않는다.
 - secret 값은 shell argument, 로그, 문서, Git에 출력하거나 저장하지 않는다.
 
 ## 마감 리뷰 수동 실행
@@ -94,13 +96,20 @@ docker exec toss-trader-automation-1 printenv TRADING_ENABLED
 
 docker exec n8n node -e \
   'fetch("http://toss-trader-automation:8088/healthz").then(async r=>console.log(r.status,await r.text()))'
+
+docker exec toss-trader-paper-mcp-1 \
+  python -c "import json,urllib.request; print(json.load(urllib.request.urlopen('http://127.0.0.1:8090/healthz')))"
 ```
 
 기대값:
 
-- `automation`, `metrics`, `hermes-analysis`, `alertmanager`: healthy
+- `automation`, `metrics`, `hermes-analysis`, `paper-mcp`, `alertmanager`: healthy
 - automation health: HTTP `200`
+- paper-mcp healthz: `{"status": "ok", "tools": 3}`
 - `TRADING_ENABLED`: `false`
+
+Telegram에서 보유·손익을 물으려면 공용 Hermes에 `toss-paper` MCP가 등록돼 있어야
+한다. 절차는 [`paper-mcp.md`](paper-mcp.md).
 
 ## 장애별 판단
 
@@ -135,7 +144,7 @@ Toss PostgreSQL lock을 먼저 확인한다. runtime audit 연결에서 `CREATE 
 확인한다.
 
 ```bash
-docker exec dgst_postgres psql -U postgres -d postgres -P pager=off -c \
+docker exec common-postgres psql -U postgres -d postgres -P pager=off -c \
   "SELECT state,wait_event_type,wait_event,left(query,120) AS query
    FROM pg_stat_activity
    WHERE datname='toss_trader'
