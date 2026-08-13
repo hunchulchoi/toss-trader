@@ -26,6 +26,49 @@ def response(status: int, payload: dict, **headers: str) -> HttpResponse:
 
 
 class TossClientTest(unittest.TestCase):
+    def test_spaces_candle_requests_and_honors_rate_limit_reset(self) -> None:
+        now = [100.0]
+        sleeps: list[float] = []
+
+        def sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+            now[0] += seconds
+
+        transport = FakeTransport(
+            [
+                response(
+                    200,
+                    {"access_token": "token", "token_type": "Bearer", "expires_in": 3600},
+                ),
+                response(
+                    200,
+                    {"result": {"candles": [], "nextBefore": None}},
+                    **{
+                        "X-RateLimit-Limit": "10",
+                        "X-RateLimit-Remaining": "0",
+                        "X-RateLimit-Reset": "1",
+                    },
+                ),
+                response(
+                    200,
+                    {"result": {"candles": [], "nextBefore": None}},
+                ),
+            ]
+        )
+        client = TossClient(
+            client_id="id",
+            client_secret="secret",
+            transport=transport,
+            clock=lambda: now[0],
+            sleeper=sleep,
+            candle_min_interval_seconds=0.25,
+        )
+
+        client.candles("005930", count=1)
+        client.candles("000660", count=1)
+
+        self.assertEqual(sleeps, [1.0])
+
     def test_fetches_stock_names_in_one_batch(self) -> None:
         transport = FakeTransport(
             [

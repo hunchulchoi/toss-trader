@@ -265,6 +265,7 @@ def _client(settings: Settings) -> TossClient:
         client_secret=client_secret,
         account_seq=settings.account_seq,
         base_url=settings.base_url,
+        candle_min_interval_seconds=settings.candle_request_interval_seconds,
     )
 
 

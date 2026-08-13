@@ -71,9 +71,12 @@ class TossClient:
         clock: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
         max_get_retries: int = 2,
+        candle_min_interval_seconds: float = 0.25,
     ) -> None:
         if not client_id or not client_secret:
             raise ValueError("client credentials must not be empty")
+        if candle_min_interval_seconds < 0:
+            raise ValueError("candle request interval must not be negative")
         self._client_id = client_id
         self._client_secret = client_secret
         self._account_seq = account_seq
@@ -83,6 +86,9 @@ class TossClient:
         self._clock = clock
         self._sleeper = sleeper
         self._max_get_retries = max_get_retries
+        self._candle_min_interval_seconds = candle_min_interval_seconds
+        self._candle_interval_seconds = candle_min_interval_seconds
+        self._next_candle_request_at = 0.0
         self._access_token: str | None = None
         self._token_expires_at = 0.0
 
@@ -122,6 +128,7 @@ class TossClient:
         }
         if before:
             query["before"] = before
+        self._wait_for_candle_slot()
         payload = self._request("GET", "/api/v1/candles", query=query)
         return self._require_result(payload, dict)
 
@@ -188,6 +195,8 @@ class TossClient:
             response = self._transport.send(
                 HttpRequest(method=method, url=url, headers=headers), self._timeout
             )
+            if path == "/api/v1/candles":
+                self._update_candle_limit(response)
 
             if 200 <= response.status < 300:
                 return self._decode_json(response)
@@ -201,6 +210,36 @@ class TossClient:
                 attempt += 1
                 continue
             self._raise_api_error(response)
+
+    def _wait_for_candle_slot(self) -> None:
+        now = self._clock()
+        delay = max(0.0, self._next_candle_request_at - now)
+        if delay:
+            self._sleeper(delay)
+        self._next_candle_request_at = max(now, self._next_candle_request_at) + (
+            self._candle_interval_seconds
+        )
+
+    def _update_candle_limit(self, response: HttpResponse) -> None:
+        limit = self._rate_limit_header(response, "X-RateLimit-Limit")
+        if limit is not None and limit > 0:
+            self._candle_interval_seconds = max(
+                self._candle_min_interval_seconds, 1.0 / limit
+            )
+        remaining = self._rate_limit_header(response, "X-RateLimit-Remaining")
+        reset = self._rate_limit_header(response, "X-RateLimit-Reset")
+        if remaining is not None and remaining <= 1 and reset is not None:
+            self._next_candle_request_at = max(
+                self._next_candle_request_at, self._clock() + reset
+            )
+
+    def _rate_limit_header(self, response: HttpResponse, name: str) -> float | None:
+        raw = self._header(response, name)
+        try:
+            value = float(raw) if raw is not None else None
+        except ValueError:
+            return None
+        return value if value is not None and value >= 0 else None
 
     def _get_access_token(self) -> str:
         if self._access_token and self._clock() < self._token_expires_at:

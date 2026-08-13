@@ -31,6 +31,7 @@ class Settings:
     strategy_long_window: int = 60
     paper_order_quantity: Decimal = Decimal(1)
     paper_initial_cash: Decimal = Decimal(1000000)
+    candle_request_interval_seconds: float = 0.25
     metrics_host: str = "0.0.0.0"
     metrics_port: int = 9108
 
@@ -54,6 +55,10 @@ class Settings:
         )
         initial_cash = _positive_decimal(
             "PAPER_INITIAL_CASH", values.get("PAPER_INITIAL_CASH", "1000000")
+        )
+        candle_interval = _non_negative_float(
+            "CANDLE_REQUEST_INTERVAL_SECONDS",
+            values.get("CANDLE_REQUEST_INTERVAL_SECONDS", "0.25"),
         )
         metrics_host = values.get("METRICS_HOST", "0.0.0.0").strip()
         if not metrics_host:
@@ -100,6 +105,7 @@ class Settings:
             strategy_long_window=long_window,
             paper_order_quantity=quantity,
             paper_initial_cash=initial_cash,
+            candle_request_interval_seconds=candle_interval,
             metrics_host=metrics_host,
             metrics_port=metrics_port,
         )
@@ -195,6 +201,16 @@ def _positive_decimal(name: str, raw: str) -> Decimal:
         raise ValueError(f"{name} must be a decimal") from error
     if value <= 0:
         raise ValueError(f"{name} must be positive")
+    return value
+
+
+def _non_negative_float(name: str, raw: str) -> float:
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a number") from error
+    if value < 0:
+        raise ValueError(f"{name} must not be negative")
     return value
 
 
