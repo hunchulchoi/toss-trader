@@ -100,6 +100,22 @@ class RiskManagerTest(unittest.TestCase):
 
         self.assertTrue(decision.approved)
 
+    def test_daily_loss_limit_blocks_buy_but_not_sell(self) -> None:
+        buy = self.manager.evaluate(
+            signal(), RiskContext(now=NOW, daily_return_rate=Decimal("-0.03"))
+        )
+        sell = self.manager.evaluate(
+            signal(side=Side.SELL),
+            RiskContext(
+                now=NOW,
+                position_quantity=Decimal(3),
+                daily_return_rate=Decimal("-0.03"),
+            ),
+        )
+
+        self.assertIn("daily-loss-limit", buy.violations)
+        self.assertTrue(sell.approved)
+
     def test_rejects_all_trades_on_market_holiday(self) -> None:
         decision = self.manager.evaluate(
             signal(side=Side.SELL),
@@ -176,12 +192,16 @@ class RiskManagerTest(unittest.TestCase):
         self.assertTrue(sell.approved)
 
     def test_rejects_new_position_when_portfolio_is_full(self) -> None:
-        decision = self.manager.evaluate(
-            signal(), RiskContext(now=NOW, open_position_count=5)
+        available_slot = self.manager.evaluate(
+            signal(), RiskContext(now=NOW, open_position_count=9)
+        )
+        full = self.manager.evaluate(
+            signal(), RiskContext(now=NOW, open_position_count=10)
         )
 
-        self.assertFalse(decision.approved)
-        self.assertIn("max-open-positions", decision.violations)
+        self.assertTrue(available_slot.approved)
+        self.assertFalse(full.approved)
+        self.assertIn("max-open-positions", full.violations)
 
 
 class N8nRiskManagerTest(unittest.TestCase):
@@ -209,7 +229,7 @@ class N8nRiskManagerTest(unittest.TestCase):
                 "maxOrderNotional": "300000",
                 "maxPositionNotional": "1000000",
                 "maxDailyBuyCount": 5,
-                "maxOpenPositions": 5,
+                "maxOpenPositions": 10,
                 "dailyLossLimit": "-0.03",
                 "maxConsecutiveApiErrors": 5,
                 "blockNewBuysBeforeCloseSeconds": 600,

@@ -117,7 +117,8 @@ trading_day)` 단위로 한 번만 저장한다. 이후 같은 UTC 일자의 모
 
 cycle은 주문 전 손익으로 RiskManager를 평가한다. 체결이 생기면 다시 계산해
 해당 cycle의 수수료·세금과 포지션 변화를 최종 snapshot 및 cycle JSON에 반영한다.
-`daily_return_rate <= -0.03`이면 `daily-loss-limit`으로 해당 신호를 차단한다.
+`daily_return_rate <= -0.03`이면 `daily-loss-limit`으로 신규 `BUY`를 차단한다.
+보유 포지션을 줄이는 `SELL`은 손실 한도 이후에도 허용한다.
 
 여러 통화 포지션이 동시에 열려 있으면 환율 변환 기준이 없으므로 총자산 일일
 수익률을 만들지 않는다. 이 경우 `currency_returns` 중 최저값을

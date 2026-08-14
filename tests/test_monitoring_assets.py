@@ -444,6 +444,10 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertNotIn("dec('300000'", encoded)
         self.assertNotIn("dec('1000000'", encoded)
         self.assertNotIn("dec('-0.03'", encoded)
+        self.assertIn(
+            "side === 'BUY' && cmp(dailyReturnRate, dailyLossLimit) <= 0",
+            encoded,
+        )
         for violation in (
             "duplicate-signal",
             "universe-refresh-failed",

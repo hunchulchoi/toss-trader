@@ -227,7 +227,8 @@ paper 체결 비용은 2026-08 토스증권 Open API 일반 요율을 따른다.
 해당하는 평균원가를 제거하고 수수료·세금을 차감한 실현손익을 기록한다.
 각 cycle은 `paper_portfolio_snapshots`에 총자산·실현손익·미실현손익·누적비용을
 저장한다. `daily-loss-limit`은 UTC 일자별 `paper_portfolio_daily_baselines`의
-시작 총자산 대비 현재 총자산 수익률을 사용한다.
+시작 총자산 대비 현재 총자산 수익률을 사용하며 신규 매수만 차단한다.
+손실 한도 이후에도 보유 포지션 매도는 허용한다.
 계산식과 장부 흐름은 [`docs/pnl-engine.md`](docs/pnl-engine.md)에 정리되어 있다.
 
 Docker + Infisical:

@@ -169,8 +169,8 @@ RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저�
 | paper 가용 현금 | 주문 금액 초과 금지 | `insufficient-paper-cash` |
 | 종목별 보유 금액 | 1,000,000원 | `max-position-notional` |
 | 일일 신규 매수 | 5회 | `max-daily-buys` |
-| 동시 신규 포지션 | 5종목 | `max-open-positions` |
-| 일일 수익률 | -3% 이하 중단 | `daily-loss-limit` |
+| 동시 신규 포지션 | 10종목 | `max-open-positions` |
+| 일일 수익률 | -3% 이하 신규 BUY 중단 | `daily-loss-limit` |
 | 연속 API 오류 | 5회 이상 중단 | `api-error-kill-switch` |
 | universe 갱신 실패 | 신규 BUY 금지, 보유 SELL 허용 | `universe-refresh-failed` |
 | 휴장일 매수·매도 | 금지 | `market-closed` |
