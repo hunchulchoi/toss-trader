@@ -13,6 +13,7 @@ from .risk import RiskContext
 HERMES_TRADE_PROMPT = (
     "너는 paper trading 비교 실험의 보수적 기술적 분석 검토자다. "
     "제공된 JSON만 보고 신호를 승인 또는 거부하라. 도구를 호출하지 마라. "
+    "marketContext가 있으면 호가·현재가·최근 체결·상하한·유의사항·수급을 참고하라. "
     "RiskManager가 최종 결정하며 너는 안전 한도를 완화할 수 없다. "
     'JSON 한 개만 응답하라: {"approved": true 또는 false, '
     '"rationale": "한국어 1~3문장"}. 직접적인 투자 권유와 수익 보장은 금지한다.'
@@ -57,6 +58,8 @@ class HermesTradeAdvisor:
                 "newBuysAllowed": context.new_buys_allowed,
             },
         }
+        if context.market_context is not None:
+            payload["marketContext"] = context.market_context
         try:
             usage = self._analyzer.analyze(payload)
             advice = _parse_advice(usage.content)

@@ -45,7 +45,12 @@ source of truth로 쓴다. 2026-08-14 확인 버전은 `v1.2.14`다.
 | 용도 | 경로 |
 |---|---|
 | 현재가 | `GET /api/v1/prices` |
+| 호가 | `GET /api/v1/orderbook` |
+| 최근 체결 | `GET /api/v1/trades` |
+| 상·하한가 | `GET /api/v1/price-limits` |
 | 종목 상세 (심볼 1~200) | `GET /api/v1/stocks` |
+| 유의사항 | `GET /api/v1/stocks/{symbol}/warnings` |
+| KR 수급 | `GET /api/v1/stocks/{symbol}/investor-trading` 등 |
 | 랭킹 (장중 universe) | `GET /api/v1/rankings` |
 | 캔들 | `GET /api/v1/candles` |
 | 장 일정 | `GET /api/v1/market-calendar/{KR\|US}` |
@@ -54,7 +59,8 @@ source of truth로 쓴다. 2026-08-14 확인 버전은 `v1.2.14`다.
 
 스펙에는 마켓별 전체 종목 `GET /api/v1/stocks/all` (`listStocks`)도 있다.
 장전 발굴은 아직 `DISCOVERY_SYMBOLS` 고정 목록이고, 장중 15종목은 랭킹이다.
-전체 상장 스캔은 쓰지 않는다.
+전체 상장 스캔은 쓰지 않는다. MA 신호가 난 종목만 호가·현재가·체결·상하한·
+유의사항·KR 수급을 한 번 읽어 Hermes와 RiskManager가 참고한다.
 
 ## 안전 기본값
 

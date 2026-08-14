@@ -298,6 +298,76 @@ class TossClientTest(unittest.TestCase):
         self.assertEqual(caught.exception.code, "stock-not-found")
         self.assertEqual(caught.exception.request_id, "request-1")
 
+    def test_fetches_orderbook_trades_and_price_limits(self) -> None:
+        transport = FakeTransport(
+            [
+                response(
+                    200,
+                    {"access_token": "token", "token_type": "Bearer", "expires_in": 3600},
+                ),
+                response(200, {"result": {"asks": [], "bids": []}}),
+                response(200, {"result": [{"price": "72000", "volume": "10"}]}),
+                response(
+                    200,
+                    {
+                        "result": {
+                            "upperLimitPrice": "93000",
+                            "lowerLimitPrice": "50400",
+                        }
+                    },
+                ),
+            ]
+        )
+        client = TossClient(client_id="id", client_secret="secret", transport=transport)
+
+        book = client.orderbook("005930")
+        trades = client.trades("005930", count=10)
+        limits = client.price_limits("005930")
+
+        self.assertEqual(book["asks"], [])
+        self.assertEqual(trades[0]["price"], "72000")
+        self.assertEqual(limits["upperLimitPrice"], "93000")
+        urls = [request.url for request in transport.requests[1:]]
+        self.assertTrue(urls[0].endswith("/api/v1/orderbook?symbol=005930"))
+        self.assertIn("/api/v1/trades?", urls[1])
+        self.assertIn("symbol=005930", urls[1])
+        self.assertIn("count=10", urls[1])
+        self.assertTrue(urls[2].endswith("/api/v1/price-limits?symbol=005930"))
+
+    def test_fetches_stock_warnings_and_kr_trading_trends(self) -> None:
+        transport = FakeTransport(
+            [
+                response(
+                    200,
+                    {"access_token": "token", "token_type": "Bearer", "expires_in": 3600},
+                ),
+                response(200, {"result": [{"warningType": "OVERHEATED"}]}),
+                response(200, {"result": {"records": [{"date": "2026-08-14"}]}}),
+                response(200, {"result": {"records": []}}),
+                response(200, {"result": {"records": []}}),
+                response(200, {"result": {"records": []}}),
+                response(200, {"result": {"records": []}}),
+            ]
+        )
+        client = TossClient(client_id="id", client_secret="secret", transport=transport)
+
+        warnings = client.stock_warnings("005930")
+        investor = client.investor_trading("005930", count=1)
+        client.program_trades("005930", count=1)
+        client.short_selling("005930", count=1)
+        client.credit_trades("005930", count=1)
+        client.securities_lending("005930", count=1)
+
+        self.assertEqual(warnings[0]["warningType"], "OVERHEATED")
+        self.assertEqual(investor["records"][0]["date"], "2026-08-14")
+        paths = [request.url.split("?")[0] for request in transport.requests[1:]]
+        self.assertTrue(paths[0].endswith("/api/v1/stocks/005930/warnings"))
+        self.assertTrue(paths[1].endswith("/api/v1/stocks/005930/investor-trading"))
+        self.assertTrue(paths[2].endswith("/api/v1/stocks/005930/program-trades"))
+        self.assertTrue(paths[3].endswith("/api/v1/stocks/005930/short-selling"))
+        self.assertTrue(paths[4].endswith("/api/v1/stocks/005930/credit-trades"))
+        self.assertTrue(paths[5].endswith("/api/v1/stocks/005930/securities-lending"))
+
     def test_rejects_invalid_or_oversized_symbol_batch_without_network(self) -> None:
         client = TossClient(
             client_id="id",

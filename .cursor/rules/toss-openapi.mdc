@@ -1,6 +1,6 @@
 ---
 description: Toss Open API 변경 시 공식 LLM 문서를 먼저 읽는다
-globs: src/toss_trader/client.py,src/toss_trader/universe.py,src/toss_trader/market_data.py,src/toss_trader/screening.py,src/toss_trader/calendar.py,src/toss_trader/cli.py
+globs: src/toss_trader/client.py,src/toss_trader/universe.py,src/toss_trader/market_data.py,src/toss_trader/market_context.py,src/toss_trader/screening.py,src/toss_trader/calendar.py,src/toss_trader/cli.py,src/toss_trader/advisor.py,src/toss_trader/cycle.py
 alwaysApply: false
 ---
 
@@ -21,9 +21,14 @@ alwaysApply: false
 |---|---|---|
 | `GET /api/v1/stocks/all` | 마켓별 전체 종목. `listStocks`. 일 1회 캐시. `STOCK_ALL` 1 TPS | 미사용. 장전 발굴은 `DISCOVERY_SYMBOLS` |
 | `GET /api/v1/stocks` | 심볼 1~200 상세. `getStocks` | universe 회사명·거래상태 |
-| `GET /api/v1/prices` | 현재가. 심볼 1~200 | CLI `prices` |
+| `GET /api/v1/prices` | 현재가. 심볼 1~200 | CLI `prices`. 신호 시 스냅샷 |
+| `GET /api/v1/orderbook` | 호가 | 신호 시 스냅샷 |
+| `GET /api/v1/trades` | 최근 체결 | 신호 시 스냅샷 |
+| `GET /api/v1/price-limits` | 상·하한가 | 신호 시 스냅샷. BUY 상한가 차단 |
 | `GET /api/v1/rankings` | 거래대금·등락률 | 장중 동적 universe |
 | `GET /api/v1/candles` | 1m/1d OHLCV | paper cycle |
+| `GET /api/v1/stocks/{symbol}/warnings` | 유의사항·VI | 신호 시. 과열·투자경고 등 BUY 차단 |
+| `GET /api/v1/stocks/{symbol}/investor-trading` 등 | KR 수급 5종 | 신호 시 Hermes 참고. 미국 종목은 생략 |
 
 전체 상장 목록이 필요하면 `/stocks`에 심볼을 넣지 말고 `/stocks/all?market=KOSPI|KOSDAQ`을 쓴다. 응답은 `ListedStock`(symbol, name, securityType, isCommonShare, isinCode). 상세는 받은 symbol로 `/stocks`를 배치 호출한다.
 

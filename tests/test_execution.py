@@ -221,6 +221,36 @@ class PaperTradingServiceTest(unittest.TestCase):
         self.assertEqual(calls, ["advisor", "risk"])
         self.assertEqual(len(self.ledger.recent_risk_decisions()), 1)
 
+    def test_passes_market_context_to_advisor(self) -> None:
+        seen: list[object] = []
+
+        class Advisor:
+            def advise(self, signal, context):  # type: ignore[no-untyped-def]
+                seen.append(context.market_context)
+                return TradeAdvice(approved=True, rationale="ok")
+
+        service = PaperTradingService(
+            ledger=self.ledger,
+            risk_manager=RiskManager(RiskLimits()),
+            advisor=Advisor(),
+        )
+        snapshot = {"warnings": [], "price": {"lastPrice": "70000"}}
+
+        service.submit(
+            TradeSignal(
+                signal_id="context-pass",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(70000),
+                quantity=Decimal(1),
+                reason="test",
+            ),
+            now=self.now,
+            market_context=snapshot,
+        )
+
+        self.assertEqual(seen, [snapshot])
+
     def test_rule_path_calls_configured_risk_once_without_preflight(self) -> None:
         risk_calls: list[str] = []
 

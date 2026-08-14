@@ -1259,6 +1259,7 @@ def _evaluate_risk_payload(payload: dict[str, Any]) -> dict[str, object]:
             new_buys_allowed=_required_bool(context_payload, "newBuysAllowed"),
             advisor_status=_optional_text(context_payload.get("advisorStatus")),
             advisor_rationale=_optional_text(context_payload.get("advisorRationale")),
+            market_context=_optional_object(context_payload.get("marketContext")),
         )
         decision = manager.evaluate(signal, context)
     elif kind == "universe":
@@ -1316,6 +1317,14 @@ def _optional_text(value: object) -> str | None:
         return None
     if not isinstance(value, str):
         raise TypeError("RiskManager optional text is invalid")
+    return value
+
+
+def _optional_object(value: object) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("RiskManager marketContext must be an object")
     return value
 
 

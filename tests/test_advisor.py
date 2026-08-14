@@ -36,6 +36,10 @@ class HermesTradeAdvisorTest(unittest.TestCase):
             market_is_business_day=True,
             now=datetime(2026, 8, 13, 2, 0, tzinfo=UTC),
             position_notional=Decimal(0),
+            market_context={
+                "warnings": ["VI_DYNAMIC"],
+                "orderbook": {"bestBid": "72000", "bestAsk": "72100"},
+            },
         )
 
     def tearDown(self) -> None:
@@ -56,6 +60,9 @@ class HermesTradeAdvisorTest(unittest.TestCase):
 
         self.assertFalse(advice.approved)
         self.assertNotIn("apiKey", str(analyzer.payloads[0]))
+        self.assertEqual(
+            analyzer.payloads[0]["marketContext"]["warnings"], ["VI_DYNAMIC"]
+        )
         run = self.ledger.recent_automation_runs(run_type="hermes_trade")[0]
         self.assertEqual(run["totalTokens"], 40)
         self.assertEqual(run["details"]["rationale"], "거래량 확인 필요")

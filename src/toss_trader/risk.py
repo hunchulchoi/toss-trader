@@ -6,7 +6,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from .models import Side, TradeSignal
 
@@ -38,6 +39,7 @@ class RiskContext:
     new_buys_allowed: bool = True
     advisor_status: str | None = None
     advisor_rationale: str | None = None
+    market_context: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +73,8 @@ class RiskManager:
     def evaluate(self, signal: TradeSignal, context: RiskContext) -> RiskDecision:
         violations: list[str] = []
 
+        if signal.side is Side.BUY:
+            violations.extend(_market_context_violations(context.market_context, signal))
         if signal.signal_id in context.seen_signal_ids:
             violations.append("duplicate-signal")
         if signal.side is Side.BUY and not context.new_buys_allowed:
@@ -148,6 +152,54 @@ class RiskManager:
         if context.consecutive_api_errors >= self._limits.max_consecutive_api_errors:
             violations.append("api-error-kill-switch")
         return RiskDecision(approved=not violations, violations=tuple(violations))
+
+
+BUY_BLOCK_WARNINGS = frozenset(
+    {
+        "LIQUIDATION_TRADING",
+        "OVERHEATED",
+        "INVESTMENT_WARNING",
+        "INVESTMENT_RISK",
+        "STOCK_WARRANTS",
+    }
+)
+
+
+def _market_context_violations(
+    market_context: dict[str, Any] | None, signal: TradeSignal
+) -> tuple[str, ...]:
+    if not market_context:
+        return ()
+    violations: list[str] = []
+    warnings = market_context.get("warnings")
+    if isinstance(warnings, list):
+        for warning in warnings:
+            code = str(warning)
+            if code in BUY_BLOCK_WARNINGS:
+                violations.append(f"stock-warning:{code}")
+    last_price = _decimal_or_none(
+        (market_context.get("price") or {}).get("lastPrice")
+        if isinstance(market_context.get("price"), dict)
+        else None
+    ) or signal.reference_price
+    limits = market_context.get("priceLimits")
+    upper = (
+        _decimal_or_none(limits.get("upperLimitPrice"))
+        if isinstance(limits, dict)
+        else None
+    )
+    if upper is not None and last_price >= upper:
+        violations.append("upper-price-limit")
+    return tuple(violations)
+
+
+def _decimal_or_none(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except InvalidOperation:
+        return None
 
 
 class N8nRiskManager:
@@ -284,6 +336,7 @@ def _risk_context_payload(context: RiskContext) -> dict[str, object]:
         "newBuysAllowed": context.new_buys_allowed,
         "advisorStatus": context.advisor_status,
         "advisorRationale": context.advisor_rationale,
+        "marketContext": context.market_context,
     }
 
 

@@ -23,6 +23,7 @@ Alertmanager Telegram은 리포트·장애를 **밀어 넣는** 경로다. 이 M
 실계좌 조회이므로 MCP에 노출하지 않는다.
 
 `toss_paper_status`의 `signals`는 건수다. 종목별 한 줄은 `symbolStates`다.
+신호가 난 종목은 `warnings`·`lastPrice`가 붙을 수 있다.
 `idleReason` 코드:
 
 - `no-crossover`: MA 교차·추세진입 없음
