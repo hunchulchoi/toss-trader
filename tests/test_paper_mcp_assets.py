@@ -7,9 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class PaperMcpAssetsTest(unittest.TestCase):
     def test_compose_exposes_internal_paper_mcp_without_toss_credentials(self) -> None:
         compose = (ROOT / "compose.yaml").read_text()
-        block = compose.split("  paper-mcp:\n", 1)[1].split(
-            "\n  hermes-analysis:\n", 1
-        )[0]
+        block = compose.split("  paper-mcp:\n", 1)[1].split("\n  timeline:\n", 1)[0]
 
         self.assertIn('command: ["serve-paper-mcp"]', block)
         self.assertIn("POSTGRES_PORT: ${POSTGRES_PORT:-5431}", block)
@@ -38,6 +36,9 @@ class PaperMcpAssetsTest(unittest.TestCase):
         self.assertIn("Never use `terminal`", soul)
         self.assertIn("`toss-trader holdings`", soul)
         self.assertIn("refuse briefly", soul)
+        self.assertIn("idleReason", soul)
+        self.assertIn("no-crossover", soul)
+        self.assertIn("already-held", soul)
 
     def test_reader_migration_enforces_select_only_role(self) -> None:
         migration = (ROOT / "db" / "paper_mcp_reader.sql").read_text()
@@ -60,6 +61,13 @@ class PaperMcpAssetsTest(unittest.TestCase):
         self.assertIn("toss_paper_status", paper_mcp)
         self.assertIn("toss_paper_holdings", paper_mcp)
         self.assertIn("toss_paper_pnl", paper_mcp)
+        self.assertIn("idleReason", paper_mcp)
+        self.assertIn("symbolStates", paper_mcp)
+        self.assertIn("changelog.md", workflow)
+        changelog = (ROOT / "docs" / "changelog.md").read_text()
+        self.assertIn("2026-08-14", changelog)
+        self.assertIn("idleReason", changelog)
+        self.assertIn("continuation", changelog)
         self.assertIn("mcp_servers: {}", paper_mcp)
         self.assertIn("hermes-analysis", paper_mcp)
         self.assertNotIn("TOSS_CLIENT", paper_mcp)

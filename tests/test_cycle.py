@@ -1,13 +1,16 @@
+import io
+import json
 import unittest
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from toss_trader.calendar import MarketCalendarService
 from toss_trader.cycle import PaperCycleRunner
 from toss_trader.cycle_state import SqliteCycleStateStore
 from toss_trader.execution import PaperTradingService
 from toss_trader.market_data import MarketCollector, StoredMaStrategy
-from toss_trader.models import Side, TradeSignal
+from toss_trader.models import Candle, Side, TradeSignal
 from toss_trader.paper import PaperLedger
 from toss_trader.portfolio import PortfolioPerformance
 from toss_trader.repository import SqliteMarketRepository
@@ -96,6 +99,27 @@ class WatchlistCandleClient:
         }
 
 
+def _daily_trend(symbol: str, *, rising: bool) -> list[Candle]:
+    start = datetime(2026, 5, 1, tzinfo=UTC)
+    candles: list[Candle] = []
+    for index in range(60):
+        price = Decimal(100 + index) if rising else Decimal(200 - index)
+        candles.append(
+            Candle(
+                symbol=symbol,
+                interval="1d",
+                timestamp=start + timedelta(days=index),
+                open_price=price,
+                high_price=price,
+                low_price=price,
+                close_price=price,
+                volume=Decimal(1000),
+                currency="KRW",
+            )
+        )
+    return candles
+
+
 class PaperCycleRunnerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.market_repository = SqliteMarketRepository(":memory:")
@@ -157,6 +181,126 @@ class PaperCycleRunnerTest(unittest.TestCase):
         assert latest is not None
         self.assertEqual(latest.status, "succeeded")
         self.assertEqual(latest.fill_count, 1)
+
+    def test_records_no_crossover_when_watchlist_has_no_signal(self) -> None:
+        client = WatchlistCandleClient(
+            {"AAPL": [Decimal(10), Decimal(11), Decimal(12), Decimal(13)]}
+        )
+
+        result = self._runner(client).run(
+            symbols=("AAPL",),
+            interval="1d",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.items[0].idle_reason, "no-crossover")
+        self.assertEqual(result.items[0].ma_relation, "above")
+        self.assertEqual(result.items[0].close_price, Decimal(13))
+        self.assertEqual(result.items[0].short_ma, Decimal("12.5"))
+        self.assertEqual(result.items[0].long_ma, Decimal(12))
+        insight = result.insight
+        self.assertEqual(insight["idleReason"], "no-crossover")
+        self.assertEqual(insight["funnel"]["scanned"], 1)
+        self.assertEqual(insight["funnel"]["noCrossover"], 1)
+        self.assertEqual(insight["reasons"], {"no-crossover": 1})
+        self.assertEqual(insight["symbols"][0]["symbol"], "AAPL")
+        self.assertEqual(insight["symbols"][0]["relation"], "above")
+        latest = self.cycle_state.latest_run()
+        assert latest is not None
+        assert latest.cycle_insight is not None
+        self.assertEqual(json.loads(latest.cycle_insight)["idleReason"], "no-crossover")
+
+    def test_1m_continuation_buys_when_daily_trend_is_risk_on(self) -> None:
+        self.market_repository.upsert_candles(_daily_trend("005930", rising=True))
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(11), Decimal(12), Decimal(13)]}
+        )
+
+        result = self._runner(client).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.signal_count, 1)
+        self.assertEqual(result.fill_count, 1)
+        assert result.items[0].signal is not None
+        self.assertEqual(result.items[0].signal.reason, "MA2/MA3 trend continuation")
+        self.assertTrue(result.items[0].signal.signal_id.endswith("cont-2026-08-12"))
+
+    def test_1m_continuation_skips_when_daily_trend_is_not_risk_on(self) -> None:
+        self.market_repository.upsert_candles(_daily_trend("005930", rising=False))
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(11), Decimal(12), Decimal(13)]}
+        )
+
+        result = self._runner(client).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.items[0].idle_reason, "no-crossover")
+
+    def test_1m_continuation_skips_held_symbol(self) -> None:
+        self.market_repository.upsert_candles(_daily_trend("005930", rising=True))
+        self.paper_ledger.execute(
+            TradeSignal(
+                signal_id="held-005930",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(10),
+                quantity=Decimal(1),
+                reason="bootstrap",
+            ),
+            executed_at=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(11), Decimal(12), Decimal(13)]}
+        )
+
+        result = self._runner(client).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(result.items[0].idle_reason, "already-held")
+
+    def test_records_sell_without_position_instead_of_silent_drop(self) -> None:
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(12), Decimal(13), Decimal(10)]}
+        )
+
+        result = self._runner(client).run(
+            symbols=("005930",),
+            interval="1d",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.items[0].idle_reason, "sell-no-position")
+        self.assertEqual(result.insight["idleReason"], "sell-no-position")
+        self.assertEqual(result.insight["funnel"]["sellNoPosition"], 1)
 
     def test_reuses_one_market_snapshot_across_portfolios(self) -> None:
         client = WatchlistCandleClient(
@@ -318,10 +462,13 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(result.skipped_count, 1)
         self.assertEqual(result.consecutive_api_errors, 0)
         self.assertEqual(result.items[0].skip_reason, "need 4 candles, found 1")
+        self.assertEqual(result.items[0].idle_reason, "insufficient-candles")
         self.assertIsNone(result.items[0].error)
         latest = self.cycle_state.latest_run()
         assert latest is not None
         self.assertEqual(latest.status, "succeeded")
+        assert latest.cycle_insight is not None
+        self.assertEqual(json.loads(latest.cycle_insight)["idleReason"], "insufficient-candles")
 
     def test_daily_loss_is_calculated_and_passed_to_risk_manager(self) -> None:
         self.paper_ledger.execute(
@@ -380,6 +527,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(result.fill_count, 0)
         assert result.items[0].decision is not None
         self.assertIn("market-closed", result.items[0].decision.violations)
+        self.assertEqual(result.items[0].idle_reason, "risk-block")
 
     def test_partial_api_failure_feeds_persisted_streak_to_other_signal(self) -> None:
         run_id = self.cycle_state.start_run(
@@ -415,6 +563,31 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(result.fill_count, 0)
         assert result.items[1].decision is not None
         self.assertIn("api-error-kill-switch", result.items[1].decision.violations)
+
+    def test_shared_snapshot_json_keeps_ma_states(self) -> None:
+        from toss_trader.cli import _cycle_snapshot_to_dict, _read_cycle_snapshot
+
+        client = WatchlistCandleClient(
+            {"AAPL": [Decimal(10), Decimal(11), Decimal(12), Decimal(13)]}
+        )
+        snapshot = self._runner(client).prepare(
+            symbols=("AAPL",),
+            interval="1d",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+        payload = _cycle_snapshot_to_dict(snapshot)
+        payload["evaluatedAt"] = snapshot.evaluated_at.isoformat()
+        stdin = json.dumps(payload)
+
+        with patch("toss_trader.cli.sys.stdin", io.StringIO(stdin)):
+            restored = _read_cycle_snapshot()
+
+        self.assertEqual(restored.ma_states[0].relation, "above")
+        self.assertEqual(restored.ma_states[0].close, Decimal(13))
+        self.assertIsNone(restored.signals[0])
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@
 정리되어 있습니다.
 Hermes Telegram의 paper 장부 조회는
 [`docs/paper-mcp.md`](docs/paper-mcp.md)를 참고합니다.
+날짜별 기능 추가는 [`docs/changelog.md`](docs/changelog.md).
 
 - OAuth 2.0 Client Credentials 토큰 캐시
 - 현재가, 1분/일 캔들, 계좌 목록, 보유 종목 조회
@@ -186,8 +187,9 @@ DYNAMIC_UNIVERSE_SIZE=15
 종목은 고정 watchlist가 아니라 30분마다 Toss 시장 거래대금 상위 30개와
 1일 상승률 상위 30개를 합산 점수화해 RiskManager가 승인한 상위 15개를 쓴다.
 universe 갱신 시 이미 `MA20 > MA60`인 종목은 최초 trend entry를 허용한다.
-이후에는 새 MA20/MA60 교차만 매매하며, 하루 최대 매수와 동시 보유는 각각
-5종목으로 제한한다.
+장중 1분봉은 신규 교차 외에, 일봉이 `close > MA20 > MA60`이고 모멘텀이
+양수이며 1분 `close > MA20 > MA60`인 미보유 종목에 하루 1회 trend
+continuation 매수를 허용한다. 하루 최대 매수와 동시 보유는 각각 5종목이다.
 보유 종목은 순위에서 빠져도 계속 추적한다. 랭킹 장애 시 보유 종목만 추적하고
 신규 BUY는 `universe-refresh-failed`로 거부한다. `/candles`는 기본 0.25초 간격과
 Toss rate-limit 응답 헤더에 따라 더 느리게 호출한다.
@@ -307,5 +309,6 @@ infisical run --env=prod --path=/ -- docker compose config -q
 
 전체 실행 흐름, ERD, 파일별 책임은
 [`docs/system-workflow.md`](docs/system-workflow.md)에 정리되어 있다.
+날짜별 기능 추가는 [`docs/changelog.md`](docs/changelog.md).
 수동 마감 리뷰, 배포 검증, 장애 대응은
 [`docs/operations-runbook.md`](docs/operations-runbook.md)를 따른다.

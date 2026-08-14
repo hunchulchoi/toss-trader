@@ -36,8 +36,8 @@ class PaperMcpService:
             {
                 "name": "toss_paper_status",
                 "description": (
-                    "Rule/Hermes paper 자동매매의 마지막 cycle, Hermes 호출, "
-                    "최근 실패를 읽는다."
+                    "Rule/Hermes paper 자동매매의 마지막 cycle, idleReason, "
+                    "종목별 MA 상태, 현금, Hermes 호출, 최근 실패를 읽는다."
                 ),
                 "inputSchema": empty_schema,
             },
@@ -112,7 +112,7 @@ class PostgresPaperReadStore:
                     SELECT portfolio_id, run_id, started_at, finished_at, status,
                            interval, symbol_count, signal_count, fill_count,
                            failed_count, consecutive_api_errors, daily_return_rate,
-                           error_message
+                           error_message, cycle_insight
                     FROM (
                         SELECT *, ROW_NUMBER() OVER (
                             PARTITION BY portfolio_id
@@ -164,6 +164,11 @@ class PostgresPaperReadStore:
         cycles = {str(row[0]): _cycle_status(row) for row in cycle_rows}
         for portfolio_id in PORTFOLIOS:
             cycles.setdefault(portfolio_id, None)
+        ledgers = self._portfolio_states()
+        for portfolio_id, cycle in cycles.items():
+            if cycle is None:
+                continue
+            cycle.update(_ledger_status(ledgers[portfolio_id]))
         failures = [
             {
                 "source": "cycle",
@@ -430,7 +435,7 @@ def serve_paper_mcp(
 
 
 def _cycle_status(row: Sequence[Any]) -> dict[str, Any]:
-    return {
+    payload = {
         "runId": str(row[1]),
         "startedAt": _iso(row[2]),
         "finishedAt": _iso(row[3]),
@@ -443,6 +448,53 @@ def _cycle_status(row: Sequence[Any]) -> dict[str, Any]:
         "consecutiveApiErrors": int(row[10]),
         "dailyReturnRate": str(row[11]),
         "error": row[12],
+        "idleReason": None,
+        "newBuysAllowed": None,
+        "funnel": None,
+        "reasons": None,
+        "symbolStates": [],
+    }
+    insight = _parse_cycle_insight(row[13] if len(row) > 13 else None)
+    if insight is None:
+        return payload
+    payload["idleReason"] = insight.get("idleReason")
+    payload["newBuysAllowed"] = insight.get("newBuysAllowed")
+    payload["funnel"] = insight.get("funnel")
+    payload["reasons"] = insight.get("reasons")
+    payload["symbolStates"] = insight.get("symbols") or []
+    return payload
+
+
+def _parse_cycle_insight(raw: Any) -> dict[str, Any] | None:
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _ledger_status(state: Mapping[str, Any]) -> dict[str, Any]:
+    pnl = _pnl(state)
+    open_position_count = sum(
+        1
+        for accounting in state["accountings"].values()
+        if accounting.quantity > 0
+    )
+    cash = Decimal(pnl["cash"])
+    equity = pnl["equity"]
+    cash_weight = (
+        str(cash / Decimal(equity)) if equity not in (None, "") else None
+    )
+    return {
+        "cash": pnl["cash"],
+        "cashWeight": cash_weight,
+        "openPositionCount": open_position_count,
     }
 
 

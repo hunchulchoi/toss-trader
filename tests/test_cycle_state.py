@@ -36,6 +36,7 @@ class SqliteCycleStateStoreTest(unittest.TestCase):
         self.assertEqual(latest.status, "partial_failure")
         self.assertEqual(latest.consecutive_api_errors, 3)
         self.assertEqual(latest.daily_return_rate, Decimal("-0.012"))
+        self.assertIsNone(latest.cycle_insight)
         self.assertEqual(self.store.latest_consecutive_api_errors(), 3)
 
     def test_running_row_does_not_replace_last_completed_streak(self) -> None:
@@ -122,8 +123,10 @@ class PostgresCycleStateStoreTest(unittest.TestCase):
 
         statements = connection.cursor_instance.executed
         self.assertIn("TIMESTAMPTZ", statements[0][0])
-        self.assertIn("VALUES (%s, %s", statements[3][0])
-        self.assertIn("WHERE run_id = %s", statements[4][0])
+        self.assertIn("cycle_insight TEXT", statements[2][0])
+        self.assertIn("VALUES (%s, %s", statements[4][0])
+        self.assertIn("cycle_insight = %s", statements[5][0])
+        self.assertIn("WHERE run_id = %s", statements[5][0])
         self.assertEqual(connection.commits, 3)
         self.assertTrue(connection.closed)
 

@@ -8,7 +8,7 @@ import sys
 from collections.abc import Sequence
 from contextlib import ExitStack
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any
@@ -40,7 +40,7 @@ from .portfolio_backtest import PortfolioBacktestResult, run_ma_portfolio_backte
 from .repository import open_market_repository
 from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
 from .screening import MarketScanner, market_scan_to_dict
-from .strategy import ma_crossover_signal
+from .strategy import MaCrossoverEvaluation, ma_crossover_signal
 from .timeline_web import serve_timeline
 from .universe import DynamicUniverseSelector, open_universe_store
 from .walk_forward import WalkForwardResult, run_ma_walk_forward
@@ -594,9 +594,7 @@ def _emit_portfolio_backtest_csv(result: PortfolioBacktestResult) -> int:
                 "portfolio_realized_pnl": result.realized_pnl,
                 "portfolio_unrealized_pnl": result.unrealized_pnl,
                 "portfolio_total_costs": result.total_costs,
-                "portfolio_insufficient_cash_buys": (
-                    result.insufficient_cash_buys
-                ),
+                "portfolio_insufficient_cash_buys": (result.insufficient_cash_buys),
                 "symbol_candle_count": position.candle_count,
                 "symbol_quantity": position.quantity,
                 "symbol_cost_basis": position.cost_basis,
@@ -609,9 +607,7 @@ def _emit_portfolio_backtest_csv(result: PortfolioBacktestResult) -> int:
                 "symbol_trade_count": position.trade_count,
                 "symbol_completed_trades": position.completed_trades,
                 "symbol_winning_trades": position.winning_trades,
-                "symbol_insufficient_cash_buys": (
-                    position.insufficient_cash_buys
-                ),
+                "symbol_insufficient_cash_buys": (position.insufficient_cash_buys),
             }
         )
     return 0
@@ -719,9 +715,7 @@ def _emit_walk_forward_csv(result: WalkForwardResult) -> int:
                 "validation_max_drawdown_rate": (
                     candidate.validation.max_drawdown_rate
                 ),
-                "validation_completed_trades": (
-                    candidate.validation.completed_trades
-                ),
+                "validation_completed_trades": (candidate.validation.completed_trades),
                 "validation_win_rate": candidate.validation.win_rate,
                 "validation_total_costs": candidate.validation.total_costs,
             }
@@ -907,6 +901,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 "fills": result.fill_count,
                 "skipped": result.skipped_count,
                 "failed": result.failed_count,
+                "idleReason": result.insight["idleReason"],
             },
             "items": [asdict(item) for item in result.items],
         }
@@ -953,6 +948,19 @@ def _cycle_snapshot_to_dict(snapshot: PaperCycleSnapshot) -> dict[str, Any]:
         "errors": list(snapshot.errors),
         "apiFailed": snapshot.api_failed,
         "newBuysAllowed": snapshot.new_buys_allowed,
+        "maStates": [
+            (
+                {
+                    "close": str(item.close),
+                    "maShort": str(item.short_ma),
+                    "maLong": str(item.long_ma),
+                    "relation": item.relation,
+                }
+                if item is not None
+                else None
+            )
+            for item in snapshot.ma_states
+        ],
     }
 
 
@@ -1034,6 +1042,26 @@ def _read_cycle_snapshot() -> PaperCycleSnapshot:
     new_buys_allowed = payload.get("newBuysAllowed")
     if not isinstance(new_buys_allowed, bool):
         raise TypeError("shared snapshot newBuysAllowed must be boolean")
+    raw_ma_states = payload.get("maStates")
+    if raw_ma_states is None:
+        parsed_ma_states: tuple[MaCrossoverEvaluation | None, ...] = ()
+    elif not isinstance(raw_ma_states, list) or len(raw_ma_states) != len(symbols):
+        raise ValueError("shared snapshot maStates do not match symbols")
+    else:
+        parsed_ma_states = tuple(
+            (
+                MaCrossoverEvaluation(
+                    signal=parsed_signals[index],
+                    close=Decimal(str(item["close"])),
+                    short_ma=Decimal(str(item["maShort"])),
+                    long_ma=Decimal(str(item["maLong"])),
+                    relation=str(item["relation"]),
+                )
+                if isinstance(item, dict)
+                else None
+            )
+            for index, item in enumerate(raw_ma_states)
+        )
     return PaperCycleSnapshot(
         evaluated_at=evaluated_at,
         symbols=tuple(symbol.upper() for symbol in symbols),
@@ -1044,6 +1072,7 @@ def _read_cycle_snapshot() -> PaperCycleSnapshot:
         errors=parsed_errors,
         api_failed=api_failed,
         new_buys_allowed=new_buys_allowed,
+        ma_states=parsed_ma_states,
     )
 
 
@@ -1157,6 +1186,8 @@ def _json_default(value: Any) -> Any:
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, Enum):
         return value.value

@@ -26,6 +26,7 @@ class PaperCycleRun:
     consecutive_api_errors: int
     daily_return_rate: Decimal
     error_message: str | None
+    cycle_insight: str | None = None
 
 
 class CycleStateStore(Protocol):
@@ -47,6 +48,7 @@ class CycleStateStore(Protocol):
         consecutive_api_errors: int,
         daily_return_rate: Decimal,
         error_message: str | None,
+        cycle_insight: str | None = None,
     ) -> None: ...
 
     def latest_consecutive_api_errors(self) -> int: ...
@@ -71,7 +73,8 @@ CREATE TABLE IF NOT EXISTS paper_cycle_runs (
     consecutive_api_errors INTEGER NOT NULL DEFAULT 0
         CHECK (consecutive_api_errors >= 0),
     daily_return_rate TEXT NOT NULL DEFAULT '0',
-    error_message TEXT
+    error_message TEXT,
+    cycle_insight TEXT
 )
 """
 
@@ -92,7 +95,8 @@ CREATE TABLE IF NOT EXISTS paper_cycle_runs (
     consecutive_api_errors INTEGER NOT NULL DEFAULT 0
         CHECK (consecutive_api_errors >= 0),
     daily_return_rate NUMERIC NOT NULL DEFAULT 0,
-    error_message TEXT
+    error_message TEXT,
+    cycle_insight TEXT
 )
 """
 
@@ -116,6 +120,10 @@ class SqliteCycleStateStore:
         if "portfolio_id" not in columns:
             self._connection.execute(
                 "ALTER TABLE paper_cycle_runs ADD COLUMN portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
+            )
+        if "cycle_insight" not in columns:
+            self._connection.execute(
+                "ALTER TABLE paper_cycle_runs ADD COLUMN cycle_insight TEXT"
             )
         self._connection.commit()
 
@@ -150,6 +158,7 @@ class SqliteCycleStateStore:
         consecutive_api_errors: int,
         daily_return_rate: Decimal,
         error_message: str | None,
+        cycle_insight: str | None = None,
     ) -> None:
         _validate_finish(
             finished_at,
@@ -165,7 +174,7 @@ class SqliteCycleStateStore:
                 UPDATE paper_cycle_runs SET
                     finished_at = ?, status = ?, signal_count = ?, fill_count = ?,
                     failed_count = ?, consecutive_api_errors = ?,
-                    daily_return_rate = ?, error_message = ?
+                    daily_return_rate = ?, error_message = ?, cycle_insight = ?
                 WHERE run_id = ?
                 """,
                 (
@@ -177,6 +186,7 @@ class SqliteCycleStateStore:
                     consecutive_api_errors,
                     str(daily_return_rate),
                     error_message,
+                    cycle_insight,
                     run_id,
                 ),
             )
@@ -201,7 +211,8 @@ class SqliteCycleStateStore:
             """
             SELECT run_id, started_at, finished_at, status, interval,
                    symbol_count, signal_count, fill_count, failed_count,
-                   consecutive_api_errors, daily_return_rate, error_message
+                   consecutive_api_errors, daily_return_rate, error_message,
+                   cycle_insight
             FROM paper_cycle_runs
             WHERE portfolio_id = ?
             ORDER BY started_at DESC, run_id DESC
@@ -247,6 +258,9 @@ class PostgresCycleStateStore:
             cursor.execute(
                 "ALTER TABLE paper_cycle_runs ADD COLUMN IF NOT EXISTS portfolio_id TEXT NOT NULL DEFAULT 'legacy'"
             )
+            cursor.execute(
+                "ALTER TABLE paper_cycle_runs ADD COLUMN IF NOT EXISTS cycle_insight TEXT"
+            )
             cursor.execute(POSTGRES_INDEX)
         self._connection.commit()
 
@@ -282,6 +296,7 @@ class PostgresCycleStateStore:
         consecutive_api_errors: int,
         daily_return_rate: Decimal,
         error_message: str | None,
+        cycle_insight: str | None = None,
     ) -> None:
         _validate_finish(
             finished_at,
@@ -298,7 +313,7 @@ class PostgresCycleStateStore:
                     finished_at = %s, status = %s, signal_count = %s,
                     fill_count = %s, failed_count = %s,
                     consecutive_api_errors = %s, daily_return_rate = %s,
-                    error_message = %s
+                    error_message = %s, cycle_insight = %s
                 WHERE run_id = %s
                 """,
                 (
@@ -310,6 +325,7 @@ class PostgresCycleStateStore:
                     consecutive_api_errors,
                     daily_return_rate,
                     error_message,
+                    cycle_insight,
                     run_id,
                 ),
             )
@@ -336,7 +352,8 @@ class PostgresCycleStateStore:
                 """
                 SELECT run_id, started_at, finished_at, status, interval,
                        symbol_count, signal_count, fill_count, failed_count,
-                       consecutive_api_errors, daily_return_rate, error_message
+                       consecutive_api_errors, daily_return_rate, error_message,
+                       cycle_insight
                 FROM paper_cycle_runs
                 WHERE portfolio_id = %s
                 ORDER BY started_at DESC, run_id DESC
@@ -409,6 +426,7 @@ def _run_from_row(row: Sequence[Any]) -> PaperCycleRun:
         consecutive_api_errors=int(row[9]),
         daily_return_rate=Decimal(row[10]),
         error_message=str(row[11]) if row[11] is not None else None,
+        cycle_insight=str(row[12]) if len(row) > 12 and row[12] is not None else None,
     )
 
 

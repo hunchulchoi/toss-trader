@@ -8,7 +8,7 @@ from typing import Any, Protocol
 
 from .models import Candle, TradeSignal
 from .repository import MarketRepository
-from .strategy import ma_crossover_signal
+from .strategy import MaCrossoverEvaluation, evaluate_ma_crossover
 
 
 class InsufficientCandleHistory(ValueError):
@@ -116,6 +116,27 @@ class StoredMaStrategy:
         allow_trend_entry: bool = False,
         entry_key: str | None = None,
     ) -> TradeSignal | None:
+        return self.evaluate_state(
+            symbol=symbol,
+            interval=interval,
+            quantity=quantity,
+            short_window=short_window,
+            long_window=long_window,
+            allow_trend_entry=allow_trend_entry,
+            entry_key=entry_key,
+        ).signal
+
+    def evaluate_state(
+        self,
+        *,
+        symbol: str,
+        interval: str,
+        quantity: Decimal,
+        short_window: int = 20,
+        long_window: int = 60,
+        allow_trend_entry: bool = False,
+        entry_key: str | None = None,
+    ) -> MaCrossoverEvaluation:
         candles = self._repository.latest_candles(
             symbol, interval, limit=long_window + 1
         )
@@ -123,7 +144,7 @@ class StoredMaStrategy:
             raise InsufficientCandleHistory(
                 f"need {long_window + 1} candles, found {len(candles)}"
             )
-        return ma_crossover_signal(
+        return evaluate_ma_crossover(
             symbol=symbol,
             closes=[candle.close_price for candle in candles],
             as_of=candles[-1].timestamp,
@@ -133,6 +154,9 @@ class StoredMaStrategy:
             allow_trend_entry=allow_trend_entry,
             entry_key=entry_key,
         )
+
+    def latest_daily_candles(self, symbol: str) -> list[Candle]:
+        return self._repository.latest_candles(symbol, "1d", limit=60)
 
 
 def _parse_candle(*, symbol: str, interval: str, payload: object) -> Candle:

@@ -15,12 +15,29 @@ Alertmanager Telegram은 리포트·장애를 **밀어 넣는** 경로다. 이 M
 
 | tool | 질문에 답 | 읽기 원천 |
 |---|---|---|
-| `toss_paper_status` | 자동매매가 지금 어떻게 되나 | 포트폴리오별 마지막 `paper_cycle_runs`, 최근 Hermes 호출(`hermes_trade` 또는 stage `hermes-analysis`), 최근 실패 최대 10건 |
+| `toss_paper_status` | 자동매매가 지금 어떻게 되나 | 포트폴리오별 마지막 `paper_cycle_runs`, 최근 Hermes 호출(`hermes_trade` 또는 stage `hermes-analysis`), 최근 실패 최대 10건. 마지막 cycle의 `idleReason`·퍼널·종목별 MA 상태(`symbolStates`), 조회 시점 현금·현금비중·오픈 포지션 수 |
 | `toss_paper_holdings` | 지금 보유 종목이 뭐냐 | `paper_fills` 이동평균 재생 + 최신 캔들 평가. 수량 0은 제외 |
 | `toss_paper_pnl` | 수익이 얼마냐 | 같은 재생. 현금, 평가금액, 총자산, 실현·미실현, 누적 수수료·세금, 시작현금 대비 손익 |
 
 임의 SQL, 주문, 설정 변경, cycle 실행, Toss API 호출은 없다. CLI `holdings`는
 실계좌 조회이므로 MCP에 노출하지 않는다.
+
+`toss_paper_status`의 `signals`는 건수다. 종목별 한 줄은 `symbolStates`다.
+`idleReason` 코드:
+
+- `no-crossover`: MA 교차·추세진입 없음
+- `sell-no-position`: 매도 신호인데 보유 없음
+- `already-held`: 상승 추세 continuation인데 이미 보유
+- `insufficient-candles`: 캔들 부족으로 평가 생략
+- `risk-block`: 신호는 났으나 RiskManager가 거부
+- `advisor-reject`: Hermes advisor가 거부
+- `error`: 종목 처리 실패
+- `ok`: 이번 cycle에 idle 사유 없음
+
+옛 `paper_cycle_runs` 행은 `cycle_insight`가 비어 `idleReason`이 null이다.
+다음 cycle부터 채워진다. 칼럼은 paper cycle 프로세스가 기동될 때
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS cycle_insight`로 생긴다.
+추가 시점은 [`changelog.md`](changelog.md) 2026-08-14.
 
 손익 계산은 [`pnl-engine.md`](pnl-engine.md)와 같다. MCP는
 `paper_portfolio_snapshots`를 읽지 않고 조회 시점에 fills를 재생한다. Grafana

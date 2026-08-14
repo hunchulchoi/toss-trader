@@ -103,7 +103,10 @@ discovery universe 안에서 발굴한다.
 - 평일 `09:00~15:20 KST`, 5분 간격 실행
 - n8n이 `paper-rule-1m`, `paper-hermes-1m` task를 순차 호출
 - task endpoint는 host port 없이 `openclaw-net` 내부에서만 접근
-- 종목별 최근 1분봉 61개로 MA20/MA60 교차 계산
+- 종목별 최근 1분봉 61개로 MA20/MA60 계산
+- 골든크로스 `BUY`, 데드크로스 `SELL`
+- 교차가 없어도 일봉 `RISK_ON`(종가 > MA20 > MA60, 20일 모멘텀 > 0)이고
+  1분 `close > MA20 > MA60`이며 미보유면 하루 1회 trend continuation `BUY`
 - Rule은 Hermes 없음. Hermes는 신호+한도 통과 때만. 한도 거부는 판단 행만
 - 정상 무신호는 Telegram을 보내지 않음
 - 체결, 의미 있는 RiskManager 거부, 종목/API 오류만 즉시 보고
@@ -140,7 +143,9 @@ Rule: preflight 없이 n8n 1회. payload는 신호+RiskContext. 뉴스·호가 �
 1. Toss OAuth 토큰 획득 또는 캐시 토큰 재사용
 2. `long_window + 1`개 캔들 수집. 장중은 1분봉 61개, 마감은 기본 일봉 61개
 3. 저장된 종가로 이전·현재 MA20/MA60 계산
-4. 골든크로스면 `BUY`, 데드크로스면 `SELL`, 교차 없으면 신호 없음
+4. 골든크로스면 `BUY`, 데드크로스면 `SELL`. 장중 1분봉은 교차가 없어도
+   일봉 상승 추세 + 1분 단기>장기 + 종가>단기MA + 미보유면 하루 1회
+   continuation `BUY`. 그 외는 신호 없음
 5. 신호가 있으면 국가별 정규장 일정과 시장 휴장 여부 조회
 6. Hermes면 hard preflight → 통과 시 advisor → n8n Risk. Rule은 n8n 1회
 7. 승인 시 paper 체결 기록
@@ -237,7 +242,8 @@ paper cycle JSON은 Hermes 호출 전에 규칙 기반으로 검사한다. 아�
 
 Alertmanager 보고와 별개로, 운영자는 공용 Hermes Telegram에 paper 진행·보유·
 손익을 물을 수 있다. 공용 Hermes는 `openclaw-net`의 `paper-mcp`만 호출한다.
-분석 sidecar `hermes-analysis`에는 tool이 없다.
+`toss_paper_status`는 신호 수뿐 아니라 `idleReason`·종목별 MA 상태·현금을
+같이 준다. 2026-08-14 추가. 분석 sidecar `hermes-analysis`에는 tool이 없다.
 
 상세와 등록 명령은 [`paper-mcp.md`](paper-mcp.md)를 따른다.
 
@@ -328,7 +334,8 @@ API 오류 streak를 검사한 뒤 승인 상위 15개와 기존 보유 종목�
 판단은 `dynamic_universe_runs`, `dynamic_universe_decisions`에 저장한다.
 universe가 갱신된 시점에는 선정 종목 중 `MA20 > MA60`인 기존 상승 추세도
 최초 BUY 신호를 만들 수 있다. 같은 universe run의 신호 ID는 고정해 중복 체결을
-막는다. 이후에는 새 골든크로스/데드크로스만 신호로 사용한다. RiskManager는
+막는다. 장중 1분봉은 그 밖에도 일봉 `RISK_ON`이고 1분 상승 정렬인 미보유
+종목에 하루 1회 continuation 매수를 허용한다. RiskManager는
 하루 BUY 5건과 동시 보유 5종목을 상한으로 적용하고 모든 승인을 장부에 남긴다.
 
 선정 종목의 `/candles`는 종목별 순차 조회한다. 호출 사이에는 기본 0.25초를

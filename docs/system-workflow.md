@@ -629,6 +629,7 @@ toss-trader/
 │   ├── audit-ledgers.md       # 감사 장부와 조회 원칙
 │   ├── automatic-trading-scenario.md
 │   ├── backtesting.md         # MA 백테스트 체결 가정
+│   ├── changelog.md           # 날짜별 기능 추가
 │   ├── operations-runbook.md  # 수동 실행·장애 대응·운영 검증
 │   ├── paper-mcp.md           # 공용 Hermes Telegram paper 조회 MCP
 │   ├── pnl-engine.md          # 이동평균 원가·손익
@@ -658,7 +659,7 @@ toss-trader/
 │   ├── repository.py          # candle·회사명 repository
 │   ├── risk.py                # RiskManager 정책
 │   ├── screening.py           # 장전 시장분석·후보 발굴
-│   ├── strategy.py            # MA 교차·trend entry 신호
+│   ├── strategy.py            # MA 교차·trend entry·continuation 신호
 │   └── universe.py            # 동적 universe 선정·감사
 ├── tests/                     # 모듈별 unittest
 ├── compose.yaml               # paper-only 운영 서비스

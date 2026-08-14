@@ -182,6 +182,7 @@ cycle 종료 코드: 3
 
 과거 검증 수치·execution ID는 절차서가 아니라
 [`validation-history.md`](validation-history.md)에 보관한다.
+날짜별 기능 추가는 [`changelog.md`](changelog.md).
 
 ## 배포 전후 검증
 

@@ -1,0 +1,33 @@
+---
+description: 작업 후 문서 현행화, changelog 기록, 커밋까지 한다
+alwaysApply: true
+---
+
+# 작업 마무리
+
+기능·동작·운영 경로를 바꾸면 코드만 남기지 않는다. 같은 턴에서 문서 맞추고, changelog 적고, 커밋한다. 사용자가 커밋하지 말라고 한 턴만 커밋을 건너뛴다.
+
+## 순서
+
+1. 구현과 테스트
+2. 관련 문서 현행화. 코드와 다른 문장은 고친다
+   - 전략·사이클: `docs/automatic-trading-scenario.md`, `README.md`
+   - Hermes 조회: `docs/paper-mcp.md`, `automation/hermes-telegram/SOUL.md`
+   - 배포·장애: `docs/operations-runbook.md`
+   - 구성·파일 트리: `docs/system-workflow.md`
+3. `docs/changelog.md` 맨 위에 오늘 날짜(`YYYY-MM-DD`)로 무엇을 왜 넣었는지 적는다. 운영 반영 여부는 따로 한 줄
+4. 커밋. 메시지 첫 줄은 왜인지. changelog·문서·코드를 한 커밋에 넣는다. force push, `--no-verify`, amend는 하지 않는다
+
+## changelog 형식
+
+```markdown
+## YYYY-MM-DD
+
+### 짧은 제목
+
+한두 문장으로 구멍과 대응.
+- 동작 변화
+- 운영: 반영함 / 코드만, 배포 대기
+```
+
+날짜별 기능 추가의 원천은 `docs/changelog.md`다. 다른 문서에는 중복 연대기를 늘리지 말고 링크한다.

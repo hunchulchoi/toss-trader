@@ -1,9 +1,15 @@
+import json
 import unittest
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
+from toss_trader.paper import PositionAccounting
 from toss_trader.paper_mcp import (
     PaperMcpService,
     PostgresPaperReadStore,
+    _cycle_status,
+    _ledger_status,
     handle_mcp_request,
 )
 
@@ -115,6 +121,93 @@ class PaperMcpServiceTest(unittest.TestCase):
         self.assertIs(store._open(), sentinel)
         self.assertIn("default_transaction_read_only=on", captured["options"])
         self.assertEqual(captured["application_name"], "toss-paper-mcp")
+
+
+class CycleStatusPayloadTest(unittest.TestCase):
+    def test_cycle_status_exposes_idle_funnel_and_symbol_ma(self) -> None:
+        insight = {
+            "idleReason": "no-crossover",
+            "newBuysAllowed": True,
+            "funnel": {
+                "scanned": 17,
+                "evaluated": 17,
+                "skippedCandles": 0,
+                "noCrossover": 17,
+                "sellNoPosition": 0,
+                "signals": 0,
+                "riskRejected": 0,
+                "advisorRejected": 0,
+                "fills": 0,
+                "failed": 0,
+            },
+            "reasons": {"no-crossover": 17},
+            "symbols": [
+                {
+                    "symbol": "005930",
+                    "reason": "no-crossover",
+                    "close": "70000",
+                    "maShort": "70100",
+                    "maLong": "70500",
+                    "relation": "below",
+                }
+            ],
+        }
+        started = datetime(2026, 8, 14, 0, 10, tzinfo=UTC)
+        payload = _cycle_status(
+            (
+                "hermes",
+                "run-1",
+                started,
+                started,
+                "succeeded",
+                "1m",
+                17,
+                0,
+                0,
+                0,
+                0,
+                "0",
+                None,
+                json.dumps(insight),
+            )
+        )
+
+        self.assertEqual(payload["idleReason"], "no-crossover")
+        self.assertTrue(payload["newBuysAllowed"])
+        self.assertEqual(payload["funnel"]["noCrossover"], 17)
+        self.assertEqual(payload["reasons"], {"no-crossover": 17})
+        self.assertEqual(payload["symbolStates"][0]["relation"], "below")
+        self.assertEqual(payload["signals"], 0)
+
+    def test_ledger_status_adds_cash_weight_and_open_count(self) -> None:
+        payload = _ledger_status(
+            {
+                "initialCash": Decimal(1000000),
+                "cash": Decimal(623136),
+                "accountings": {
+                    "005930": PositionAccounting(
+                        symbol="005930",
+                        quantity=Decimal(1),
+                        cost_basis=Decimal(70000),
+                        realized_pnl=Decimal(0),
+                        commission=Decimal(0),
+                        tax=Decimal(0),
+                    )
+                },
+                "marks": {
+                    "005930": {
+                        "name": "Samsung",
+                        "price": Decimal(376864),
+                        "currency": "KRW",
+                        "markedAt": "2026-08-14T00:10:00+00:00",
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(payload["cash"], "623136")
+        self.assertEqual(payload["openPositionCount"], 1)
+        self.assertEqual(payload["cashWeight"], str(Decimal("623136") / Decimal("1000000")))
 
 
 if __name__ == "__main__":
