@@ -128,6 +128,7 @@ class CycleStatusPayloadTest(unittest.TestCase):
         insight = {
             "idleReason": "no-crossover",
             "newBuysAllowed": True,
+            "marketRegime": "RISK_ON",
             "funnel": {
                 "scanned": 17,
                 "evaluated": 17,
@@ -174,6 +175,7 @@ class CycleStatusPayloadTest(unittest.TestCase):
 
         self.assertEqual(payload["idleReason"], "no-crossover")
         self.assertTrue(payload["newBuysAllowed"])
+        self.assertEqual(payload["marketRegime"], "RISK_ON")
         self.assertEqual(payload["funnel"]["noCrossover"], 17)
         self.assertEqual(payload["reasons"], {"no-crossover": 17})
         self.assertEqual(payload["symbolStates"][0]["relation"], "below")

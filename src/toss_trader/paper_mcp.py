@@ -450,6 +450,7 @@ def _cycle_status(row: Sequence[Any]) -> dict[str, Any]:
         "error": row[12],
         "idleReason": None,
         "newBuysAllowed": None,
+        "marketRegime": None,
         "funnel": None,
         "reasons": None,
         "symbolStates": [],
@@ -459,6 +460,7 @@ def _cycle_status(row: Sequence[Any]) -> dict[str, Any]:
         return payload
     payload["idleReason"] = insight.get("idleReason")
     payload["newBuysAllowed"] = insight.get("newBuysAllowed")
+    payload["marketRegime"] = insight.get("marketRegime")
     payload["funnel"] = insight.get("funnel")
     payload["reasons"] = insight.get("reasons")
     payload["symbolStates"] = insight.get("symbols") or []

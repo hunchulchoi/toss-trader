@@ -13,7 +13,9 @@ from toss_trader.risk import (
     RiskManager,
     UniverseCandidateRisk,
     UniverseRiskContext,
+    limits_for_regime,
 )
+from toss_trader.screening import MarketRegime
 
 NOW = datetime(2026, 8, 12, 5, 0, tzinfo=UTC)
 
@@ -183,6 +185,68 @@ class RiskManagerTest(unittest.TestCase):
         self.assertFalse(decision.approved)
         self.assertIn("max-open-positions", decision.violations)
 
+    def test_risk_on_and_unknown_regime_keep_base_buy_limits(self) -> None:
+        base = RiskLimits()
+        for regime in (MarketRegime.RISK_ON, None, "not-a-regime"):
+            with self.subTest(regime=regime):
+                limits = limits_for_regime(regime, base=base)
+                self.assertEqual(limits.max_daily_buy_count, 5)
+                self.assertEqual(limits.max_open_positions, 5)
+                decision = self.manager.evaluate(
+                    signal(),
+                    RiskContext(now=NOW, market_regime=getattr(regime, "value", regime)),
+                )
+                self.assertTrue(decision.approved)
+
+    def test_neutral_regime_halves_new_buy_slots_and_never_raises_them(self) -> None:
+        limits = limits_for_regime(MarketRegime.NEUTRAL)
+        self.assertEqual(limits.max_daily_buy_count, 2)
+        self.assertEqual(limits.max_open_positions, 2)
+        self.assertEqual(limits.max_order_notional, RiskLimits().max_order_notional)
+        tight = limits_for_regime(
+            MarketRegime.NEUTRAL,
+            base=RiskLimits(max_daily_buy_count=1, max_open_positions=1),
+        )
+        self.assertEqual(tight.max_daily_buy_count, 1)
+        self.assertEqual(tight.max_open_positions, 1)
+
+        blocked = self.manager.evaluate(
+            signal(),
+            RiskContext(
+                now=NOW,
+                open_position_count=2,
+                market_regime=MarketRegime.NEUTRAL.value,
+            ),
+        )
+        allowed = self.manager.evaluate(
+            signal(),
+            RiskContext(
+                now=NOW,
+                open_position_count=1,
+                market_regime=MarketRegime.NEUTRAL.value,
+            ),
+        )
+        self.assertIn("max-open-positions", blocked.violations)
+        self.assertTrue(allowed.approved)
+
+    def test_risk_off_blocks_buy_but_allows_sell(self) -> None:
+        buy = self.manager.evaluate(
+            signal(),
+            RiskContext(now=NOW, market_regime=MarketRegime.RISK_OFF.value),
+        )
+        sell = self.manager.evaluate(
+            signal(side=Side.SELL),
+            RiskContext(
+                now=NOW,
+                position_quantity=Decimal(3),
+                market_regime=MarketRegime.RISK_OFF.value,
+            ),
+        )
+
+        self.assertFalse(buy.approved)
+        self.assertEqual(buy.violations, ("regime-risk-off",))
+        self.assertTrue(sell.approved)
+
 
 class N8nRiskManagerTest(unittest.TestCase):
     def test_routes_trade_decision_through_authenticated_webhook(self) -> None:
@@ -216,6 +280,25 @@ class N8nRiskManagerTest(unittest.TestCase):
             },
         )
         self.assertNotIn(b"risk-token-long-enough", request.data)
+
+    def test_sends_neutral_regime_and_tightened_buy_limits(self) -> None:
+        response = BytesIO(b'{"approved":true,"violations":[]}')
+        manager = N8nRiskManager(
+            webhook_url="http://n8n:5678/webhook/toss-trader-risk-manager",
+            token="risk-token-long-enough",
+        )
+
+        with patch("urllib.request.urlopen", return_value=response) as urlopen:
+            manager.evaluate(
+                signal(),
+                RiskContext(now=NOW, market_regime=MarketRegime.NEUTRAL.value),
+            )
+
+        payload = json.loads(urlopen.call_args.args[0].data)
+        self.assertEqual(payload["context"]["marketRegime"], "NEUTRAL")
+        self.assertEqual(payload["limits"]["maxDailyBuyCount"], 2)
+        self.assertEqual(payload["limits"]["maxOpenPositions"], 2)
+        self.assertEqual(payload["limits"]["maxOrderNotional"], "300000")
 
     def test_fails_closed_when_workflow_is_unavailable(self) -> None:
         manager = N8nRiskManager(

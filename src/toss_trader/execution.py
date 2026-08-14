@@ -57,6 +57,7 @@ class PaperTradingService:
         daily_return_rate: Decimal = Decimal(0),
         consecutive_api_errors: int = 0,
         new_buys_allowed: bool = True,
+        market_regime: str | None = None,
     ) -> PaperExecutionResult:
         costs = self._ledger.estimate_costs(signal)
         cash = self._ledger.cash_balance(self._initial_cash)
@@ -77,6 +78,7 @@ class PaperTradingService:
             consecutive_api_errors=consecutive_api_errors,
             seen_signal_ids=self._ledger.seen_signal_ids(),
             new_buys_allowed=new_buys_allowed,
+            market_regime=market_regime,
         )
         decision: RiskDecision | None = None
         if self._advisor is not None:
