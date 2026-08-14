@@ -68,6 +68,17 @@ infisical run --env=prod --path=/ -- \
 공용 Hermes 컨테이너에 내부 endpoint를 등록하고 세 도구를 Telegram에
 활성화한다. 분석 sidecar `hermes-analysis`에는 등록하지 않는다.
 
+실계좌 조회 우회를 막기 위해 공용 Hermes의 `SOUL.md`는
+`automation/hermes-telegram/SOUL.md`를 사용한다. 이 정책은 Toss 관련 질문에서
+paper MCP만 허용하고 `terminal`, Toss CLI/API, 실계좌 자격증명 사용을 금지한다.
+기존 SOUL을 백업한 뒤 배포하고 Hermes를 재시작한다.
+
+```bash
+docker cp hermes:/opt/data/SOUL.md /tmp/hermes-SOUL.md.backup
+docker cp automation/hermes-telegram/SOUL.md hermes:/opt/data/SOUL.md
+docker restart hermes
+```
+
 ```bash
 docker exec hermes hermes mcp add toss-paper \
   --url http://toss-trader-paper-mcp:8090/mcp
@@ -88,3 +99,11 @@ docker exec toss-trader-paper-mcp-1 \
 ```
 
 healthz 기대값: `{"status": "ok", "tools": 3}`.
+
+Telegram E2E에서는 다음 네 항목을 확인한다.
+
+1. 자동매매 현황 질문이 `toss_paper_status`를 호출한다.
+2. paper 보유 질문이 `toss_paper_holdings`를 호출한다.
+3. paper 손익 질문이 `toss_paper_pnl`을 호출한다.
+4. Toss 실계좌/`toss-trader holdings` 요청은 어떤 조회 도구도 호출하지 않고
+   paper-only 경계를 설명하며 거부한다.
