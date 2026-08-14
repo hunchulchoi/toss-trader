@@ -263,7 +263,6 @@ def _simulate_symbol(
     if open_trade is not None:
         trades.append(
             _mark_open_trade(
-                symbol=candles[-1].symbol,
                 variant=variant,
                 open_trade=open_trade,
                 last_candle=candles[-1],
@@ -294,6 +293,8 @@ def _close_trade(
         price=exit_price,
     )
     realized = exit_price * quantity - sell_costs - open_trade.cost_basis
+    exit_high_water = max(open_trade.high_water, raw_exit_price)
+    exit_low_water = min(open_trade.low_water, raw_exit_price)
     return ExitCounterfactualTrade(
         symbol=symbol,
         variant=variant.name,
@@ -307,10 +308,10 @@ def _close_trade(
         marked_pnl=realized,
         actual_costs=open_trade.buy_costs + sell_costs,
         maximum_favorable_excursion_rate=(
-            open_trade.high_water / open_trade.entry_price - Decimal(1)
+            exit_high_water / open_trade.entry_price - Decimal(1)
         ),
         maximum_adverse_excursion_rate=(
-            open_trade.entry_price - open_trade.low_water
+            open_trade.entry_price - exit_low_water
         )
         / open_trade.entry_price,
     )
@@ -318,26 +319,18 @@ def _close_trade(
 
 def _mark_open_trade(
     *,
-    symbol: str,
     variant: ExitVariant,
     open_trade: _OpenTrade,
     last_candle: Candle,
     last_index: int,
     quantity: Decimal,
 ) -> ExitCounterfactualTrade:
-    estimated_sell_costs = _trade_costs(
-        symbol=symbol,
-        side=Side.SELL,
-        quantity=quantity,
-        price=last_candle.close_price,
-    )
     marked = (
         last_candle.close_price * quantity
-        - estimated_sell_costs
         - open_trade.cost_basis
     )
     return ExitCounterfactualTrade(
-        symbol=symbol,
+        symbol=last_candle.symbol,
         variant=variant.name,
         entered_at=open_trade.entered_at,
         exited_at=None,

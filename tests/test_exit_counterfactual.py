@@ -113,6 +113,27 @@ class ExitCounterfactualTest(unittest.TestCase):
         self.assertEqual(trade.exited_at, source[5].timestamp)
         self.assertEqual(trade.exit_price, Decimal(80))
         self.assertEqual(trade.exit_reason, "atr-stop")
+        self.assertEqual(
+            trade.maximum_adverse_excursion_rate,
+            (Decimal(110) - Decimal(80)) / Decimal(110),
+        )
+
+    def test_open_mark_does_not_precharge_future_sell_costs(self) -> None:
+        source = candles([10000, 10000, 10000, 12000, 13000])
+
+        result = run_exit_counterfactual_matrix(
+            candles_by_symbol={"005930": source},
+            variants=(ExitVariant("dead", ExitPolicy.DEAD_CROSS),),
+            short_window=2,
+            long_window=3,
+            slippage_rate=Decimal(0),
+        )[0]
+
+        trade = result.trades[0]
+        self.assertIsNone(trade.exited_at)
+        self.assertEqual(trade.entry_price, Decimal(13000))
+        self.assertEqual(trade.actual_costs, Decimal(1))
+        self.assertEqual(trade.marked_pnl, Decimal(-1))
 
     def test_final_candle_signal_is_not_executed(self) -> None:
         result = run_exit_counterfactual_matrix(
