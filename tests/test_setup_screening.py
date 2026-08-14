@@ -152,6 +152,41 @@ class FlowSummaryTest(unittest.TestCase):
         self.assertEqual(result.latest_session, signal_session - timedelta(days=1))
         self.assertTrue(result.foreign_reversal)
 
+    def test_rejects_gap_created_by_unavailable_middle_session(self) -> None:
+        signal_session = date(2026, 1, 10)
+        observations = list(flow_observations(signal_session))
+        observations.insert(
+            0,
+            FlowObservation(
+                symbol="005930",
+                session_index=-1,
+                session_date=signal_session - timedelta(days=6),
+                available_at=datetime(2026, 1, 4, 18, tzinfo=UTC),
+                foreign_net_buy=Decimal(-10),
+                institutional_net_buy=Decimal(0),
+                trading_value=Decimal(100),
+            ),
+        )
+        middle = observations[3]
+        observations[3] = FlowObservation(
+            symbol=middle.symbol,
+            session_index=middle.session_index,
+            session_date=middle.session_date,
+            available_at=datetime(2026, 1, 11, tzinfo=UTC),
+            foreign_net_buy=middle.foreign_net_buy,
+            institutional_net_buy=middle.institutional_net_buy,
+            trading_value=middle.trading_value,
+        )
+
+        result = summarize_flow(
+            tuple(observations),
+            symbol="005930",
+            signal_session=signal_session,
+            decision_at=datetime(2026, 1, 10, 20, tzinfo=UTC),
+        )
+
+        self.assertIsNone(result)
+
     def test_uses_pooled_trading_value_normalization(self) -> None:
         signal_session = date(2026, 1, 9)
         foreign = (-100, 1, 1, 1, 1, 100)

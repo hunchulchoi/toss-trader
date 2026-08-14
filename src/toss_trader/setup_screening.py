@@ -160,6 +160,11 @@ def summarize_flow(
     if len(eligible) < 6:
         return None
     window = eligible[-6:]
+    if any(
+        current.session_index != previous.session_index + 1
+        for previous, current in pairwise(window)
+    ):
+        return None
     previous = window[:5]
     current = window[1:]
     previous_ratio = _flow_ratio(previous, "foreign_net_buy")

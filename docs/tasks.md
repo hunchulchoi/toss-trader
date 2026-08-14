@@ -21,15 +21,15 @@ No active tasks.
 - Tests: 209 unit tests passed; changed-file Ruff passed
 - Risks: stored-candle run blocked until compromised Infisical token revoke/rotate is confirmed
 
+## DONE
+
 ### STRAT-002 Setup hypothesis v2
 
-- Owner: codex
-- Status: REVIEW
+- Owner: codex/cursor/agy
+- Status: DONE
 - Result: pure evaluator requires one price setup plus PIT 5-day flow reversal; valuation boost is disabled; sizing uses 0.5% trade, 2% open, 1% cluster heat with ATR, Toss costs, slippage, integer lots, cash and order caps
-- Tests: 19 dedicated boundary tests; full suite pending
+- Tests: 20 dedicated boundary tests; full suite 231 passed; Cursor and agy final review passed with 0 blockers
 - Risks: sector symbols, persisted PIT flow, point-in-time valuation, event calendar, gap threshold, stop derivation, cluster mapping, and automatic regime are not yet provided; not connected to orders
-
-## DONE
 
 ### OPS-001 Intraday Telegram JSON fix
 
