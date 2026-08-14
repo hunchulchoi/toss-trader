@@ -13,15 +13,17 @@ No active tasks.
 
 ## REVIEW
 
-### STRAT-001 Risk-cap hypothesis backtest
-
-- Owner: codex
-- Status: REVIEW
-- Result: portfolio backtest now models order, position, UTC daily-buy, and open-position limits; deterministic scenarios reject daily-cap expansion and show position-cap duplication
-- Tests: 209 unit tests passed; changed-file Ruff passed
-- Risks: stored-candle run blocked until compromised Infisical token revoke/rotate is confirmed
+No tasks awaiting review.
 
 ## DONE
+
+### STRAT-001 Risk-cap hypothesis backtest
+
+- Owner: codex/cursor/agy
+- Status: DONE
+- Result: read-only stored-candle sensitivity compared open 5/10/unlimited across 50 symbols; results reversed by MA window, daily 5 was not the main bottleneck, so production risk values remain unchanged
+- Tests: MA20/60 reported 0 trades from 61-63 bar warmup; pre-fixed MA5/20 and MA10/30 cap matrices completed; Cursor and agy reviewed interpretation
+- Risks: three-month single-regime sample, code-order signal selection, few completed trades, no setup-v2 PIT flow, and no continuation replay; require at least 200 and preferably 500 bars for preregistered OOS comparison
 
 ### STRAT-002 Setup hypothesis v2
 
