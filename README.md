@@ -132,6 +132,7 @@ PYTHONPATH=src python3 -m toss_trader serve-paper-timeline \
 
 실계좌를 조회하지 않는다. PostgreSQL의 Rule/Hermes paper 체결과 저장 시세를
 읽기 전용으로 재생하며, 회사명과 종목별 최근 63개 시세 추세선을 함께 표시한다.
+페이지는 30초마다 `/api/timeline`을 다시 받아 장중 체결을 따라간다.
 
 날짜를 선택하면 해당일 총자산·현금·보유 평가액·손익·종목별 장부·체결을
 확인할 수 있다. compose 서비스는 Tailscale `${TIMELINE_PORT:-19094}`에만

@@ -620,7 +620,8 @@ def _serve_paper_timeline(settings: Settings, args: argparse.Namespace) -> int:
     payload = PostgresPaperTimelineStore(
         parameters,
         initial_cash=settings.paper_initial_cash,
-    ).payload()
+    )
+    snapshot = payload.payload()
     print(
         json.dumps(
             {
@@ -628,14 +629,20 @@ def _serve_paper_timeline(settings: Settings, args: argparse.Namespace) -> int:
                 "host": args.host,
                 "port": args.port,
                 "portfolios": ["rule", "hermes"],
-                "days": len(payload["meta"]["dates"]),
+                "days": len(snapshot["meta"]["dates"]),
                 "readOnly": True,
+                "reloadSeconds": 30,
             },
             ensure_ascii=False,
         ),
         flush=True,
     )
-    serve_timeline(host=args.host, port=args.port, payload=payload)
+    serve_timeline(
+        host=args.host,
+        port=args.port,
+        payload=snapshot,
+        payload_loader=payload.payload,
+    )
     return 0
 
 

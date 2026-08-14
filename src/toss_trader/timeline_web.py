@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+import threading
+import time
+from collections.abc import Callable, Mapping
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
@@ -18,6 +20,41 @@ _ASSETS = {
         "text/javascript; charset=utf-8",
     ),
 }
+
+DEFAULT_CACHE_SECONDS = 30.0
+
+
+class PayloadCache:
+    def __init__(
+        self,
+        loader: Callable[[], Mapping[str, Any]],
+        *,
+        ttl_seconds: float = DEFAULT_CACHE_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+        initial: Mapping[str, Any] | None = None,
+    ) -> None:
+        if ttl_seconds < 0:
+            raise ValueError("timeline cache ttl must not be negative")
+        self._loader = loader
+        self._ttl_seconds = ttl_seconds
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._value: Mapping[str, Any] | None = initial
+        self._loaded_at = clock() if initial is not None else None
+
+    def get(self) -> Mapping[str, Any]:
+        with self._lock:
+            now = self._clock()
+            stale = (
+                self._value is None
+                or self._loaded_at is None
+                or now - self._loaded_at >= self._ttl_seconds
+            )
+            if stale:
+                self._value = self._loader()
+                self._loaded_at = now
+            assert self._value is not None
+            return self._value
 
 
 def timeline_response(
@@ -47,12 +84,29 @@ def timeline_response(
 
 
 def create_timeline_server(
-    *, host: str, port: int, payload: Mapping[str, Any]
+    *,
+    host: str,
+    port: int,
+    payload: Mapping[str, Any] | None = None,
+    payload_loader: Callable[[], Mapping[str, Any]] | None = None,
+    cache_seconds: float = DEFAULT_CACHE_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
 ) -> ThreadingHTTPServer:
     if not host.strip():
         raise ValueError("timeline host must not be empty")
     if not 1 <= port <= 65535:
         raise ValueError("timeline port must be between 1 and 65535")
+    if payload_loader is None:
+        if payload is None:
+            raise ValueError("timeline payload or payload_loader is required")
+        cache = PayloadCache(lambda: payload, ttl_seconds=cache_seconds, clock=clock, initial=payload)
+    else:
+        cache = PayloadCache(
+            payload_loader,
+            ttl_seconds=cache_seconds,
+            clock=clock,
+            initial=payload,
+        )
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -65,7 +119,8 @@ def create_timeline_server(
             self._respond("POST")
 
         def _respond(self, method: str) -> None:
-            status, content_type, body = timeline_response(method, self.path, payload)
+            current = cache.get() if urlsplit(self.path).path == "/api/timeline" else (payload or cache.get())
+            status, content_type, body = timeline_response(method, self.path, current)
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
@@ -91,8 +146,21 @@ def create_timeline_server(
     return ThreadingHTTPServer((host, port), Handler)
 
 
-def serve_timeline(*, host: str, port: int, payload: Mapping[str, Any]) -> None:
-    with create_timeline_server(host=host, port=port, payload=payload) as server:
+def serve_timeline(
+    *,
+    host: str,
+    port: int,
+    payload: Mapping[str, Any] | None = None,
+    payload_loader: Callable[[], Mapping[str, Any]] | None = None,
+    cache_seconds: float = DEFAULT_CACHE_SECONDS,
+) -> None:
+    with create_timeline_server(
+        host=host,
+        port=port,
+        payload=payload,
+        payload_loader=payload_loader,
+        cache_seconds=cache_seconds,
+    ) as server:
         server.serve_forever()
 
 

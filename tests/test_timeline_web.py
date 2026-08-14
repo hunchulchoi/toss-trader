@@ -218,10 +218,31 @@ class TimelineWebTest(unittest.TestCase):
         self.assertIn(b'data-portfolio="rule"', root[2])
         self.assertIn(b".sparkline", css[2])
         self.assertIn(b"state.data.portfolios", script[2])
+        self.assertIn(b"POLL_MS", script[2])
+        self.assertIn(b"setInterval", script[2])
+        self.assertIn(b"document.hidden", script[2])
         self.assertEqual(json.loads(api[2])["portfolios"]["hermes"]["label"], "Hermes")
         self.assertEqual(timeline_response("GET", "/healthz", payload)[0], 200)
         self.assertEqual(timeline_response("GET", "/missing", payload)[0], 404)
         self.assertEqual(timeline_response("POST", "/api/timeline", payload)[0], 405)
+
+    def test_payload_cache_reuses_until_ttl_then_reloads(self) -> None:
+        from toss_trader.timeline_web import PayloadCache
+
+        now = [0.0]
+        calls = {"n": 0}
+
+        def loader() -> dict:
+            calls["n"] += 1
+            return {"n": calls["n"]}
+
+        cache = PayloadCache(loader, ttl_seconds=30, clock=lambda: now[0])
+
+        self.assertEqual(cache.get()["n"], 1)
+        now[0] = 29.9
+        self.assertEqual(cache.get()["n"], 1)
+        now[0] = 30.0
+        self.assertEqual(cache.get()["n"], 2)
 
     def test_store_forces_postgres_read_only(self) -> None:
         cursor = _Cursor()
@@ -270,7 +291,8 @@ class TimelineWebTest(unittest.TestCase):
         status = json.loads(output.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertEqual(status["portfolios"], ["rule", "hermes"])
-        self.assertEqual(serve.call_args.kwargs["payload"], payload)
+        self.assertEqual(status["reloadSeconds"], 30)
+        self.assertIs(serve.call_args.kwargs["payload_loader"], store.return_value.payload)
         self.assertEqual(serve.call_args.kwargs["port"], 8099)
 
 
