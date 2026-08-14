@@ -11,11 +11,14 @@
 | `agy-market-strategy-review.md` | 시장·전략 1차 초안 | 외부시장 섹션 폐기 |
 | `cursor-rebuttal-to-agy.md` | agy 초안 교차검증 | 유효 |
 | `agy-rebuttal-to-cursor.md` | Cursor 반론 답변·외부수치 철회 | 유효 |
+| `external-review-verification.md` | 외부 리뷰·시세 재검증 | 최신 사실 기준 |
 | 이 문서 | Codex 종합 결정 | 최종 기준 |
 
 내부 금액·건수는 Infisical 접근 규칙 강화 전에 서로 다른 시각·조회 경로로
-수집돼 충돌한다. 외부시장 정확 수치와 URL은 독립 검증에 실패했다. 둘 다
-확정 근거로 사용하지 않는다.
+수집돼 충돌한다. 외부시장 초안의 출처 URL은 검증에 실패했지만, 이후 Naver
+일별 API와 Toss 정규장 1분봉으로 지수와 일부 종가를 재검증했다. 정확한 범위와
+값은 `external-review-verification.md`를 따른다. 수급·환율·시장 원인 서사는
+계속 확정 근거로 사용하지 않는다.
 
 ## 토론 과정
 
@@ -32,6 +35,10 @@
 5. Codex가 양쪽 문서를 검수했다. 시장 레짐과 마감 수익률을 이용한 사후
    설명은 제외하고, 내부 체결·배포 타임라인에서 공통으로 확인된 구조만
    결정 근거로 채택했다.
+6. 외부 Claude 리뷰 뒤 Naver 일별 API와 Toss 정규장 1분봉을 대조했다.
+   지수는 agy 값과 일치했고, 삼성전자·빙그레 종가와 알트 등락률은 틀렸다.
+   두산에너빌리티 종가 82,600원은 81,800원 청산가보다 높아 `반등 실패`와
+   `추가 하락 방어` 서술을 폐기했다.
 
 ## 합의된 사실
 
@@ -46,6 +53,8 @@
   종목 수만 제한해도 단일 종목 금액 집중을 막지 못한다.
 - 1분 continuation 뒤 같은 날 1분 dead-cross 청산된 왕복 사례가 있다.
   휩소 가능성은 관찰 대상이나, 한두 건으로 ATR·최소보유시간을 정하지 않는다.
+- 두산과 알트는 같은 날 KRX 종가까지 단순 보유한 counterfactual에서 청산보다
+  유리했다. 이는 두 사례의 종가 비교일 뿐 청산 규칙 전체의 승패가 아니다.
 - Telegram JSON 장애는 체결 로직보다 관측 경로를 망가뜨렸다. Alertmanager
   counter 하나로 workflow Telegram 건강을 판정할 수 없다.
 
@@ -59,11 +68,13 @@
    당일 체결 실현손익을 분리 표시한다. UTC 기준은 KST 자정과 다르다.
 4. **반복 한도 알림 요약.** 최초 도달 1회와 마감 요약을 보내고, 상세 판단은
    audit/dashboard에 둔다. 알림에서 제외했다고 판단 기록을 지우지 않는다.
-5. **출처 기준 강화.** 외부시장 사실은 직접 원문 URL·제목·게시/기준시각을
-   독립 확인한 경우만 쓴다. 매체 홈페이지나 검색되지 않는 URL은 근거가 아니다.
+5. **출처·가격 라벨 강화.** 외부시장 사실은 직접 API 또는 원문 URL·제목·
+   게시/기준시각을 확인한 경우만 쓴다. 가격에는 `source`, `venue`, `session`,
+   `as_of`, `price_type`을 기록한다. 매체 홈페이지나 검색되지 않는 URL은
+   근거가 아니다.
 6. **DB 재검증은 Infisical만 사용.** Codex tool output에서 machine access
-   token 노출이 확인됐다. 해당 token이 revoke/rotate되기 전에는 secret·DB
-   조회를 재개하지 않는다.
+   token 노출이 확인됐다. 기존 identity를 교체하고 새 identity 인증을 확인했다.
+   이후에도 token을 출력하지 않고 `infisical run -- ...`으로만 주입한다.
 
 ## 전략 결정
 
@@ -96,7 +107,8 @@
 
 ### P0 — 보안·데이터 신뢰
 
-- Codex tool output에 노출된 Infisical machine access token revoke/rotate
+- ~~Codex tool output에 노출된 Infisical machine access token revoke/rotate~~
+  완료. 새 machine identity 재인증 확인.
 - 안전한 machine identity 인증 경로 확립 후 동일 시각·동일 정의로 내부 수치
   재검증
 
@@ -111,8 +123,17 @@
 ### P2 — 관찰 후 전략 실험
 
 - 단일 종목 notional cap
-- continuation·dead-cross counterfactual
+- 실제 continuation·dead-cross 체결 경로 counterfactual
 - LLM veto counterfactual
+
+### 완료된 연구 benchmark
+
+- 200종목 400,000개 1분봉에서 독립 MA20/60 진입을 기준으로 즉시 dead-cross,
+  5/10/15봉 최소보유, ATR 2.0을 비교했다. 모든 변형이 PF 1 미만·손실이라
+  운영 규칙을 바꾸지 않았다. 실제 continuation/Hermes 체결과 공유현금·슬롯을
+  재생하는 위 P2 counterfactual을 대체하지 않는다.
+- Toss 일봉의 `close`가 KRX 정규장 종가가 아니라 NXT/연장시장 마지막 가격일
+  수 있음을 확인했다. 세션 라벨 없는 종가 비교를 금지한다.
 
 ## 다음 판정 조건
 

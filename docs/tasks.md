@@ -17,6 +17,14 @@ No tasks awaiting review.
 
 ## DONE
 
+### DOC-001 External debate verification
+
+- Owner: codex/cursor
+- Status: DONE
+- Result: independently checked 2026-08-14 index and stock closes, retired the false Doosan no-rebound claim, distinguished KRX close from Toss extended-session last price, and separated the completed MA exit benchmark from the pending actual-trade P3
+- Checks: Naver daily API, read-only Toss minute/daily SQLite comparison, Cursor cross-review
+- Risks: flow, FX, internal paper equity/cycle counts, and market-cause narratives remain unverified
+
 ### STRAT-003 Expanded dataset and exit counterfactual
 
 - Owner: codex/cursor/agy
