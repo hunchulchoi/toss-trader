@@ -5,6 +5,19 @@
 
 ## 2026-08-14
 
+### 장중 특이사항 Telegram JSON·슬롯 거부 도배
+
+성공한 1분 사이클이 `특이사항 Telegram`에서 `JSON parameter needs to be
+valid JSON`으로 매 5분 critical이 났다. jsonBody `{ ...$json }` spread가
+원인이다. `rule`/`hermes`를 노드 이름으로 명시한다.
+
+슬롯이 꽉 찬 뒤 continuation BUY가 `max-open-positions`를 매 사이클
+찍어 Telegram이 거부 목록으로 도배됐다. 이 코드만 특이사항에서 뺀다.
+RiskManager 판단·audit 기록은 그대로다.
+
+운영: 2026-08-14 15:09 KST automation 재빌드. n8n `toss-trader-intraday-paper`
+import 후 재활성화·n8n 재시작. live nodes spread 없음. `TRADING_ENABLED=false`.
+
 ### paper 포지션 슬롯 확대·손실 시 청산 허용
 
 - 최대 동시 보유 종목을 5종에서 10종으로 확대

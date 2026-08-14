@@ -229,6 +229,7 @@ paper cycle JSON은 Hermes 호출 전에 규칙 기반으로 검사한다. 아�
 - RiskManager 거부, 종목 처리 실패, Toss API 오류 연속: `warning`
 - 일일 손실 -3% 이하, API 오류 5회 이상, 비정상 프로세스 종료: `critical`
 - `duplicate-signal` 단독 거부는 정상 멱등 재실행으로 보고 제외
+- `max-open-positions` 단독 거부는 슬롯 한도 반복이므로 보고 제외. 판단 기록은 유지
 - 특이사항 전송 실패도 Hermes 일일 분석과 기존 일일 보고는 계속 실행
 
 - destination: `TELEGRAM_CHAT_ID`

@@ -339,6 +339,33 @@ class MonitoringAssetsTest(unittest.TestCase):
         ):
             self.assertIn(branch, encoded)
 
+    def test_intraday_http_json_bodies_use_explicit_fields_not_spread(self) -> None:
+        workflow = json.loads(
+            (
+                ROOT / "automation" / "n8n" / "toss-trader-intraday-paper.json"
+            ).read_text()
+        )
+        http_nodes = {
+            node["name"]: node["parameters"]["jsonBody"]
+            for node in workflow["nodes"]
+            if node["type"] == "n8n-nodes-base.httpRequest"
+        }
+        for name, body in http_nodes.items():
+            self.assertNotIn("...$json", body, name)
+            self.assertNotIn("... $json", body, name)
+
+        report = http_nodes["특이사항 Telegram"]
+        self.assertIn("/workflow/report-paper", json.dumps(workflow, ensure_ascii=False))
+        self.assertIn("$('시장 Snapshot + Rule 1분봉').first().json", report)
+        self.assertIn("$('공유 Snapshot + Hermes 1분봉').first().json", report)
+        self.assertIn('"rule"', report)
+        self.assertIn('"hermes"', report)
+        self.assertIn('"_workflow"', report)
+
+        hermes = http_nodes["공유 Snapshot + Hermes 1분봉"]
+        self.assertIn("$('시장 Snapshot + Rule 1분봉').first().json", hermes)
+        self.assertIn('"rule"', hermes)
+
     def test_n8n_workflow_sends_weekday_market_discovery_report(self) -> None:
         workflow = json.loads(
             (ROOT / "automation" / "n8n" / "toss-trader-market-scan.json").read_text()

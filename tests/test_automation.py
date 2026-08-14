@@ -645,6 +645,54 @@ class PaperCycleNoticeTest(unittest.TestCase):
 
         self.assertIsNone(notice)
 
+    def test_ignores_max_open_positions_rejection(self) -> None:
+        notice = paper_cycle_notice(
+            {
+                "exitCode": 0,
+                "cycle": {
+                    "summary": {"symbols": 1, "signals": 1, "fills": 0, "failed": 0},
+                    "items": [
+                        {
+                            "symbol": "003010",
+                            "decision": {
+                                "approved": False,
+                                "violations": ["max-open-positions"],
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+
+        self.assertIsNone(notice)
+
+    def test_keeps_other_rejections_when_mixed_with_max_open_positions(self) -> None:
+        notice = paper_cycle_notice(
+            {
+                "exitCode": 0,
+                "cycle": {
+                    "summary": {"symbols": 1, "signals": 1, "fills": 0, "failed": 0},
+                    "items": [
+                        {
+                            "symbol": "003010",
+                            "decision": {
+                                "approved": False,
+                                "violations": [
+                                    "max-open-positions",
+                                    "max-daily-buys",
+                                ],
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+
+        self.assertIsNotNone(notice)
+        self.assertEqual(
+            notice.lines, ("003010 RiskManager 거부: max-daily-buys",)
+        )
+
 
 class MarketScanAutomationTest(unittest.TestCase):
     def test_sends_only_market_scan_json_to_hermes(self) -> None:

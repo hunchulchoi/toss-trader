@@ -140,7 +140,7 @@ def paper_cycle_notice(job: dict[str, Any]) -> PaperCycleNotice | None:
             noteworthy = [
                 str(violation)
                 for violation in violations
-                if violation != "duplicate-signal"
+                if violation not in {"duplicate-signal", "max-open-positions"}
             ]
             if noteworthy:
                 lines.append(f"{symbol} RiskManager 거부: {', '.join(noteworthy)}")

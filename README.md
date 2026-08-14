@@ -274,8 +274,9 @@ Telegram을 보내지 않는다.
 
 paper cycle에서 체결, RiskManager 거부, 종목 처리 실패, Toss API 연속 오류,
 일일 손실 한도가 감지되면 `TossTraderPaperCycleNotice`로 즉시 Telegram에
-추가 보고한다. 정상 무신호 cycle과 정상적인 `duplicate-signal` 재실행은
-추가 보고하지 않는다.
+추가 보고한다. 정상 무신호 cycle, 정상적인 `duplicate-signal` 재실행,
+슬롯 한도 `max-open-positions` 단독 거부는 추가 보고하지 않는다. 한도
+판단 자체는 장부에 남는다.
 
 ```bash
 infisical run --env=prod --path=/ -- docker compose run --rm trader \
