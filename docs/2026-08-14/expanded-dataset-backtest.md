@@ -81,6 +81,8 @@ DB에 없으므로 최종 승인은 모두 fail-closed다.
 - ATR: Wilder ATR14, 최고가 - 2.0 ATR trailing stop
 - stop은 직전 확정봉까지만 사용
 - 다음 봉이 stop 아래로 갭 하락하면 stop 가격이 아니라 시가 사용
+- 장중 ATR stop 뒤 같은 봉 마감에 새 골든크로스가 확정되면 다음 봉 시가
+  재진입을 허용
 - slippage는 매수·매도에 불리하게 5bps, Toss 비용 포함
 - 미청산 포지션은 마지막 종가 marked PnL로 분리
 
