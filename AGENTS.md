@@ -36,6 +36,16 @@
   stop and report the blocker. Do not fall back to another credential source.
 - Inject database secrets with `infisical run -- ...`; never print secret
   values in commands, logs, task reports, or agent prompts.
+- Machine identity authentication may read `INFISICAL_CLIENT_ID`,
+  `INFISICAL_CLIENT_SECRET`, and `INFISICAL_DOMAIN` from the repository-local
+  `.env`; never inspect or print their values.
+- Never run `infisical login` in a form that prints an access token. Use
+  `infisical login --plain` only when its stdout is captured directly into an
+  in-memory variable with shell tracing disabled. Do not write the token to a
+  file, terminal, command log, process argument, clipboard, or agent prompt;
+  unset the variable immediately after the `infisical run` command finishes.
+- Treat any token printed to stdout or tool output as compromised. Stop secret
+  access and require revocation or rotation before continuing.
 - Do not deploy, restart containers, publish n8n workflows, trade, or mutate a
   database unless the user explicitly authorized that operation.
 - Keep `TRADING_ENABLED=false` during tests unless the user explicitly enables

@@ -5,6 +5,14 @@
 
 ## 2026-08-14
 
+### Infisical machine token 비출력 규칙
+
+universal-auth 로그인 성공 시 CLI가 access token을 stdout에 출력할 수 있었다.
+machine identity 값은 `.env`에서 읽되 로그인 출력은 메모리 변수로만 캡처하고,
+노출된 token은 폐기·회전 전까지 사용하지 않도록 프로젝트 규칙을 강화했다.
+
+운영: 규칙만 반영. Infisical secret·DB·서비스 변경 없음.
+
 ### DB 접속정보 Infisical 단일 원천
 
 agent가 실행 중인 container 환경에서 DB 접속정보를 유추할 수 있었다. 프로젝트
