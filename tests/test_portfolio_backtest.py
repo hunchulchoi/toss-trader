@@ -211,14 +211,30 @@ class MovingAveragePortfolioBacktestTest(unittest.TestCase):
             initial_cash=Decimal(1000),
             short_window=2,
             long_window=3,
-            max_position_notional=Decimal(120),
+            max_position_notional=Decimal(119),
         )
 
         self.assertEqual(result.trades, ())
         self.assertEqual(result.max_position_notional_rejections, 1)
         self.assertEqual(result.positions[0].max_position_notional_rejections, 1)
 
-    def test_applies_order_notional_before_position_limit(self) -> None:
+    def test_records_all_notional_limit_rejections(self) -> None:
+        result = run_ma_portfolio_backtest(
+            candles_by_symbol={
+                "005930": _candles("005930", [100, 100, 100, 120, 130]),
+            },
+            quantity=Decimal(1),
+            initial_cash=Decimal(1000),
+            short_window=2,
+            long_window=3,
+            max_order_notional=Decimal(119),
+            max_position_notional=Decimal(119),
+        )
+
+        self.assertEqual(result.max_order_notional_rejections, 1)
+        self.assertEqual(result.max_position_notional_rejections, 1)
+
+    def test_notional_limits_use_signal_price_not_next_open(self) -> None:
         result = run_ma_portfolio_backtest(
             candles_by_symbol={
                 "005930": _candles("005930", [100, 100, 100, 120, 130]),
@@ -228,10 +244,12 @@ class MovingAveragePortfolioBacktestTest(unittest.TestCase):
             short_window=2,
             long_window=3,
             max_order_notional=Decimal(120),
-            max_position_notional=Decimal(125),
+            max_position_notional=Decimal(120),
         )
 
-        self.assertEqual(result.max_order_notional_rejections, 1)
+        self.assertEqual(len(result.trades), 1)
+        self.assertEqual(result.trades[0].price, Decimal(130))
+        self.assertEqual(result.max_order_notional_rejections, 0)
         self.assertEqual(result.max_position_notional_rejections, 0)
 
     def test_rejects_symbol_key_mismatch(self) -> None:

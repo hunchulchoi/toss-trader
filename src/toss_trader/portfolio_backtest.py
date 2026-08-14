@@ -176,11 +176,9 @@ def run_ma_portfolio_backtest(
             signal = pending.pop(symbol, None)
             if signal is not None:
                 trading_date = candle.timestamp.date()
-                rejection = _buy_risk_rejection(
+                rejections = _risk_rejections(
                     signal=signal,
-                    candle=candle,
                     quantity=quantity,
-                    slippage_rate=slippage_rate,
                     state=states[symbol],
                     open_position_count=sum(
                         state.quantity > 0 for state in states.values()
@@ -191,8 +189,13 @@ def run_ma_portfolio_backtest(
                     max_position_notional=max_position_notional,
                     max_order_notional=max_order_notional,
                 )
-                if rejection is not None:
-                    setattr(states[symbol], rejection, getattr(states[symbol], rejection) + 1)
+                if rejections:
+                    for rejection in rejections:
+                        setattr(
+                            states[symbol],
+                            rejection,
+                            getattr(states[symbol], rejection) + 1,
+                        )
                     continue
                 cash, executed = _execute_pending(
                     signal=signal,
@@ -415,12 +418,10 @@ def _execute_pending(
     return cash, True
 
 
-def _buy_risk_rejection(
+def _risk_rejections(
     *,
     signal: TradeSignal,
-    candle: Candle,
     quantity: Decimal,
-    slippage_rate: Decimal,
     state: _PositionState,
     open_position_count: int,
     daily_buy_count: int,
@@ -428,26 +429,28 @@ def _buy_risk_rejection(
     max_daily_buys: int | None,
     max_position_notional: Decimal | None,
     max_order_notional: Decimal | None,
-) -> str | None:
+) -> tuple[str, ...]:
+    rejections: list[str] = []
+    signal_notional = quantity * signal.reference_price
+    if max_order_notional is not None and signal_notional > max_order_notional:
+        rejections.append("max_order_notional_rejections")
     if signal.side is not Side.BUY:
-        return None
-    price = candle.open_price * (Decimal(1) + slippage_rate)
-    if max_order_notional is not None and quantity * price > max_order_notional:
-        return "max_order_notional_rejections"
+        return tuple(rejections)
     if (
         max_position_notional is not None
-        and state.quantity * price + quantity * price > max_position_notional
+        and state.quantity * signal.reference_price + signal_notional
+        > max_position_notional
     ):
-        return "max_position_notional_rejections"
+        rejections.append("max_position_notional_rejections")
     if max_daily_buys is not None and daily_buy_count >= max_daily_buys:
-        return "max_daily_buy_rejections"
+        rejections.append("max_daily_buy_rejections")
     if (
         max_open_positions is not None
         and state.quantity <= 0
         and open_position_count >= max_open_positions
     ):
-        return "max_open_position_rejections"
-    return None
+        rejections.append("max_open_position_rejections")
+    return tuple(rejections)
 
 
 def _position_result(

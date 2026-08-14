@@ -22,9 +22,11 @@ credential을 우회 사용하지 않았다.
 - `--max-daily-buys` — production과 같은 UTC 날짜 기준
 - `--max-open-positions`
 
-거부 건수는 전체와 종목별 `max_*_rejections`로 JSON/CSV에 기록한다. 같은
-시각의 신호는 기존처럼 종목코드 오름차순으로 실행·거부한다. 옵션을 생략하면
-기존 백테스트 결과와 호환되도록 한도를 적용하지 않는다.
+거부 건수는 전체와 종목별 `max_*_rejections`로 JSON/CSV에 기록한다. notional은
+production RiskManager와 같이 신호 기준가로 판정하고, 한 신호의 복수 위반을
+각 counter에 모두 기록한다. 같은 시각의 신호는 기존처럼 종목코드 오름차순으로
+실행·거부한다. 옵션을 생략하면 기존 백테스트 결과와 호환되도록 한도를 적용하지
+않는다.
 
 ## 가설 1 — daily 5를 10으로 확대
 
@@ -50,10 +52,12 @@ cap과 중복되지 않는다.
 position cap 1,000,000원과 300,000원은 모두 총수익률 7.9922%, 체결 2건,
 order/position 거부 0건으로 동일했다.
 
-현재 `max_order_notional=300,000`이 먼저 적용되고 continuation은 보유 종목을
+현재 `max_order_notional=300,000`이 함께 적용되고 continuation은 보유 종목을
 건너뛰므로, 정상 단일 진입 경로에서는 position cap 300,000원이 중복이다.
-position cap만 낮추는 변경은 채택하지 않는다. 집중 문제가 실제로 재현되면
-거부된 SELL 뒤 재진입, 중복 cycle, 수량 증가 같은 비정상 가산 경로부터 찾아야
+다만 이 엔진도 일반 BUY를 `quantity == 0`일 때만 체결하므로 가산매수 위험을
+재현하지 못한다. 따라서 이 결과는 position cap 자체의 실증이 아니다. position
+cap만 낮추는 변경은 채택하지 않는다. 집중 문제가 실제로 재현되면 거부된 SELL
+뒤 재진입, 중복 cycle, 수량 증가 같은 가산 경로를 먼저 재생 가능하게 만들어야
 한다.
 
 ## 가설 3 — continuation 직후 dead-cross 청산 완화
