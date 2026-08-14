@@ -96,7 +96,11 @@ workflow JSON과 Git에는 secret을 저장하지 않는다.
 종목 후보는 `종가 > MA20 > MA60`이고 20일 모멘텀이 양수인 종목만 포함한다.
 점수는 `20일 모멘텀(%) + 최근 거래량/20일 평균 거래량`이며 상위
 `DISCOVERY_TOP_N`개를 보낸다. 현재 구현은 KRX 전체 자동 열거가 아니라 명시된
-discovery universe 안에서 발굴한다.
+discovery universe 안에서 발굴한다. 공식 API
+`GET /api/v1/stocks/all` (`listStocks`)이 마켓별 상장 종목을 주지만 장전
+스캔은 이 경로를 쓰지 않는다. 장중 15종목은 `/rankings`다. 문서 위치는
+[README Toss Open API](../README.md#toss-open-api)와
+[system-workflow.md](system-workflow.md#toss-open-api-출처).
 
 ### 2. 장중 paper cycle
 
@@ -107,6 +111,7 @@ discovery universe 안에서 발굴한다.
 - 골든크로스 `BUY`, 데드크로스 `SELL`
 - 교차가 없어도 일봉 `RISK_ON`(종가 > MA20 > MA60, 20일 모멘텀 > 0)이고
   1분 `close > MA20 > MA60`이며 미보유면 하루 1회 trend continuation `BUY`
+- 신호가 난 종목만 호가·현재가·체결·상하한·유의사항·KR 수급을 조회한다
 - Rule은 Hermes 없음. Hermes는 신호+한도 통과 때만. 한도 거부는 판단 행만
 - 정상 무신호는 Telegram을 보내지 않음
 - 체결, 의미 있는 RiskManager 거부, 종목/API 오류만 즉시 보고
@@ -135,7 +140,7 @@ n8n의 각 task 호출마다 automation service가 별도 프로세스로
 `paper_risk_decisions`, `paper_cycle_runs`는 `portfolio_id`로 격리한다.
 
 Hermes: 로컬 hard preflight 통과 후에만 advisor. 한도 거부 → 판단 1행, token 0.
-Rule: preflight 없이 n8n 1회. payload는 신호+RiskContext. 뉴스·호가 없음.
+Rule: preflight 없이 n8n 1회. payload는 신호+RiskContext+marketContext.
 장애는 `Hermes 분석 실패: 응답을 받지 못해 체결 차단`. token은 `hermes_trade`.
 
 종목별 처리:
@@ -147,9 +152,12 @@ Rule: preflight 없이 n8n 1회. payload는 신호+RiskContext. 뉴스·호가 �
    일봉 상승 추세 + 1분 단기>장기 + 종가>단기MA + 미보유면 하루 1회
    continuation `BUY`. 그 외는 신호 없음
 5. 신호가 있으면 국가별 정규장 일정과 시장 휴장 여부 조회
-6. Hermes면 hard preflight → 통과 시 advisor → n8n Risk. Rule은 n8n 1회
-7. 승인 시 paper 체결 기록
-8. 사이클 결과·API 오류 수 저장
+6. 신호가 난 종목만 시세·종목 스냅샷 조회 (호가, 현재가, 체결, 상하한,
+   유의사항, KR이면 수급 5종). 무신호 종목은 호출하지 않는다. 스냅샷
+   실패는 해당 필드를 비우고 체결 경로를 막지 않는다
+7. Hermes면 hard preflight → 통과 시 advisor → n8n Risk. Rule은 n8n 1회
+8. 승인 시 paper 체결 기록
+9. 사이클 결과·API 오류 수 저장
 
 한 종목 실패는 다른 종목 처리를 막지 않는다. 일부 실패는
 `partial_failure`, 전부 실패는 `failed`로 저장된다. 같은 캔들에서 생성된
@@ -180,6 +188,8 @@ RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저�
 | RiskManager webhook 오류 | 체결 금지. preflight 아님 | `risk-manager-workflow-unavailable` |
 | Hermes advisor 거부 | 한도 통과 후 | `Hermes 거부: <근거>` |
 | Hermes advisor 오류 | 한도 통과 후 | `Hermes 분석 실패: 응답을 받지 못해 체결 차단` |
+| 정리매매·과열·투자경고/위험·신주인수권 | BUY 금지 | `stock-warning:<type>` |
+| 현재가 ≥ 상한가 | BUY 금지 | `upper-price-limit` |
 
 위 세 줄 제외가 hard preflight. 매도는 보유 수량 안. 단일 통화 포트폴리오의
 `daily_return_rate`는 UTC 일자 시작 총자산 대비 현재 총자산 변화이며, 체결

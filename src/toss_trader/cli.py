@@ -29,6 +29,7 @@ from .cycle import PaperCycleRunner, PaperCycleSnapshot
 from .cycle_state import open_cycle_state_store
 from .errors import TossApiError
 from .execution import PaperTradingService
+from .market_context import MarketContextCollector
 from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
 from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
@@ -838,6 +839,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             calendar=MarketCalendarService(client),
             performance=performance,
             state=cycle_state,
+            market_context=MarketContextCollector(client),
         ).run(
             symbols=symbols,
             interval=interval,

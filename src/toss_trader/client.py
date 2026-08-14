@@ -184,6 +184,60 @@ class TossClient:
         )
         return self._require_result(payload, dict)
 
+    def orderbook(self, symbol: str) -> dict[str, Any]:
+        self._validate_symbols([symbol])
+        payload = self._request(
+            "GET", "/api/v1/orderbook", query={"symbol": symbol}
+        )
+        return self._require_result(payload, dict)
+
+    def trades(self, symbol: str, *, count: int = 10) -> list[dict[str, Any]]:
+        self._validate_symbols([symbol])
+        if not 1 <= count <= 50:
+            raise ValueError("count must be between 1 and 50")
+        payload = self._request(
+            "GET", "/api/v1/trades", query={"symbol": symbol, "count": count}
+        )
+        return self._require_result(payload, list)
+
+    def price_limits(self, symbol: str) -> dict[str, Any]:
+        self._validate_symbols([symbol])
+        payload = self._request(
+            "GET", "/api/v1/price-limits", query={"symbol": symbol}
+        )
+        return self._require_result(payload, dict)
+
+    def stock_warnings(self, symbol: str) -> list[dict[str, Any]]:
+        self._validate_symbols([symbol])
+        payload = self._request("GET", f"/api/v1/stocks/{symbol}/warnings")
+        return self._require_result(payload, list)
+
+    def investor_trading(self, symbol: str, *, count: int = 1) -> dict[str, Any]:
+        return self._stock_trend(symbol, "investor-trading", count=count)
+
+    def program_trades(self, symbol: str, *, count: int = 1) -> dict[str, Any]:
+        return self._stock_trend(symbol, "program-trades", count=count)
+
+    def short_selling(self, symbol: str, *, count: int = 1) -> dict[str, Any]:
+        return self._stock_trend(symbol, "short-selling", count=count)
+
+    def credit_trades(self, symbol: str, *, count: int = 1) -> dict[str, Any]:
+        return self._stock_trend(symbol, "credit-trades", count=count)
+
+    def securities_lending(self, symbol: str, *, count: int = 1) -> dict[str, Any]:
+        return self._stock_trend(symbol, "securities-lending", count=count)
+
+    def _stock_trend(self, symbol: str, path: str, *, count: int) -> dict[str, Any]:
+        self._validate_symbols([symbol])
+        if not 1 <= count <= 100:
+            raise ValueError("count must be between 1 and 100")
+        payload = self._request(
+            "GET",
+            f"/api/v1/stocks/{symbol}/{path}",
+            query={"count": count},
+        )
+        return self._require_result(payload, dict)
+
     @staticmethod
     def _validate_symbols(symbols: Sequence[str]) -> list[str]:
         if not 1 <= len(symbols) <= 200:

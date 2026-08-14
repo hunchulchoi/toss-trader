@@ -152,6 +152,43 @@ flowchart LR
 OAuth2 credential은 Infisical에서 n8n encrypted credential 또는 프로세스 환경으로
 주입하며, workflow JSON·로그·Git에는 저장하지 않는다.
 
+## Toss Open API 출처
+
+엔드포인트는 추측하지 않는다. LLM·에이전트는 아래를 읽는다.
+
+| 문서 | URL |
+|---|---|
+| LLM 안내 | https://developers.tossinvest.com/llms.txt |
+| Overview (그룹·TPS·에러) | https://openapi.tossinvest.com/openapi-docs/overview.md |
+| API 레퍼런스 | https://openapi.tossinvest.com/openapi-docs/latest/api-reference/README.md |
+| OpenAPI JSON (source of truth) | https://openapi.tossinvest.com/openapi-docs/latest/openapi.json |
+| 브라우저 | https://developers.tossinvest.com/docs |
+
+2026-08-14 확인 버전은 `v1.2.14`. Cursor 규칙은
+[`.cursor/rules/toss-openapi.mdc`](../.cursor/rules/toss-openapi.mdc).
+
+automation이 호출하는 조회와 스펙에만 있는 목록:
+
+| 경로 | 이 시스템의 용도 |
+|---|---|
+| `GET /api/v1/prices` | CLI 현재가. 신호 시 스냅샷 |
+| `GET /api/v1/orderbook` | 신호 시 호가 |
+| `GET /api/v1/trades` | 신호 시 최근 체결 |
+| `GET /api/v1/price-limits` | 신호 시 상·하한가. BUY 상한가 차단 |
+| `GET /api/v1/stocks` | universe 회사명·거래상태. 심볼 1~200 |
+| `GET /api/v1/stocks/{symbol}/warnings` | 신호 시 유의사항. 과열·투자경고 등 BUY 차단 |
+| `GET /api/v1/stocks/{symbol}/investor-trading` 등 | 신호 시 KR 수급. 미국 종목은 생략 |
+| `GET /api/v1/rankings` | 장중 동적 universe |
+| `GET /api/v1/candles` | paper cycle OHLCV |
+| `GET /api/v1/market-calendar/{KR\|US}` | 장 일정 |
+| `GET /api/v1/accounts` | 계좌 목록. 계좌 헤더 없음 |
+| `GET /api/v1/holdings` | 실계좌 보유. `X-Tossinvest-Account` |
+| `GET /api/v1/stocks/all` | 미사용. 마켓별 상장 종목 덤프 (`listStocks`) |
+
+장전 발굴은 `DISCOVERY_SYMBOLS`다. 전체 상장 스캔으로 바꾸려면
+`/stocks/all?market=KOSPI`와 `KOSDAQ`을 일 1회 캐시한 뒤 받은 `symbol`로
+`/stocks`·`/candles`를 호출한다. `STOCK_ALL`은 1 TPS.
+
 ## API별 flow
 
 모든 n8n HTTP node는 `_workflow`에 workflow/execution/stage/portfolio/interval을
@@ -315,8 +352,9 @@ flowchart TD
     X -->|universe 갱신 + MA20 > MA60| B[최초 trend BUY]
     X -->|새 골든/데드크로스| CS[BUY/SELL]
     X -->|조건 없음| NS[신호 없음]
-    B --> SPLIT{포트폴리오}
-    CS --> SPLIT
+    B --> CTX[신호 종목만\n호가·현재가·체결\n상하한·유의사항·수급]
+    CS --> CTX
+    CTX --> SPLIT{포트폴리오}
     SPLIT -->|규칙 기반| RM[n8n RiskManager 최종 판단]
     SPLIT -->|Hermes 개입| PRE{hard 한도\n로컬 preflight}
     PRE -->|거부| RD
@@ -344,6 +382,8 @@ RiskManager의 주요 제한:
 - Toss API 연속 오류 5회 이상 차단
 - 휴장일과 장 마감 10분 전 BUY 차단
 - universe 갱신 실패 시 신규 BUY 차단, 보유 종목 SELL만 허용
+- 정리매매·단기과열·투자경고/위험·신주인수권 BUY 차단
+- 현재가가 상한가이면 BUY 차단
 
 ## RiskManager process
 
@@ -358,7 +398,7 @@ flowchart TD
     PRE -->|통과| HA[Hermes advisor]
     HA --> TIN
     UIN --> REQUEST
-    TIN[BUY/SELL 신호·보유 수량/금액\n현금·일일 BUY·장 상태·Hermes 판단] --> REQUEST
+    TIN[BUY/SELL 신호·보유 수량/금액\n현금·일일 BUY·장 상태·Hermes 판단\n호가·상하한·유의사항] --> REQUEST
 
     REQUEST[automation N8nRiskManager\nPOST n8n RiskManager webhook\n전용 bearer] --> AUTH{n8n Header Auth}
     AUTH -->|실패| CLOSED[거부 risk-manager-workflow-unavailable]
@@ -615,6 +655,9 @@ Grafana `n8n Flow Review Log` 조회는 후자를 사용한다.
 
 ```text
 toss-trader/
+├── .cursor/rules/
+│   ├── docs-changelog-commit.mdc
+│   └── toss-openapi.mdc       # Toss Open API LLM 문서 출처
 ├── automation/
 │   ├── hermes-analysis/       # zero-tool Hermes sidecar image/config
 │   └── n8n/
@@ -650,6 +693,7 @@ toss-trader/
 │   ├── cycle_state.py         # paper_cycle_runs
 │   ├── errors.py              # Toss API 오류 model
 │   ├── execution.py           # Risk 판단 후 paper 체결
+│   ├── market_context.py      # 신호 시 호가·시세·유의사항·수급 스냅샷
 │   ├── market_data.py         # candle 수집과 저장 전략 adapter
 │   ├── metrics.py             # PostgreSQL/SQLite → Prometheus
 │   ├── models.py              # Candle, signal, fill model

@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from json import dumps
-from typing import Any
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from .calendar import MarketCalendarService, MarketSession, country_for_symbol
@@ -19,6 +19,7 @@ from .market_data import (
     MarketCollector,
     StoredMaStrategy,
 )
+from .market_context import MarketContext
 from .models import PaperFill, Side, TradeSignal
 from .portfolio import DailyPortfolioPerformance, PortfolioPerformance
 from .risk import RiskDecision
@@ -43,6 +44,7 @@ class SymbolCycleResult:
     short_ma: Decimal | None = None
     long_ma: Decimal | None = None
     ma_relation: str | None = None
+    market_context: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +102,10 @@ class PaperCycleResult:
         return _cycle_insight(self.items, new_buys_allowed=self.snapshot.new_buys_allowed)
 
 
+class MarketContextSource(Protocol):
+    def collect(self, symbol: str) -> MarketContext: ...
+
+
 class PaperCycleRunner:
     def __init__(
         self,
@@ -111,6 +117,7 @@ class PaperCycleRunner:
         performance: PortfolioPerformance,
         state: CycleStateStore,
         clock: Callable[[], datetime] | None = None,
+        market_context: MarketContextSource | None = None,
     ) -> None:
         self._collector = collector
         self._strategy = strategy
@@ -119,6 +126,7 @@ class PaperCycleRunner:
         self._performance = performance
         self._state = state
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._market_context = market_context
 
     def prepare(
         self,
@@ -362,10 +370,19 @@ class PaperCycleRunner:
                         errors[index] = str(error)
 
         consecutive_api_errors = previous_api_errors + 1 if api_failed else 0
+        contexts: list[dict[str, Any] | None] = [None] * size
         for index, signal in enumerate(signals):
             if signal is None or errors[index] is not None:
                 continue
             session = sessions[country_for_symbol(symbols[index])]
+            if self._market_context is not None:
+                try:
+                    collected = self._market_context.collect(symbols[index])
+                    contexts[index] = dict(collected.payload)
+                    if collected.errors:
+                        contexts[index]["errors"] = list(collected.errors)
+                except HANDLED_CYCLE_ERRORS as error:
+                    contexts[index] = {"errors": [str(error)]}
             try:
                 executions[index] = self._execute(
                     signal,
@@ -374,6 +391,7 @@ class PaperCycleRunner:
                     performance=performance,
                     consecutive_api_errors=consecutive_api_errors,
                     new_buys_allowed=new_buys_allowed,
+                    market_context=contexts[index],
                 )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
@@ -392,6 +410,7 @@ class PaperCycleRunner:
                 sell_dropped=sell_dropped[index],
                 already_held=already_held[index],
                 ma_state=ma_states[index],
+                market_context=contexts[index],
             )
             for index, symbol in enumerate(symbols)
         )
@@ -451,6 +470,7 @@ class PaperCycleRunner:
         performance: DailyPortfolioPerformance,
         consecutive_api_errors: int,
         new_buys_allowed: bool,
+        market_context: dict[str, Any] | None = None,
     ) -> PaperExecutionResult:
         return self._trading.submit(
             signal,
@@ -460,6 +480,7 @@ class PaperCycleRunner:
             daily_return_rate=performance.daily_return_rate,
             consecutive_api_errors=consecutive_api_errors,
             new_buys_allowed=new_buys_allowed,
+            market_context=market_context,
         )
 
     def _daily_risk_on(self, symbol: str) -> bool:
@@ -547,6 +568,7 @@ def _symbol_result(
     sell_dropped: bool,
     already_held: bool,
     ma_state: MaCrossoverEvaluation | None,
+    market_context: dict[str, Any] | None = None,
 ) -> SymbolCycleResult:
     decision = execution.decision if execution else None
     fill = execution.fill if execution else None
@@ -572,6 +594,7 @@ def _symbol_result(
         short_ma=ma_state.short_ma if ma_state else None,
         long_ma=ma_state.long_ma if ma_state else None,
         ma_relation=ma_state.relation if ma_state else None,
+        market_context=market_context,
     )
 
 
@@ -663,4 +686,14 @@ def _symbol_insight(item: SymbolCycleResult) -> dict[str, Any]:
         payload["maLong"] = str(item.long_ma)
     if item.ma_relation is not None:
         payload["relation"] = item.ma_relation
+    if item.market_context:
+        warnings = item.market_context.get("warnings")
+        if warnings:
+            payload["warnings"] = warnings
+        price = item.market_context.get("price")
+        if isinstance(price, dict) and price.get("lastPrice"):
+            payload["lastPrice"] = price["lastPrice"]
+        errors = item.market_context.get("errors")
+        if errors:
+            payload["marketErrors"] = errors
     return payload

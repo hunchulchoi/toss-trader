@@ -131,7 +131,12 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.paper_ledger.close()
         self.cycle_state.close()
 
-    def _runner(self, client: WatchlistCandleClient) -> PaperCycleRunner:
+    def _runner(
+        self,
+        client: WatchlistCandleClient,
+        *,
+        market_context: object | None = None,
+    ) -> PaperCycleRunner:
         return PaperCycleRunner(
             collector=MarketCollector(client=client, repository=self.market_repository),
             strategy=StoredMaStrategy(self.market_repository),
@@ -146,6 +151,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
             ),
             state=self.cycle_state,
             clock=lambda: datetime(2026, 8, 12, 7, 0, 2, tzinfo=UTC),
+            market_context=market_context,  # type: ignore[arg-type]
         )
 
     def test_collects_scans_and_paper_executes_watchlist(self) -> None:
@@ -182,12 +188,55 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(latest.status, "succeeded")
         self.assertEqual(latest.fill_count, 1)
 
+    def test_signal_collects_market_context_and_blocks_warned_buy(self) -> None:
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        class Collector:
+            def __init__(self) -> None:
+                self.symbols: list[str] = []
+
+            def collect(self, symbol: str):  # type: ignore[no-untyped-def]
+                from toss_trader.market_context import MarketContext
+
+                self.symbols.append(symbol)
+                return MarketContext(
+                    symbol=symbol,
+                    payload={"warnings": ["INVESTMENT_WARNING"]},
+                    errors=(),
+                )
+
+        collector = Collector()
+        result = self._runner(client, market_context=collector).run(
+            symbols=("005930",),
+            interval="1d",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(collector.symbols, ["005930"])
+        self.assertEqual(result.signal_count, 1)
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(result.items[0].idle_reason, "risk-block")
+        self.assertEqual(result.insight["symbols"][0]["warnings"], ["INVESTMENT_WARNING"])
+
     def test_records_no_crossover_when_watchlist_has_no_signal(self) -> None:
         client = WatchlistCandleClient(
             {"AAPL": [Decimal(10), Decimal(11), Decimal(12), Decimal(13)]}
         )
 
-        result = self._runner(client).run(
+        class Collector:
+            def __init__(self) -> None:
+                self.symbols: list[str] = []
+
+            def collect(self, symbol: str):  # type: ignore[no-untyped-def]
+                self.symbols.append(symbol)
+                raise AssertionError("no-signal cycle must not fetch market context")
+
+        result = self._runner(client, market_context=Collector()).run(
             symbols=("AAPL",),
             interval="1d",
             short_window=2,

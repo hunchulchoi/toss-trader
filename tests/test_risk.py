@@ -113,6 +113,50 @@ class RiskManagerTest(unittest.TestCase):
         self.assertFalse(decision.approved)
         self.assertIn("market-closed", decision.violations)
 
+    def test_rejects_buy_on_active_stock_warning(self) -> None:
+        decision = self.manager.evaluate(
+            signal(),
+            RiskContext(
+                now=NOW,
+                market_context={
+                    "warnings": ["INVESTMENT_WARNING"],
+                    "price": {"lastPrice": "72000"},
+                    "priceLimits": {"upperLimitPrice": "93000"},
+                },
+            ),
+        )
+
+        self.assertFalse(decision.approved)
+        self.assertIn("stock-warning:INVESTMENT_WARNING", decision.violations)
+
+    def test_allows_sell_despite_stock_warning(self) -> None:
+        decision = self.manager.evaluate(
+            signal(side=Side.SELL),
+            RiskContext(
+                now=NOW,
+                position_quantity=Decimal(3),
+                market_context={"warnings": ["OVERHEATED"]},
+            ),
+        )
+
+        self.assertTrue(decision.approved)
+
+    def test_rejects_buy_at_upper_price_limit(self) -> None:
+        decision = self.manager.evaluate(
+            signal(reference_price=Decimal(93000)),
+            RiskContext(
+                now=NOW,
+                market_context={
+                    "warnings": [],
+                    "price": {"lastPrice": "93000"},
+                    "priceLimits": {"upperLimitPrice": "93000", "lowerLimitPrice": "50400"},
+                },
+            ),
+        )
+
+        self.assertFalse(decision.approved)
+        self.assertIn("upper-price-limit", decision.violations)
+
     def test_rejects_buy_larger_than_available_paper_cash(self) -> None:
         decision = self.manager.evaluate(
             signal(),

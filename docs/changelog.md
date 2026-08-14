@@ -5,6 +5,29 @@
 
 ## 2026-08-14
 
+### 장중 시세·종목 스냅샷
+
+MA 사이클이 캔들만 보고 호가·유의사항·수급을 무시하던 구멍을 막았다.
+신호가 난 종목만 공식 Market Data·Stock Info를 읽고 Hermes와 RiskManager가
+참고한다.
+
+- 호가·현재가·체결·상하한·유의사항. KR이면 수급 5종
+- 정리매매·과열·투자경고/위험·신주인수권 BUY 차단
+- 현재가 ≥ 상한가 BUY 차단
+- 무신호 종목은 추가 호출 없음. 스냅샷 실패는 체결을 막지 않음
+- 운영: 코드만, 배포 대기
+
+### Toss Open API 공식 문서 출처
+
+에이전트가 시세·종목 API를 추측하던 구멍을 막았다. 공식 LLM 안내와
+OpenAPI를 읽고 맞추도록 규칙·문서를 붙였다.
+
+- Cursor 규칙 `.cursor/rules/toss-openapi.mdc`
+- README·system-workflow에 `llms.txt` / overview / JSON `v1.2.14` 링크
+- 스펙의 `GET /api/v1/stocks/all`은 마켓별 상장 종목. 장전 발굴·장중
+  universe는 그대로 `DISCOVERY_SYMBOLS`와 `/rankings`
+- 운영: 코드만, 배포 대기
+
 ### 무신호 원인 (`idleReason`)
 
 공용 Hermes가 `toss_paper_status`로 신호 수·체결만 보고 현금 대기를
