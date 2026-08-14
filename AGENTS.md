@@ -29,6 +29,13 @@
 ## Production Safety
 
 - Inspect live state before mutation.
+- Database connection settings must come from Infisical for the target
+  environment. Do not infer or copy credentials from container environment,
+  Compose interpolation, shell history, or existing process state.
+- If Infisical authentication or the requested secret path is unavailable,
+  stop and report the blocker. Do not fall back to another credential source.
+- Inject database secrets with `infisical run -- ...`; never print secret
+  values in commands, logs, task reports, or agent prompts.
 - Do not deploy, restart containers, publish n8n workflows, trade, or mutate a
   database unless the user explicitly authorized that operation.
 - Keep `TRADING_ENABLED=false` during tests unless the user explicitly enables

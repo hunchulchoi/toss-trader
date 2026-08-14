@@ -5,6 +5,14 @@
 
 ## 2026-08-14
 
+### DB 접속정보 Infisical 단일 원천
+
+agent가 실행 중인 container 환경에서 DB 접속정보를 유추할 수 있었다. 프로젝트
+규칙에 환경별 DB 접속정보는 Infisical에서만 주입하고, 인증 불가 시 다른 원천으로
+우회하지 않도록 명시했다.
+
+운영: 규칙만 반영. secret·DB·서비스 변경 없음.
+
 ### Herdr 역할별 worktree 운영
 
 Codex·Cursor·agy가 같은 checkout을 공유해 변경 경계가 흐려졌다. 루트
