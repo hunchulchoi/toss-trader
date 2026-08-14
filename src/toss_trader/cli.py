@@ -35,6 +35,7 @@ from .models import Side, TradeSignal
 from .paper import DuplicatePaperOrder, open_paper_ledger
 from .paper_mcp import PaperMcpService, PostgresPaperReadStore, serve_paper_mcp
 from .portfolio import PortfolioPerformance
+from .portfolio_backtest import PortfolioBacktestResult, run_ma_portfolio_backtest
 from .repository import open_market_repository
 from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
 from .screening import MarketScanner, market_scan_to_dict
@@ -98,6 +99,22 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--short-window", type=int, default=20)
     backtest.add_argument("--long-window", type=int, default=60)
     backtest.add_argument("--slippage-bps", type=Decimal, default=Decimal(0))
+
+    portfolio_backtest = subparsers.add_parser(
+        "backtest-portfolio-ma",
+        help="backtest MA crossover across symbols with shared cash",
+    )
+    portfolio_backtest.add_argument("symbols", nargs="+")
+    portfolio_backtest.add_argument("--interval", choices=("1m", "1d"), default="1d")
+    portfolio_backtest.add_argument("--count", type=int, default=1000)
+    portfolio_backtest.add_argument("--quantity", type=Decimal, default=Decimal(1))
+    portfolio_backtest.add_argument("--initial-cash", type=Decimal)
+    portfolio_backtest.add_argument("--short-window", type=int, default=20)
+    portfolio_backtest.add_argument("--long-window", type=int, default=60)
+    portfolio_backtest.add_argument("--slippage-bps", type=Decimal, default=Decimal(0))
+    portfolio_backtest.add_argument(
+        "--format", choices=("json", "csv"), default="json", dest="output_format"
+    )
 
     walk_forward = subparsers.add_parser(
         "walk-forward-ma", help="rank MA parameters on train and holdout data"
@@ -279,6 +296,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _scan_ma(settings, args)
         if args.command == "backtest-ma":
             return _backtest_ma(settings, args)
+        if args.command == "backtest-portfolio-ma":
+            return _backtest_portfolio_ma(settings, args)
         if args.command == "walk-forward-ma":
             return _walk_forward_ma(settings, args)
         if args.command == "ma-signal":
@@ -478,6 +497,113 @@ def _backtest_ma(settings: Settings, args: argparse.Namespace) -> int:
         slippage_rate=args.slippage_bps / Decimal(10000),
     )
     return _emit(asdict(result))
+
+
+def _backtest_portfolio_ma(settings: Settings, args: argparse.Namespace) -> int:
+    if args.count <= 0:
+        raise ValueError("count must be positive")
+    symbols = tuple(sorted(symbol.upper() for symbol in args.symbols))
+    if len(set(symbols)) != len(symbols):
+        raise ValueError("symbols must not contain duplicates")
+    repository = open_market_repository(
+        postgres_parameters=settings.postgres_connection_parameters(),
+        sqlite_path=settings.market_db_path,
+    )
+    try:
+        candles_by_symbol = {
+            symbol: repository.latest_candles(symbol, args.interval, limit=args.count)
+            for symbol in symbols
+        }
+    finally:
+        repository.close()
+    result = run_ma_portfolio_backtest(
+        candles_by_symbol=candles_by_symbol,
+        quantity=args.quantity,
+        initial_cash=(
+            args.initial_cash
+            if args.initial_cash is not None
+            else settings.paper_initial_cash
+        ),
+        short_window=args.short_window,
+        long_window=args.long_window,
+        slippage_rate=args.slippage_bps / Decimal(10000),
+    )
+    if args.output_format == "csv":
+        return _emit_portfolio_backtest_csv(result)
+    return _emit(asdict(result))
+
+
+def _emit_portfolio_backtest_csv(result: PortfolioBacktestResult) -> int:
+    fieldnames = (
+        "symbol",
+        "interval",
+        "currency",
+        "portfolio_initial_cash",
+        "portfolio_final_cash",
+        "portfolio_position_market_value",
+        "portfolio_final_equity",
+        "portfolio_total_return_rate",
+        "portfolio_buy_hold_return_rate",
+        "portfolio_excess_return_rate",
+        "portfolio_max_drawdown_rate",
+        "portfolio_realized_pnl",
+        "portfolio_unrealized_pnl",
+        "portfolio_total_costs",
+        "portfolio_insufficient_cash_buys",
+        "symbol_candle_count",
+        "symbol_quantity",
+        "symbol_cost_basis",
+        "symbol_average_cost",
+        "symbol_market_price",
+        "symbol_market_value",
+        "symbol_realized_pnl",
+        "symbol_unrealized_pnl",
+        "symbol_total_costs",
+        "symbol_trade_count",
+        "symbol_completed_trades",
+        "symbol_winning_trades",
+        "symbol_insufficient_cash_buys",
+    )
+    writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, lineterminator="\n")
+    writer.writeheader()
+    for position in result.positions:
+        writer.writerow(
+            {
+                "symbol": position.symbol,
+                "interval": result.interval,
+                "currency": result.currency,
+                "portfolio_initial_cash": result.initial_cash,
+                "portfolio_final_cash": result.final_cash,
+                "portfolio_position_market_value": result.position_market_value,
+                "portfolio_final_equity": result.final_equity,
+                "portfolio_total_return_rate": result.total_return_rate,
+                "portfolio_buy_hold_return_rate": result.buy_hold_return_rate,
+                "portfolio_excess_return_rate": result.excess_return_rate,
+                "portfolio_max_drawdown_rate": result.max_drawdown_rate,
+                "portfolio_realized_pnl": result.realized_pnl,
+                "portfolio_unrealized_pnl": result.unrealized_pnl,
+                "portfolio_total_costs": result.total_costs,
+                "portfolio_insufficient_cash_buys": (
+                    result.insufficient_cash_buys
+                ),
+                "symbol_candle_count": position.candle_count,
+                "symbol_quantity": position.quantity,
+                "symbol_cost_basis": position.cost_basis,
+                "symbol_average_cost": position.average_cost,
+                "symbol_market_price": position.market_price,
+                "symbol_market_value": position.market_value,
+                "symbol_realized_pnl": position.realized_pnl,
+                "symbol_unrealized_pnl": position.unrealized_pnl,
+                "symbol_total_costs": position.total_costs,
+                "symbol_trade_count": position.trade_count,
+                "symbol_completed_trades": position.completed_trades,
+                "symbol_winning_trades": position.winning_trades,
+                "symbol_insufficient_cash_buys": (
+                    position.insufficient_cash_buys
+                ),
+            }
+        )
+    return 0
 
 
 def _walk_forward_ma(settings: Settings, args: argparse.Namespace) -> int:

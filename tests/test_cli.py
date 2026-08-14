@@ -2,7 +2,7 @@ import io
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -18,6 +18,79 @@ from toss_trader.risk import RiskLimits, RiskManager
 
 
 class MetricsCliTest(unittest.TestCase):
+    def test_portfolio_backtest_supports_json_and_csv(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            market_path = str(Path(directory) / "market.db")
+            repository = SqliteMarketRepository(market_path)
+            started_at = datetime(2026, 1, 1, tzinfo=UTC)
+            for symbol, multiplier in (("005930", 1), ("000660", 2)):
+                repository.upsert_candles(
+                    [
+                        Candle(
+                            symbol=symbol,
+                            interval="1d",
+                            timestamp=started_at.replace(day=index + 1),
+                            open_price=Decimal(close * multiplier),
+                            high_price=Decimal(close * multiplier),
+                            low_price=Decimal(close * multiplier),
+                            close_price=Decimal(close * multiplier),
+                            volume=Decimal(1000),
+                            currency="KRW",
+                        )
+                        for index, close in enumerate([100, 100, 100, 120, 130])
+                    ]
+                )
+            repository.close()
+
+            outputs = []
+            for output_format in ("json", "csv"):
+                output = io.StringIO()
+                with (
+                    patch.dict(
+                        "os.environ",
+                        {"MARKET_DB_PATH": market_path, "PAPER_INITIAL_CASH": "1000"},
+                        clear=True,
+                    ),
+                    redirect_stdout(output),
+                ):
+                    exit_code = main(
+                        [
+                            "backtest-portfolio-ma",
+                            "005930",
+                            "000660",
+                            "--count",
+                            "5",
+                            "--short-window",
+                            "2",
+                            "--long-window",
+                            "3",
+                            "--format",
+                            output_format,
+                        ]
+                    )
+                self.assertEqual(exit_code, 0)
+                outputs.append(output.getvalue())
+
+        payload = json.loads(outputs[0])
+        self.assertEqual(payload["symbols"], ["000660", "005930"])
+        self.assertEqual(len(payload["positions"]), 2)
+        self.assertEqual(len(payload["trades"]), 2)
+        csv_lines = outputs[1].splitlines()
+        self.assertIn("portfolio_final_equity", csv_lines[0])
+        self.assertIn("symbol_unrealized_pnl", csv_lines[0])
+        self.assertIn("symbol_insufficient_cash_buys", csv_lines[0])
+        self.assertEqual(len(csv_lines), 3)
+
+    def test_portfolio_backtest_rejects_duplicate_symbols(self) -> None:
+        output = io.StringIO()
+        with redirect_stderr(output):
+            exit_code = main(
+                ["backtest-portfolio-ma", "005930", "005930", "--count", "5"]
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("symbols must not contain duplicates", output.getvalue())
+
     def test_walk_forward_supports_csv_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             market_path = str(Path(directory) / "market.db")

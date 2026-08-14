@@ -108,6 +108,20 @@ PYTHONPATH=src python3 -m toss_trader backtest-ma 005930 \
 신호 다음 캔들 시가에 체결하고 Buy & Hold 대비 초과수익률도 출력한다.
 체결 가정과 결과 필드는 [MA 백테스트](docs/backtesting.md)를 참고한다.
 
+여러 종목을 하나의 현금 잔액으로 재생:
+
+```bash
+PYTHONPATH=src python3 -m toss_trader backtest-portfolio-ma \
+  005930 000660 069500 \
+  --interval 1d --count 1000 \
+  --short-window 20 --long-window 60 \
+  --quantity 1 --slippage-bps 5 \
+  --initial-cash 10000000 --format json
+```
+
+종목별 독립 신호, 공유 현금, 다음 시가 체결, Toss 수수료·세금, 동일가중
+Buy & Hold 비교와 JSON/CSV 출력은 [MA 백테스트](docs/backtesting.md)에 정리한다.
+
 MA 조합 학습/검증:
 
 ```bash

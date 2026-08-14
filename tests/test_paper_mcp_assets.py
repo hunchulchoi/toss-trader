@@ -12,13 +12,13 @@ class PaperMcpAssetsTest(unittest.TestCase):
         )[0]
 
         self.assertIn('command: ["serve-paper-mcp"]', block)
-        self.assertIn('POSTGRES_PORT: ${POSTGRES_PORT:-5431}', block)
+        self.assertIn("POSTGRES_PORT: ${POSTGRES_PORT:-5431}", block)
         self.assertIn(
-            'POSTGRES_USER: ${TOSS_MCP_POSTGRES_USER:-toss_mcp_reader}', block
+            "POSTGRES_USER: ${TOSS_MCP_POSTGRES_USER:-toss_mcp_reader}", block
         )
         self.assertIn("TOSS_MCP_POSTGRES_PASSWORD", block)
-        self.assertIn('PAPER_INITIAL_CASH: ${PAPER_INITIAL_CASH:-1000000}', block)
-        self.assertIn('aliases:\n          - toss-trader-paper-mcp', block)
+        self.assertIn("PAPER_INITIAL_CASH: ${PAPER_INITIAL_CASH:-1000000}", block)
+        self.assertIn("aliases:\n          - toss-trader-paper-mcp", block)
         self.assertIn('expose:\n      - "8090"', block)
         self.assertIn("read_only: true", block)
         self.assertNotIn("ports:", block)
@@ -30,6 +30,14 @@ class PaperMcpAssetsTest(unittest.TestCase):
         config = (ROOT / "automation" / "hermes-analysis" / "config.yaml").read_text()
 
         self.assertIn("mcp_servers: {}", config)
+
+    def test_telegram_policy_blocks_real_account_lookup(self) -> None:
+        soul = (ROOT / "automation" / "hermes-telegram" / "SOUL.md").read_text()
+
+        self.assertIn("use only the read-only `toss-paper` MCP tools", soul)
+        self.assertIn("Never use `terminal`", soul)
+        self.assertIn("`toss-trader holdings`", soul)
+        self.assertIn("refuse briefly", soul)
 
     def test_reader_migration_enforces_select_only_role(self) -> None:
         migration = (ROOT / "db" / "paper_mcp_reader.sql").read_text()

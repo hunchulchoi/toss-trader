@@ -1,0 +1,358 @@
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from itertools import pairwise
+
+from .models import Candle, Side, TradeSignal
+from .paper import toss_trade_costs
+from .strategy import ma_crossover_signal
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioBacktestTrade:
+    symbol: str
+    side: Side
+    executed_at: datetime
+    price: Decimal
+    quantity: Decimal
+    commission: Decimal
+    tax: Decimal
+    realized_pnl: Decimal
+
+    @property
+    def total_costs(self) -> Decimal:
+        return self.commission + self.tax
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioBacktestPosition:
+    symbol: str
+    candle_count: int
+    quantity: Decimal
+    cost_basis: Decimal
+    average_cost: Decimal
+    market_price: Decimal
+    market_value: Decimal
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+    total_costs: Decimal
+    trade_count: int
+    completed_trades: int
+    winning_trades: int
+    insufficient_cash_buys: int
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioBacktestResult:
+    symbols: tuple[str, ...]
+    interval: str
+    currency: str
+    started_at: datetime
+    finished_at: datetime
+    candle_count: int
+    initial_cash: Decimal
+    final_cash: Decimal
+    position_market_value: Decimal
+    final_equity: Decimal
+    total_return_rate: Decimal
+    buy_hold_return_rate: Decimal
+    excess_return_rate: Decimal
+    max_drawdown_rate: Decimal
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+    total_costs: Decimal
+    completed_trades: int
+    winning_trades: int
+    win_rate: Decimal
+    insufficient_cash_buys: int
+    slippage_rate: Decimal
+    positions: tuple[PortfolioBacktestPosition, ...]
+    trades: tuple[PortfolioBacktestTrade, ...]
+
+
+@dataclass(slots=True)
+class _PositionState:
+    quantity: Decimal = Decimal(0)
+    cost_basis: Decimal = Decimal(0)
+    realized_pnl: Decimal = Decimal(0)
+    total_costs: Decimal = Decimal(0)
+    trade_count: int = 0
+    completed_trades: int = 0
+    winning_trades: int = 0
+    insufficient_cash_buys: int = 0
+
+
+def run_ma_portfolio_backtest(
+    *,
+    candles_by_symbol: Mapping[str, Sequence[Candle]],
+    quantity: Decimal,
+    initial_cash: Decimal,
+    short_window: int = 20,
+    long_window: int = 60,
+    slippage_rate: Decimal = Decimal(0),
+) -> PortfolioBacktestResult:
+    """Replay per-symbol MA signals against one shared cash balance."""
+    symbols, interval, currency = _validate_inputs(
+        candles_by_symbol=candles_by_symbol,
+        quantity=quantity,
+        initial_cash=initial_cash,
+        short_window=short_window,
+        long_window=long_window,
+        slippage_rate=slippage_rate,
+    )
+    states = {symbol: _PositionState() for symbol in symbols}
+    pending: dict[str, TradeSignal] = {}
+    last_prices: dict[str, Decimal] = {}
+    cash = initial_cash
+    peak_equity = initial_cash
+    max_drawdown_rate = Decimal(0)
+    trades: list[PortfolioBacktestTrade] = []
+
+    events: dict[datetime, list[tuple[str, int, Candle]]] = {}
+    for symbol in symbols:
+        for index, candle in enumerate(candles_by_symbol[symbol]):
+            events.setdefault(candle.timestamp, []).append((symbol, index, candle))
+
+    for timestamp in sorted(events):
+        timestamp_events = sorted(events[timestamp], key=lambda item: item[0])
+        for symbol, _, candle in timestamp_events:
+            signal = pending.pop(symbol, None)
+            if signal is not None:
+                cash = _execute_pending(
+                    signal=signal,
+                    candle=candle,
+                    quantity=quantity,
+                    slippage_rate=slippage_rate,
+                    cash=cash,
+                    state=states[symbol],
+                    trades=trades,
+                )
+
+        for symbol, _, candle in timestamp_events:
+            last_prices[symbol] = candle.close_price
+
+        for symbol, index, candle in timestamp_events:
+            state = states[symbol]
+            if index < long_window:
+                continue
+            symbol_candles = candles_by_symbol[symbol]
+            window = symbol_candles[index - long_window : index + 1]
+            signal = ma_crossover_signal(
+                symbol=symbol,
+                closes=[item.close_price for item in window],
+                as_of=candle.timestamp,
+                quantity=quantity,
+                short_window=short_window,
+                long_window=long_window,
+            )
+            if signal is not None and (
+                (signal.side is Side.BUY and state.quantity == 0)
+                or (signal.side is Side.SELL and state.quantity > 0)
+            ):
+                pending[symbol] = signal
+
+        equity = cash + sum(
+            (states[symbol].quantity * price for symbol, price in last_prices.items()),
+            start=Decimal(0),
+        )
+        peak_equity = max(peak_equity, equity)
+        max_drawdown_rate = max(max_drawdown_rate, (peak_equity - equity) / peak_equity)
+
+    positions = tuple(
+        _position_result(
+            symbol=symbol,
+            candles=candles_by_symbol[symbol],
+            state=states[symbol],
+        )
+        for symbol in symbols
+    )
+    position_market_value = sum(
+        (position.market_value for position in positions), start=Decimal(0)
+    )
+    final_equity = cash + position_market_value
+    realized_pnl = sum(
+        (position.realized_pnl for position in positions), start=Decimal(0)
+    )
+    unrealized_pnl = sum(
+        (position.unrealized_pnl for position in positions), start=Decimal(0)
+    )
+    total_costs = sum(
+        (position.total_costs for position in positions), start=Decimal(0)
+    )
+    completed_trades = sum(position.completed_trades for position in positions)
+    winning_trades = sum(position.winning_trades for position in positions)
+    insufficient_cash_buys = sum(
+        position.insufficient_cash_buys for position in positions
+    )
+    total_return_rate = (final_equity - initial_cash) / initial_cash
+    buy_hold_return_rate = sum(
+        (
+            candles_by_symbol[symbol][-1].close_price
+            / candles_by_symbol[symbol][0].close_price
+            - Decimal(1)
+            for symbol in symbols
+        ),
+        start=Decimal(0),
+    ) / Decimal(len(symbols))
+    return PortfolioBacktestResult(
+        symbols=symbols,
+        interval=interval,
+        currency=currency,
+        started_at=min(candles_by_symbol[symbol][0].timestamp for symbol in symbols),
+        finished_at=max(candles_by_symbol[symbol][-1].timestamp for symbol in symbols),
+        candle_count=sum(len(candles_by_symbol[symbol]) for symbol in symbols),
+        initial_cash=initial_cash,
+        final_cash=cash,
+        position_market_value=position_market_value,
+        final_equity=final_equity,
+        total_return_rate=total_return_rate,
+        buy_hold_return_rate=buy_hold_return_rate,
+        excess_return_rate=total_return_rate - buy_hold_return_rate,
+        max_drawdown_rate=max_drawdown_rate,
+        realized_pnl=realized_pnl,
+        unrealized_pnl=unrealized_pnl,
+        total_costs=total_costs,
+        completed_trades=completed_trades,
+        winning_trades=winning_trades,
+        win_rate=(
+            Decimal(winning_trades) / Decimal(completed_trades)
+            if completed_trades
+            else Decimal(0)
+        ),
+        insufficient_cash_buys=insufficient_cash_buys,
+        slippage_rate=slippage_rate,
+        positions=positions,
+        trades=tuple(trades),
+    )
+
+
+def _execute_pending(
+    *,
+    signal: TradeSignal,
+    candle: Candle,
+    quantity: Decimal,
+    slippage_rate: Decimal,
+    cash: Decimal,
+    state: _PositionState,
+    trades: list[PortfolioBacktestTrade],
+) -> Decimal:
+    direction = Decimal(1) if signal.side is Side.BUY else Decimal(-1)
+    price = candle.open_price * (Decimal(1) + direction * slippage_rate)
+    execution_quantity = state.quantity if signal.side is Side.SELL else quantity
+    execution_signal = TradeSignal(
+        signal_id=signal.signal_id,
+        symbol=signal.symbol,
+        side=signal.side,
+        reference_price=price,
+        quantity=execution_quantity,
+        reason=signal.reason,
+    )
+    costs = toss_trade_costs(execution_signal)
+    if signal.side is Side.BUY and state.quantity == 0:
+        required_cash = execution_signal.notional + costs.total
+        if required_cash > cash:
+            state.insufficient_cash_buys += 1
+            return cash
+        cash -= required_cash
+        state.quantity = quantity
+        state.cost_basis = required_cash
+        realized_pnl = Decimal(0)
+    elif signal.side is Side.SELL and state.quantity > 0:
+        proceeds = execution_signal.notional - costs.total
+        realized_pnl = proceeds - state.cost_basis
+        cash += proceeds
+        state.quantity = Decimal(0)
+        state.cost_basis = Decimal(0)
+        state.realized_pnl += realized_pnl
+        state.completed_trades += 1
+        if realized_pnl > 0:
+            state.winning_trades += 1
+    else:
+        return cash
+    state.total_costs += costs.total
+    state.trade_count += 1
+    trades.append(
+        PortfolioBacktestTrade(
+            symbol=signal.symbol,
+            side=signal.side,
+            executed_at=candle.timestamp,
+            price=price,
+            quantity=execution_quantity,
+            commission=costs.commission,
+            tax=costs.tax,
+            realized_pnl=realized_pnl,
+        )
+    )
+    return cash
+
+
+def _position_result(
+    *, symbol: str, candles: Sequence[Candle], state: _PositionState
+) -> PortfolioBacktestPosition:
+    market_price = candles[-1].close_price
+    market_value = state.quantity * market_price
+    return PortfolioBacktestPosition(
+        symbol=symbol,
+        candle_count=len(candles),
+        quantity=state.quantity,
+        cost_basis=state.cost_basis,
+        average_cost=(
+            state.cost_basis / state.quantity if state.quantity > 0 else Decimal(0)
+        ),
+        market_price=market_price,
+        market_value=market_value,
+        realized_pnl=state.realized_pnl,
+        unrealized_pnl=(
+            market_value - state.cost_basis if state.quantity > 0 else Decimal(0)
+        ),
+        total_costs=state.total_costs,
+        trade_count=state.trade_count,
+        completed_trades=state.completed_trades,
+        winning_trades=state.winning_trades,
+        insufficient_cash_buys=state.insufficient_cash_buys,
+    )
+
+
+def _validate_inputs(
+    *,
+    candles_by_symbol: Mapping[str, Sequence[Candle]],
+    quantity: Decimal,
+    initial_cash: Decimal,
+    short_window: int,
+    long_window: int,
+    slippage_rate: Decimal,
+) -> tuple[tuple[str, ...], str, str]:
+    if not candles_by_symbol:
+        raise ValueError("candles_by_symbol must not be empty")
+    if not 0 < short_window < long_window:
+        raise ValueError("windows must satisfy 0 < short_window < long_window")
+    if quantity <= 0:
+        raise ValueError("quantity must be positive")
+    if initial_cash <= 0:
+        raise ValueError("initial_cash must be positive")
+    if not Decimal(0) <= slippage_rate < Decimal(1):
+        raise ValueError("slippage_rate must satisfy 0 <= rate < 1")
+    symbols = tuple(sorted(candles_by_symbol))
+    intervals: set[str] = set()
+    currencies: set[str] = set()
+    for symbol in symbols:
+        candles = candles_by_symbol[symbol]
+        if len(candles) < long_window + 1:
+            raise ValueError(f"{symbol}: need at least {long_window + 1} candles")
+        if any(candle.symbol != symbol for candle in candles):
+            raise ValueError(f"{symbol}: candles must match symbol key")
+        intervals.update(candle.interval for candle in candles)
+        currencies.update(candle.currency.upper() for candle in candles)
+        if any(
+            previous.timestamp >= current.timestamp
+            for previous, current in pairwise(candles)
+        ):
+            raise ValueError(f"{symbol}: candle timestamps must be strictly increasing")
+    if len(intervals) != 1:
+        raise ValueError("all candles must share one interval")
+    if len(currencies) != 1:
+        raise ValueError("all candles must share one currency")
+    return symbols, intervals.pop(), currencies.pop()

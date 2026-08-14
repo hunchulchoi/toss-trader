@@ -51,6 +51,50 @@ PostgreSQL을 사용할 때는 `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`
 | `slippage_rate` | 체결가에 적용한 불리한 방향의 슬리피지 비율 |
 | `trades` | 체결 시각·방향·가격·수량·비용·실현손익 |
 
+## 다종목 포트폴리오
+
+`backtest-portfolio-ma`는 여러 종목의 독립적인 MA 신호를 하나의 현금 잔액으로
+재생한다. paper 장부와 주문 API에는 쓰지 않는다.
+
+```bash
+PYTHONPATH=src python3 -m toss_trader backtest-portfolio-ma \
+  005930 000660 069500 \
+  --interval 1d \
+  --count 1000 \
+  --short-window 20 \
+  --long-window 60 \
+  --quantity 1 \
+  --slippage-bps 5 \
+  --initial-cash 10000000 \
+  --format json
+```
+
+포트폴리오 체결·평가 규칙:
+
+- 각 종목은 자기 캔들 종가로 신호를 만들고 자기 다음 캔들 시가에 체결한다.
+- 종목별 캔들 시각이 달라도 전체 타임스탬프 합집합을 시간순으로 재생한다.
+- 같은 시각의 주문은 종목코드 오름차순으로 처리해 결과를 결정적으로 만든다.
+- 모든 종목이 현금을 공유한다. 앞 주문 체결 뒤 현금이 부족하면 뒤 매수는 건너뛴다.
+- 보유 종목은 각 종목의 마지막 종가로 평가한다. 마지막 신호는 강제 체결·청산하지
+  않는다.
+- 전체 평가액 갱신은 같은 타임스탬프의 모든 체결·종가 반영 뒤 한 번 수행한다.
+- 수수료·세금·슬리피지는 단일 종목과 같은 규칙이다.
+- 종목별 캔들은 같은 interval과 통화를 사용해야 하며 종목마다 최소
+  `long_window + 1`개가 필요하다.
+
+`buy_hold_return_rate`는 각 종목의 첫 종가→마지막 종가 무비용 수익률을 동일
+가중한 값이다. 리밸런싱·수수료·세금은 포함하지 않으므로 전략 비교용 벤치마크다.
+
+JSON은 전체 집계, `positions` 종목 요약, `trades` 전체 체결 내역을 담는다. CSV는
+종목당 한 행이며 `portfolio_*` 전체 집계를 반복하고 `symbol_*` 종목 요약을 담는다.
+`insufficient_cash_buys`는 공유 현금 부족으로 건너뛴 매수 신호 수다. 종목별
+`average_cost`는 매수 수수료를 포함한 보유 원가를 수량으로 나눈 값이다.
+
+```bash
+PYTHONPATH=src python3 -m toss_trader backtest-portfolio-ma \
+  005930 000660 069500 --format csv > portfolio-backtest.csv
+```
+
 ## 파라미터 검증
 
 여러 MA 조합을 학습 구간과 이후 검증 구간으로 나눠 비교한다.
