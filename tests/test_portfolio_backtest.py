@@ -90,6 +90,41 @@ class MovingAveragePortfolioBacktestTest(unittest.TestCase):
         positions = {position.symbol: position for position in result.positions}
         self.assertEqual(positions["005930"].average_cost, Decimal(130))
         self.assertEqual(positions["000660"].average_cost, Decimal(260))
+        self.assertEqual(len(result.timeline), 5)
+        final_day = result.timeline[-1]
+        self.assertEqual(final_day.trading_date.isoformat(), "2026-01-05")
+        self.assertEqual(final_day.equity, result.final_equity)
+        self.assertEqual(final_day.cash, result.final_cash)
+        self.assertEqual(final_day.position_market_value, Decimal(390))
+        self.assertEqual(len(final_day.positions), 2)
+
+    def test_keeps_only_the_last_snapshot_for_each_kst_date(self) -> None:
+        candles = _candles("005930", [100, 100, 100, 120, 130])
+        same_kst_day = [
+            Candle(
+                symbol=item.symbol,
+                interval="1m",
+                timestamp=datetime(2026, 1, 2, index, tzinfo=UTC),
+                open_price=item.open_price,
+                high_price=item.high_price,
+                low_price=item.low_price,
+                close_price=item.close_price,
+                volume=item.volume,
+                currency=item.currency,
+            )
+            for index, item in enumerate(candles)
+        ]
+
+        result = run_ma_portfolio_backtest(
+            candles_by_symbol={"005930": same_kst_day},
+            quantity=Decimal(1),
+            initial_cash=Decimal(1000),
+            short_window=2,
+            long_window=3,
+        )
+
+        self.assertEqual(len(result.timeline), 1)
+        self.assertEqual(result.timeline[0].captured_at.hour, 4)
 
     def test_aggregates_toss_costs_and_slippage(self) -> None:
         result = run_ma_portfolio_backtest(

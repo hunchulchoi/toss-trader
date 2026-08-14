@@ -122,6 +122,20 @@ PYTHONPATH=src python3 -m toss_trader backtest-portfolio-ma \
 종목별 독립 신호, 공유 현금, 다음 시가 체결, Toss 수수료·세금, 동일가중
 Buy & Hold 비교와 JSON/CSV 출력은 [MA 백테스트](docs/backtesting.md)에 정리한다.
 
+Rule/Hermes paper 장부 타임라인 웹페이지:
+
+```bash
+PYTHONPATH=src python3 -m toss_trader serve-paper-timeline \
+  --host 127.0.0.1 --port 8091
+```
+
+실계좌를 조회하지 않는다. PostgreSQL의 Rule/Hermes paper 체결과 저장 시세를
+읽기 전용으로 재생하며, 회사명과 종목별 최근 63개 시세 추세선을 함께 표시한다.
+
+날짜를 선택하면 해당일 총자산·현금·보유 평가액·손익·종목별 장부·체결을
+확인할 수 있다. compose 서비스는 Tailscale `${TIMELINE_PORT:-19094}`에만
+바인딩하며 SELECT-only `toss_mcp_reader`를 사용한다.
+
 MA 조합 학습/검증:
 
 ```bash

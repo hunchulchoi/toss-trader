@@ -17,6 +17,21 @@ def _dashboard_panels(dashboard: dict) -> list[dict]:
 
 
 class MonitoringAssetsTest(unittest.TestCase):
+    def test_timeline_is_tailscale_only_and_select_only(self) -> None:
+        compose = (ROOT / "compose.yaml").read_text()
+        block = compose.split("  timeline:\n", 1)[1].split(
+            "\n  hermes-analysis:\n", 1
+        )[0]
+
+        self.assertIn('command:\n      - serve-paper-timeline', block)
+        self.assertIn("${TIMELINE_PORT:-19094}:8091", block)
+        self.assertIn("TOSS_MCP_POSTGRES_USER", block)
+        self.assertIn("TOSS_MCP_POSTGRES_PASSWORD", block)
+        self.assertIn("read_only: true", block)
+        self.assertIn("cap_drop:\n      - ALL", block)
+        self.assertNotIn("TOSS_CLIENT", block)
+        self.assertNotIn("TOSS_ACCOUNT", block)
+
     def test_grafana_dashboard_queries_exported_metrics(self) -> None:
         dashboard_path = (
             ROOT / "monitoring" / "grafana" / "dashboards" / "toss-trader.json"

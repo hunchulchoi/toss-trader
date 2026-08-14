@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from itertools import pairwise
+from zoneinfo import ZoneInfo
 
 from .models import Candle, Side, TradeSignal
 from .paper import toss_trade_costs
 from .strategy import ma_crossover_signal
+
+SEOUL = ZoneInfo("Asia/Seoul")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +49,34 @@ class PortfolioBacktestPosition:
 
 
 @dataclass(frozen=True, slots=True)
+class PortfolioTimelinePosition:
+    symbol: str
+    quantity: Decimal
+    average_cost: Decimal
+    market_price: Decimal
+    market_value: Decimal
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+    total_costs: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioBacktestSnapshot:
+    trading_date: date
+    captured_at: datetime
+    cash: Decimal
+    position_market_value: Decimal
+    equity: Decimal
+    total_return_rate: Decimal
+    drawdown_rate: Decimal
+    max_drawdown_rate: Decimal
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+    total_costs: Decimal
+    positions: tuple[PortfolioTimelinePosition, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class PortfolioBacktestResult:
     symbols: tuple[str, ...]
     interval: str
@@ -71,6 +102,7 @@ class PortfolioBacktestResult:
     slippage_rate: Decimal
     positions: tuple[PortfolioBacktestPosition, ...]
     trades: tuple[PortfolioBacktestTrade, ...]
+    timeline: tuple[PortfolioBacktestSnapshot, ...]
 
 
 @dataclass(slots=True)
@@ -110,6 +142,7 @@ def run_ma_portfolio_backtest(
     peak_equity = initial_cash
     max_drawdown_rate = Decimal(0)
     trades: list[PortfolioBacktestTrade] = []
+    daily_snapshots: dict[date, PortfolioBacktestSnapshot] = {}
 
     events: dict[datetime, list[tuple[str, int, Candle]]] = {}
     for symbol in symbols:
@@ -159,7 +192,39 @@ def run_ma_portfolio_backtest(
             start=Decimal(0),
         )
         peak_equity = max(peak_equity, equity)
-        max_drawdown_rate = max(max_drawdown_rate, (peak_equity - equity) / peak_equity)
+        drawdown_rate = (peak_equity - equity) / peak_equity
+        max_drawdown_rate = max(max_drawdown_rate, drawdown_rate)
+        snapshot_positions = _timeline_positions(
+            symbols=symbols,
+            states=states,
+            last_prices=last_prices,
+        )
+        daily_snapshots[timestamp.astimezone(SEOUL).date()] = PortfolioBacktestSnapshot(
+            trading_date=timestamp.astimezone(SEOUL).date(),
+            captured_at=timestamp,
+            cash=cash,
+            position_market_value=sum(
+                (position.market_value for position in snapshot_positions),
+                start=Decimal(0),
+            ),
+            equity=equity,
+            total_return_rate=(equity - initial_cash) / initial_cash,
+            drawdown_rate=drawdown_rate,
+            max_drawdown_rate=max_drawdown_rate,
+            realized_pnl=sum(
+                (state.realized_pnl for state in states.values()),
+                start=Decimal(0),
+            ),
+            unrealized_pnl=sum(
+                (position.unrealized_pnl for position in snapshot_positions),
+                start=Decimal(0),
+            ),
+            total_costs=sum(
+                (state.total_costs for state in states.values()),
+                start=Decimal(0),
+            ),
+            positions=snapshot_positions,
+        )
 
     positions = tuple(
         _position_result(
@@ -226,6 +291,7 @@ def run_ma_portfolio_backtest(
         slippage_rate=slippage_rate,
         positions=positions,
         trades=tuple(trades),
+        timeline=tuple(daily_snapshots.values()),
     )
 
 
@@ -314,6 +380,42 @@ def _position_result(
         winning_trades=state.winning_trades,
         insufficient_cash_buys=state.insufficient_cash_buys,
     )
+
+
+def _timeline_positions(
+    *,
+    symbols: Sequence[str],
+    states: Mapping[str, _PositionState],
+    last_prices: Mapping[str, Decimal],
+) -> tuple[PortfolioTimelinePosition, ...]:
+    positions: list[PortfolioTimelinePosition] = []
+    for symbol in symbols:
+        market_price = last_prices.get(symbol)
+        if market_price is None:
+            continue
+        state = states[symbol]
+        market_value = state.quantity * market_price
+        positions.append(
+            PortfolioTimelinePosition(
+                symbol=symbol,
+                quantity=state.quantity,
+                average_cost=(
+                    state.cost_basis / state.quantity
+                    if state.quantity > 0
+                    else Decimal(0)
+                ),
+                market_price=market_price,
+                market_value=market_value,
+                realized_pnl=state.realized_pnl,
+                unrealized_pnl=(
+                    market_value - state.cost_basis
+                    if state.quantity > 0
+                    else Decimal(0)
+                ),
+                total_costs=state.total_costs,
+            )
+        )
+    return tuple(positions)
 
 
 def _validate_inputs(

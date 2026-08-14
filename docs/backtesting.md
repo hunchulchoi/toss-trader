@@ -95,6 +95,30 @@ PYTHONPATH=src python3 -m toss_trader backtest-portfolio-ma \
   005930 000660 069500 --format csv > portfolio-backtest.csv
 ```
 
+## Rule/Hermes paper 웹 타임라인
+
+`serve-paper-timeline`은 PostgreSQL의 `paper_fills`, `paper_cycle_runs`,
+`market_candles`를 읽어 Rule과 Hermes 장부를 각각 KST 날짜별로 재생한다.
+CLI holdings나 Toss 실계좌 API는 호출하지 않는다.
+
+```bash
+PYTHONPATH=src python3 -m toss_trader serve-paper-timeline \
+  --host 127.0.0.1 --port 8091
+```
+
+- 날짜 목록·키보드 좌우 이동·날짜 검색을 지원한다.
+- Rule/Hermes 탭별 자산 곡선, 총자산/현금/평가액, 손익, 비용, cycle을 표시한다.
+- 선택 날짜의 보유 종목, 회사명, 최근 63개 저장 시세 추세선과 체결을 표시한다.
+- Hermes − Rule 총자산/수익률 차이를 표시한다.
+- 외부 CDN이나 분석 스크립트를 사용하지 않는다.
+- 서버 시작 때 paper 장부를 읽어 결과를 생성한다. POST와 주문·장부 쓰기 API는 없다.
+- PostgreSQL은 `default_transaction_read_only=on` 연결을 강제한다.
+- compose에서는 `toss_mcp_reader`와 Tailscale host port `19094`를 사용한다.
+
+데이터가 갱신되면 컨테이너를 재시작해 타임라인을 다시 계산한다. paper MCP와 같은
+SELECT 전용 PostgreSQL 계정(`TOSS_MCP_POSTGRES_USER/PASSWORD`)을 사용하므로 신규
+Infisical secret은 필요 없다.
+
 ## 파라미터 검증
 
 여러 MA 조합을 학습 구간과 이후 검증 구간으로 나눠 비교한다.

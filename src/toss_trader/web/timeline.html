@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Rule / Hermes Paper Timeline</title>
+  <link rel="stylesheet" href="/assets/timeline.css">
+  <script src="/assets/timeline.js" defer></script>
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Paper Timeline 홈">
+      <span class="brand-mark">TR</span>
+      <span><strong>TOSS / PAPER</strong><small>RULE · HERMES TIMELINE</small></span>
+    </a>
+    <div class="topbar-meta">
+      <span class="status-dot"></span>
+      <span id="period-label">데이터 로딩 중</span>
+      <span class="readonly">READ ONLY</span>
+    </div>
+  </header>
+
+  <main class="shell" data-testid="timeline-app">
+    <aside class="rail">
+      <div class="rail-head">
+        <p class="eyebrow">TRADING DAYS</p>
+        <strong id="day-count">—</strong>
+      </div>
+      <label class="date-search">
+        <span>날짜 찾기</span>
+        <input id="date-filter" type="search" placeholder="2026-08" autocomplete="off">
+      </label>
+      <nav id="date-list" class="date-list" aria-label="거래 날짜"></nav>
+    </aside>
+
+    <section class="workspace">
+      <div class="portfolio-switch" role="tablist" aria-label="Paper 포트폴리오">
+        <button class="portfolio-tab active" data-portfolio="rule" role="tab" aria-selected="true">RULE</button>
+        <button class="portfolio-tab" data-portfolio="hermes" role="tab" aria-selected="false">HERMES</button>
+        <span id="comparison-delta" class="comparison-delta">차이 —</span>
+      </div>
+      <div class="hero">
+        <div>
+          <p class="eyebrow">DAILY LEDGER / ASIA·SEOUL</p>
+          <h1 id="selected-date" data-testid="selected-date">—</h1>
+          <p id="selected-caption" class="caption">Rule/Hermes paper 장부를 따로 재생합니다.</p>
+        </div>
+        <div class="day-nav">
+          <button id="prev-day" type="button" aria-label="이전 거래일">←</button>
+          <button id="today-latest" type="button">LATEST</button>
+          <button id="next-day" type="button" aria-label="다음 거래일">→</button>
+        </div>
+      </div>
+
+      <section class="kpi-grid" aria-label="일별 핵심 지표">
+        <article class="kpi kpi-primary">
+          <span>총자산</span><strong id="equity">—</strong><small id="return-rate">—</small>
+        </article>
+        <article class="kpi">
+          <span>현금</span><strong id="cash">—</strong><small id="cash-share">—</small>
+        </article>
+        <article class="kpi">
+          <span>보유 평가액</span><strong id="market-value">—</strong><small id="position-count">—</small>
+        </article>
+        <article class="kpi">
+          <span>실현 / 미실현</span><strong id="pnl">—</strong><small id="pnl-detail">—</small>
+        </article>
+      </section>
+
+      <section class="chart-card">
+        <div class="section-head">
+          <div><p class="eyebrow">EQUITY CURVE</p><h2>자산 흐름</h2></div>
+          <div class="legend"><span><i class="line-equity"></i>총자산</span><span><i class="line-base"></i>시작 현금</span></div>
+        </div>
+        <div id="equity-chart" class="chart" role="img" aria-label="날짜별 총자산 그래프" data-testid="equity-chart"></div>
+        <div class="chart-foot"><span id="chart-min">—</span><span id="chart-range">—</span><span id="chart-max">—</span></div>
+      </section>
+
+      <div class="detail-grid">
+        <section class="panel">
+          <div class="section-head">
+            <div><p class="eyebrow">POSITIONS</p><h2>종목별 장부</h2></div>
+            <div class="panel-meta"><span id="cycle-total" class="quiet-pill">cycle —</span><span id="cost-total" class="quiet-pill">비용 —</span></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>종목 / 회사명</th><th>추세</th><th>수량</th><th>평균원가</th><th>현재가</th><th>평가액</th><th>미실현</th></tr></thead>
+              <tbody id="positions-body"></tbody>
+            </table>
+          </div>
+          <p id="positions-empty" class="empty" hidden>이 날짜에는 보유 종목이 없습니다.</p>
+        </section>
+
+        <section class="panel trade-panel">
+          <div class="section-head">
+            <div><p class="eyebrow">EXECUTIONS</p><h2>당일 체결</h2></div>
+            <span id="trade-count" class="quiet-pill">0건</span>
+          </div>
+          <ol id="trade-list" class="trade-list"></ol>
+          <p id="trades-empty" class="empty">이 날짜에는 체결이 없습니다.</p>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="error-state" class="error-state" hidden>
+    <strong>타임라인을 불러오지 못했습니다.</strong>
+    <button id="retry-load" type="button">다시 시도</button>
+  </div>
+</body>
+</html>

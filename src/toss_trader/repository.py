@@ -24,6 +24,16 @@ class MarketRepository(Protocol):
     def close(self) -> None: ...
 
 
+class MarketReadRepository(Protocol):
+    def latest_candles(
+        self, symbol: str, interval: str, *, limit: int
+    ) -> list[Candle]: ...
+
+    def count(self, symbol: str, interval: str) -> int: ...
+
+    def close(self) -> None: ...
+
+
 SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS market_candles (
     symbol TEXT NOT NULL,
@@ -121,6 +131,46 @@ class SqliteMarketRepository:
                 names.items(),
             )
         return len(names)
+
+    def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
+        _validate_limit(limit)
+        rows = self._connection.execute(
+            """
+            SELECT symbol, interval, timestamp, open_price, high_price,
+                   low_price, close_price, volume, currency
+            FROM market_candles
+            WHERE symbol = ? AND interval = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (symbol, interval, limit),
+        ).fetchall()
+        return list(reversed([_candle_from_row(row) for row in rows]))
+
+    def count(self, symbol: str, interval: str) -> int:
+        row = self._connection.execute(
+            """
+            SELECT COUNT(*) FROM market_candles
+            WHERE symbol = ? AND interval = ?
+            """,
+            (symbol, interval),
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+
+class SqliteMarketReadRepository:
+    def __init__(self, database_path: str) -> None:
+        if database_path == ":memory:":
+            raise ValueError("read-only market repository requires a file")
+        uri = f"{Path(database_path).resolve().as_uri()}?mode=ro"
+        try:
+            self._connection = sqlite3.connect(uri, uri=True)
+            self._connection.execute("PRAGMA query_only = ON")
+        except sqlite3.Error as error:
+            raise RuntimeError("SQLite market read connection failed") from error
+
+    def close(self) -> None:
+        self._connection.close()
 
     def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
         _validate_limit(limit)
@@ -253,6 +303,80 @@ class PostgresMarketRepository:
         return int(row[0]) if row else 0
 
 
+class PostgresMarketReadRepository:
+    def __init__(
+        self,
+        connection_parameters: Mapping[str, str | int],
+        *,
+        connect: Callable[..., Any] | None = None,
+        database_error: type[Exception] | None = None,
+    ) -> None:
+        required = {"host", "port", "user", "password", "dbname"}
+        missing = sorted(required - connection_parameters.keys())
+        if missing:
+            raise ValueError(f"missing PostgreSQL parameters: {', '.join(missing)}")
+        if connect is None:
+            try:
+                import psycopg
+            except ImportError as error:
+                raise RuntimeError(
+                    "PostgreSQL support requires: pip install 'toss-trader[postgres]'"
+                ) from error
+            connect = psycopg.connect
+            database_error = psycopg.Error
+        self._database_error = database_error or Exception
+        try:
+            self._connection = connect(
+                **{name: connection_parameters[name] for name in required},
+                options="-c default_transaction_read_only=on",
+                connect_timeout=5,
+            )
+        except self._database_error as error:
+            raise RuntimeError("PostgreSQL market read connection failed") from error
+
+    def close(self) -> None:
+        self._connection.close()
+
+    def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
+        _validate_limit(limit)
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT symbol, interval, timestamp, open_price, high_price,
+                           low_price, close_price, volume, currency
+                    FROM market_candles
+                    WHERE symbol = %s AND interval = %s
+                    ORDER BY timestamp DESC
+                    LIMIT %s
+                    """,
+                    (symbol, interval, limit),
+                )
+                rows = cursor.fetchall()
+        except self._database_error as error:
+            self._connection.rollback()
+            raise RuntimeError("PostgreSQL market candle query failed") from error
+        self._connection.rollback()
+        return list(reversed([_candle_from_row(row) for row in rows]))
+
+    def count(self, symbol: str, interval: str) -> int:
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM market_candles
+                    WHERE symbol = %s AND interval = %s
+                    """,
+                    (symbol, interval),
+                )
+                row = cursor.fetchone()
+        except self._database_error as error:
+            self._connection.rollback()
+            raise RuntimeError("PostgreSQL market count query failed") from error
+        self._connection.rollback()
+        return int(row[0]) if row else 0
+
+
 def open_market_repository(
     *,
     postgres_parameters: Mapping[str, str | int] | None,
@@ -261,6 +385,16 @@ def open_market_repository(
     if postgres_parameters:
         return PostgresMarketRepository(postgres_parameters)
     return SqliteMarketRepository(sqlite_path)
+
+
+def open_market_read_repository(
+    *,
+    postgres_parameters: Mapping[str, str | int] | None,
+    sqlite_path: str,
+) -> MarketReadRepository:
+    if postgres_parameters:
+        return PostgresMarketReadRepository(postgres_parameters)
+    return SqliteMarketReadRepository(sqlite_path)
 
 
 def _sqlite_row(candle: Candle) -> tuple[str, ...]:

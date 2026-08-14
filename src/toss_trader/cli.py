@@ -34,12 +34,14 @@ from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
 from .paper import DuplicatePaperOrder, open_paper_ledger
 from .paper_mcp import PaperMcpService, PostgresPaperReadStore, serve_paper_mcp
+from .paper_timeline import PostgresPaperTimelineStore
 from .portfolio import PortfolioPerformance
 from .portfolio_backtest import PortfolioBacktestResult, run_ma_portfolio_backtest
 from .repository import open_market_repository
 from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
 from .screening import MarketScanner, market_scan_to_dict
 from .strategy import ma_crossover_signal
+from .timeline_web import serve_timeline
 from .universe import DynamicUniverseSelector, open_universe_store
 from .walk_forward import WalkForwardResult, run_ma_walk_forward
 
@@ -115,6 +117,13 @@ def build_parser() -> argparse.ArgumentParser:
     portfolio_backtest.add_argument(
         "--format", choices=("json", "csv"), default="json", dest="output_format"
     )
+
+    timeline = subparsers.add_parser(
+        "serve-paper-timeline",
+        help="serve separate Rule and Hermes paper-ledger timelines",
+    )
+    timeline.add_argument("--host", default="127.0.0.1")
+    timeline.add_argument("--port", type=int, default=8091)
 
     walk_forward = subparsers.add_parser(
         "walk-forward-ma", help="rank MA parameters on train and holdout data"
@@ -298,6 +307,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _backtest_ma(settings, args)
         if args.command == "backtest-portfolio-ma":
             return _backtest_portfolio_ma(settings, args)
+        if args.command == "serve-paper-timeline":
+            return _serve_paper_timeline(settings, args)
         if args.command == "walk-forward-ma":
             return _walk_forward_ma(settings, args)
         if args.command == "ma-signal":
@@ -603,6 +614,32 @@ def _emit_portfolio_backtest_csv(result: PortfolioBacktestResult) -> int:
                 ),
             }
         )
+    return 0
+
+
+def _serve_paper_timeline(settings: Settings, args: argparse.Namespace) -> int:
+    parameters = settings.postgres_connection_parameters()
+    if parameters is None:
+        raise ValueError("paper timeline requires PostgreSQL configuration")
+    payload = PostgresPaperTimelineStore(
+        parameters,
+        initial_cash=settings.paper_initial_cash,
+    ).payload()
+    print(
+        json.dumps(
+            {
+                "timelineServer": "listening",
+                "host": args.host,
+                "port": args.port,
+                "portfolios": ["rule", "hermes"],
+                "days": len(payload["meta"]["dates"]),
+                "readOnly": True,
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
+    serve_timeline(host=args.host, port=args.port, payload=payload)
     return 0
 
 

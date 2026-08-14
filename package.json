@@ -1,0 +1,10 @@
+{
+  "name": "toss-trader-web-smoke",
+  "private": true,
+  "scripts": {
+    "test:integration": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

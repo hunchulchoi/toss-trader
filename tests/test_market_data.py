@@ -1,11 +1,19 @@
+import sqlite3
+import tempfile
 import unittest
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Self
 
 from toss_trader.market_data import MarketCollector, StoredMaStrategy
 from toss_trader.models import Candle, Side
-from toss_trader.repository import PostgresMarketRepository, SqliteMarketRepository
+from toss_trader.repository import (
+    PostgresMarketReadRepository,
+    PostgresMarketRepository,
+    SqliteMarketReadRepository,
+    SqliteMarketRepository,
+)
 
 
 class FakeCandleClient:
@@ -112,6 +120,37 @@ class MarketCollectorTest(unittest.TestCase):
 
         self.assertEqual(self.repository.count("005930", "1m"), 0)
 
+    def test_read_repository_opens_existing_sqlite_without_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / "market.db")
+            writer = SqliteMarketRepository(path)
+            writer.upsert_candles(
+                [
+                    Candle(
+                        symbol="005930",
+                        interval="1d",
+                        timestamp=datetime(2026, 8, 12, tzinfo=UTC),
+                        open_price=Decimal(100),
+                        high_price=Decimal(100),
+                        low_price=Decimal(100),
+                        close_price=Decimal(100),
+                        volume=Decimal(1),
+                        currency="KRW",
+                    )
+                ]
+            )
+            writer.close()
+
+            reader = SqliteMarketReadRepository(path)
+            try:
+                self.assertEqual(len(reader.latest_candles("005930", "1d", limit=1)), 1)
+                with self.assertRaises(sqlite3.OperationalError):
+                    reader._connection.execute(
+                        "INSERT INTO market_symbols VALUES ('x','x')"
+                    )
+            finally:
+                reader.close()
+
 
 class StoredMaStrategyTest(unittest.TestCase):
     def test_uses_chronological_stored_closes(self) -> None:
@@ -185,6 +224,31 @@ class FakeConnection:
 
 
 class PostgresMarketRepositoryTest(unittest.TestCase):
+    def test_read_repository_forces_read_only_without_schema_ddl(self) -> None:
+        connection = FakeConnection()
+        received: dict = {}
+
+        def connect(**kwargs: object) -> FakeConnection:
+            received.update(kwargs)
+            return connection
+
+        repository = PostgresMarketReadRepository(
+            {
+                "host": "postgres.internal",
+                "port": 5432,
+                "user": "reader",
+                "password": "secret",
+                "dbname": "toss_trader",
+            },
+            connect=connect,
+        )
+        repository.close()
+
+        self.assertEqual(received["options"], "-c default_transaction_read_only=on")
+        self.assertEqual(received["connect_timeout"], 5)
+        self.assertEqual(connection.cursor_instance.executed, [])
+        self.assertEqual(connection.commits, 0)
+
     def test_initializes_schema_and_uses_parameterized_upsert(self) -> None:
         connection = FakeConnection()
         received: dict = {}
