@@ -15,7 +15,7 @@ Alertmanager Telegram은 리포트·장애를 **밀어 넣는** 경로다. 이 M
 
 | tool | 질문에 답 | 읽기 원천 |
 |---|---|---|
-| `toss_paper_status` | 자동매매가 지금 어떻게 되나 | 포트폴리오별 마지막 `paper_cycle_runs`, 최근 Hermes 호출(`hermes_trade` 또는 stage `hermes-analysis`), 최근 실패 최대 10건. 마지막 cycle의 `idleReason`·퍼널·종목별 MA 상태(`symbolStates`), 조회 시점 현금·현금비중·오픈 포지션 수 |
+| `toss_paper_status` | 자동매매가 지금 어떻게 되나 | 포트폴리오별 마지막 `paper_cycle_runs`, 최근 Hermes 호출(`hermes_trade` 또는 stage `hermes-analysis`), 최근 실패 최대 10건. 마지막 cycle의 `idleReason`·`marketRegime`·퍼널·종목별 MA 상태(`symbolStates`), 조회 시점 현금·현금비중·오픈 포지션 수 |
 | `toss_paper_holdings` | 지금 보유 종목이 뭐냐 | `paper_fills` 이동평균 재생 + 최신 캔들 평가. 수량 0은 제외 |
 | `toss_paper_pnl` | 수익이 얼마냐 | 같은 재생. 현금, 평가금액, 총자산, 실현·미실현, 누적 수수료·세금, 시작현금 대비 손익 |
 

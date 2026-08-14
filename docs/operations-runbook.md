@@ -86,6 +86,11 @@ workflow JSON에는 credential ID만 저장한다. 수동 runner는 token을 HTT
 stdin으로 넘겨 process argument와 host 파일에 남기지 않는다. 무인증 호출은
 `403`이어야 한다.
 
+`automation/n8n/toss-trader-risk-manager.json`이 바뀌면 운영 n8n에 해당
+workflow를 다시 import하고 publish한다. Git JSON의 `active=false`는 import
+안전값이다. 빼먹으면 로컬 Python RM은 `regime-risk-off`를 쓰는데 n8n JS는
+예전 한도만 본다. 상세는 [`changelog.md`](changelog.md).
+
 ## 상태 확인
 
 ```bash
@@ -159,6 +164,8 @@ Toss candle 요청은 성공했지만 저장 이력이 61개보다 적으면 오
 ### Hermes token 0 + 거부 다수
 
 한도 preflight. `paper_risk_decisions` 위반 코드 확인. `hermes_trade` 없음이 정상.
+`regime-risk-off`면 벤치마크 일봉이 `RISK_OFF`라 신규 BUY만 막힌 것이다. SELL은
+통과해야 한다. 마지막 cycle의 `marketRegime`은 `toss_paper_status`에 있다.
 
 ### n8n workflow failure 알림
 

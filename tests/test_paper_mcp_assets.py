@@ -37,6 +37,8 @@ class PaperMcpAssetsTest(unittest.TestCase):
         self.assertIn("`toss-trader holdings`", soul)
         self.assertIn("refuse briefly", soul)
         self.assertIn("idleReason", soul)
+        self.assertIn("marketRegime", soul)
+        self.assertIn("regime-risk-off", soul)
         self.assertIn("no-crossover", soul)
         self.assertIn("already-held", soul)
 
@@ -62,6 +64,7 @@ class PaperMcpAssetsTest(unittest.TestCase):
         self.assertIn("toss_paper_holdings", paper_mcp)
         self.assertIn("toss_paper_pnl", paper_mcp)
         self.assertIn("idleReason", paper_mcp)
+        self.assertIn("marketRegime", paper_mcp)
         self.assertIn("symbolStates", paper_mcp)
         self.assertIn("changelog.md", workflow)
         changelog = (ROOT / "docs" / "changelog.md").read_text()

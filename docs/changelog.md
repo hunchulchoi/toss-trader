@@ -14,6 +14,7 @@
 - `NEUTRAL`: 하루 BUY·신규 슬롯 2
 - `RISK_OFF`: 신규 BUY `regime-risk-off`, SELL 허용. Hermes 호출 안 함
 - universe 선정 한도는 그대로. cycle_insight·paper-mcp에 `marketRegime`
+- README·runbook·SOUL을 고정 슬롯 5 문구에서 regime 표로 맞춤
 
 운영: 코드만, 배포 대기. automation 재빌드 + n8n RiskManager workflow 재import.
 

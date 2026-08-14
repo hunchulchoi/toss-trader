@@ -189,7 +189,11 @@ DYNAMIC_UNIVERSE_SIZE=15
 universe 갱신 시 이미 `MA20 > MA60`인 종목은 최초 trend entry를 허용한다.
 장중 1분봉은 신규 교차 외에, 일봉이 `close > MA20 > MA60`이고 모멘텀이
 양수이며 1분 `close > MA20 > MA60`인 미보유 종목에 하루 1회 trend
-continuation 매수를 허용한다. 하루 최대 매수와 동시 보유는 각각 5종목이다.
+continuation 매수를 허용한다. RiskManager 기본 한도는 하루 매수 5회·동시
+보유 5종목이다. 벤치마크(`MARKET_BENCHMARK_SYMBOLS` 첫 종목, 기본 `069500`)
+일봉이 `NEUTRAL`이면 2/2로 줄고, `RISK_OFF`면 신규 BUY만 `regime-risk-off`로
+막는다. SELL은 통과한다. 한도 숫자는 올리지 않는다. 상세는
+[자동매매 시나리오](docs/automatic-trading-scenario.md).
 보유 종목은 순위에서 빠져도 계속 추적한다. 랭킹 장애 시 보유 종목만 추적하고
 신규 BUY는 `universe-refresh-failed`로 거부한다. `/candles`는 기본 0.25초 간격과
 Toss rate-limit 응답 헤더에 따라 더 느리게 호출한다.
