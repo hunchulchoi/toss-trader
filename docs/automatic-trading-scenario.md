@@ -96,7 +96,11 @@ workflow JSON과 Git에는 secret을 저장하지 않는다.
 종목 후보는 `종가 > MA20 > MA60`이고 20일 모멘텀이 양수인 종목만 포함한다.
 점수는 `20일 모멘텀(%) + 최근 거래량/20일 평균 거래량`이며 상위
 `DISCOVERY_TOP_N`개를 보낸다. 현재 구현은 KRX 전체 자동 열거가 아니라 명시된
-discovery universe 안에서 발굴한다.
+discovery universe 안에서 발굴한다. 공식 API
+`GET /api/v1/stocks/all` (`listStocks`)이 마켓별 상장 종목을 주지만 장전
+스캔은 이 경로를 쓰지 않는다. 장중 15종목은 `/rankings`다. 문서 위치는
+[README Toss Open API](../README.md#toss-open-api)와
+[system-workflow.md](system-workflow.md#toss-open-api-출처).
 
 ### 2. 장중 paper cycle
 

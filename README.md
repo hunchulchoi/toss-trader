@@ -23,10 +23,38 @@ Hermes Telegram의 paper 장부 조회는
 - 시장 데이터 SQLite 저장 및 공유 PostgreSQL 선택 지원
 - 실주문 API와 실주문 CLI는 **없음**
 
-구현은 2026-08-12에 공식 canonical OpenAPI
-`https://openapi.tossinvest.com/openapi-docs/latest/openapi.json`의 `v1.2.13`을
-확인해 작성했습니다. `/api/v1/accounts`는 계좌 헤더가 필요 없고,
+## Toss Open API
+
+엔드포인트는 공식 문서를 기준으로 한다. LLM·에이전트는
+[LLM 안내](https://developers.tossinvest.com/llms.txt)를 먼저 읽고,
+스키마는
+[OpenAPI JSON](https://openapi.tossinvest.com/openapi-docs/latest/openapi.json)을
+source of truth로 쓴다. 2026-08-14 확인 버전은 `v1.2.14`다.
+개요·rate limit은
+[Overview](https://openapi.tossinvest.com/openapi-docs/overview.md),
+엔드포인트 목록은
+[API 레퍼런스](https://openapi.tossinvest.com/openapi-docs/latest/api-reference/README.md),
+브라우저 문서는
+[developers.tossinvest.com/docs](https://developers.tossinvest.com/docs).
+
+`/api/v1/accounts`는 계좌 헤더가 필요 없고,
 `/api/v1/holdings` 같은 계좌 범위 API는 `X-Tossinvest-Account`가 필요합니다.
+
+이 클라이언트가 실제로 호출하는 조회:
+
+| 용도 | 경로 |
+|---|---|
+| 현재가 | `GET /api/v1/prices` |
+| 종목 상세 (심볼 1~200) | `GET /api/v1/stocks` |
+| 랭킹 (장중 universe) | `GET /api/v1/rankings` |
+| 캔들 | `GET /api/v1/candles` |
+| 장 일정 | `GET /api/v1/market-calendar/{KR\|US}` |
+| 계좌 목록 | `GET /api/v1/accounts` |
+| 실계좌 보유 | `GET /api/v1/holdings` |
+
+스펙에는 마켓별 전체 종목 `GET /api/v1/stocks/all` (`listStocks`)도 있다.
+장전 발굴은 아직 `DISCOVERY_SYMBOLS` 고정 목록이고, 장중 15종목은 랭킹이다.
+전체 상장 스캔은 쓰지 않는다.
 
 ## 안전 기본값
 

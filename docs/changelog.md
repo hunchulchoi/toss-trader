@@ -5,6 +5,17 @@
 
 ## 2026-08-14
 
+### Toss Open API 공식 문서 출처
+
+에이전트가 시세·종목 API를 추측하던 구멍을 막았다. 공식 LLM 안내와
+OpenAPI를 읽고 맞추도록 규칙·문서를 붙였다.
+
+- Cursor 규칙 `.cursor/rules/toss-openapi.mdc`
+- README·system-workflow에 `llms.txt` / overview / JSON `v1.2.14` 링크
+- 스펙의 `GET /api/v1/stocks/all`은 마켓별 상장 종목. 장전 발굴·장중
+  universe는 그대로 `DISCOVERY_SYMBOLS`와 `/rankings`
+- 운영: 코드만, 배포 대기
+
 ### 무신호 원인 (`idleReason`)
 
 공용 Hermes가 `toss_paper_status`로 신호 수·체결만 보고 현금 대기를
