@@ -110,6 +110,11 @@ PYTHONPATH=src python3 -m toss_trader serve-paper-timeline \
 - Rule/Hermes 탭별 자산 곡선, 총자산/현금/평가액, 손익, 비용, cycle을 표시한다.
 - 선택 날짜의 보유 종목, 회사명, 최근 63개 저장 시세 추세선과 체결을 표시한다.
 - Hermes − Rule 총자산/수익률 차이를 표시한다.
+- `COMPARE`에서 Rule/Hermes 자산곡선과 보유 종목을 동시에 비교한다.
+- 판단 로그는 신호 이유, Risk Manager 승인·거부 사유, Hermes 의견과 실제 체결을
+  `signal_id`로 연결한다.
+- 오류 로그는 실패/부분 실패 cycle과 Hermes 분석 오류를 날짜별로 표시한다.
+- `1MIN`은 저장된 1분 OHLC 봉 위에 Rule/Hermes 매수·매도 시점을 표시한다.
 - 외부 CDN이나 분석 스크립트를 사용하지 않는다.
 - 서버 시작 때 paper 장부를 읽어 결과를 생성한다. POST와 주문·장부 쓰기 API는 없다.
 - PostgreSQL은 `default_transaction_read_only=on` 연결을 강제한다.

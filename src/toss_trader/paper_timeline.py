@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -64,7 +65,7 @@ class PostgresPaperTimelineStore:
                     initial_rows = cursor.fetchall()
                     cursor.execute(
                         """
-                        SELECT portfolio_id, symbol, side, quantity, price,
+                        SELECT portfolio_id, signal_id, symbol, side, quantity, price,
                                notional, commission, tax, reason, executed_at
                         FROM paper_fills
                         WHERE portfolio_id IN ('rule', 'hermes')
@@ -72,7 +73,27 @@ class PostgresPaperTimelineStore:
                         """
                     )
                     fill_rows = cursor.fetchall()
-                    symbols = sorted({str(row[1]) for row in fill_rows})
+                    cursor.execute(
+                        """
+                        SELECT portfolio_id, signal_id, symbol, side,
+                               signal_reason, approved, violations, evaluated_at
+                        FROM paper_risk_decisions
+                        WHERE portfolio_id IN ('rule', 'hermes')
+                        ORDER BY evaluated_at DESC, decision_id DESC
+                        """
+                    )
+                    risk_rows = cursor.fetchall()
+                    cursor.execute(
+                        """
+                        SELECT status, error, details, finished_at
+                        FROM automation_run_logs
+                        WHERE run_type = 'hermes_trade'
+                          AND details->>'portfolioId' = 'hermes'
+                        ORDER BY finished_at DESC, run_id DESC
+                        """
+                    )
+                    advice_rows = cursor.fetchall()
+                    symbols = sorted({str(row[2]) for row in fill_rows})
                     mark_rows: Sequence[Sequence[Any]] = ()
                     if symbols:
                         cursor.execute(
@@ -88,9 +109,44 @@ class PostgresPaperTimelineStore:
                             (symbols,),
                         )
                         mark_rows = cursor.fetchall()
+                        cursor.execute(
+                            """
+                            SELECT symbol, open_price, high_price, low_price,
+                                   close_price, volume, currency, timestamp
+                            FROM market_candles
+                            WHERE symbol = ANY(%s) AND interval = '1m'
+                              AND timestamp >= %s
+                            ORDER BY timestamp, symbol
+                            """,
+                            (
+                                symbols,
+                                min(_datetime(row[10]) for row in fill_rows)
+                                .astimezone(SEOUL)
+                                .replace(hour=0, minute=0, second=0, microsecond=0),
+                            ),
+                        )
+                        minute_rows = cursor.fetchall()
+                    else:
+                        minute_rows = ()
+                    decision_symbols = sorted(
+                        {str(row[2]) for row in risk_rows} | set(symbols)
+                    )
+                    name_rows: Sequence[Sequence[Any]] = ()
+                    if decision_symbols:
+                        cursor.execute(
+                            """
+                            SELECT symbol, display_name
+                            FROM market_symbols
+                            WHERE symbol = ANY(%s)
+                            ORDER BY symbol
+                            """,
+                            (decision_symbols,),
+                        )
+                        name_rows = cursor.fetchall()
                     cursor.execute(
                         """
-                        SELECT portfolio_id, status, interval, started_at
+                        SELECT portfolio_id, status, interval, started_at,
+                               error_message
                         FROM paper_cycle_runs
                         WHERE portfolio_id IN ('rule', 'hermes')
                         ORDER BY started_at
@@ -106,6 +162,10 @@ class PostgresPaperTimelineStore:
             fill_rows=fill_rows,
             mark_rows=mark_rows,
             cycle_rows=cycle_rows,
+            risk_rows=risk_rows,
+            advice_rows=advice_rows,
+            name_rows=name_rows,
+            minute_rows=minute_rows,
             default_initial_cash=self._initial_cash,
         )
 
@@ -116,6 +176,10 @@ def build_paper_timeline(
     fill_rows: Sequence[Sequence[Any]],
     mark_rows: Sequence[Sequence[Any]],
     cycle_rows: Sequence[Sequence[Any]],
+    risk_rows: Sequence[Sequence[Any]] = (),
+    advice_rows: Sequence[Sequence[Any]] = (),
+    name_rows: Sequence[Sequence[Any]] = (),
+    minute_rows: Sequence[Sequence[Any]] = (),
     default_initial_cash: Decimal,
 ) -> dict[str, Any]:
     initial_cash = {
@@ -130,6 +194,13 @@ def build_paper_timeline(
     daily_marks: dict[date, dict[str, dict[str, Any]]] = {}
     mark_history: dict[str, list[dict[str, Any]]] = {}
     names: dict[str, str] = {}
+    names.update(
+        {
+            str(symbol): str(display_name)
+            for symbol, display_name in name_rows
+            if display_name is not None
+        }
+    )
     currencies: set[str] = set()
     for row in mark_rows:
         timestamp = _datetime(row[4])
@@ -202,7 +273,9 @@ def build_paper_timeline(
         )
     symbols = [
         {"symbol": symbol, "name": names.get(symbol)}
-        for symbol in sorted({str(row[1]) for row in fill_rows})
+        for symbol in sorted(
+            {str(row[2]) for row in fill_rows} | {str(row[2]) for row in risk_rows}
+        )
     ]
     return {
         "meta": {
@@ -217,6 +290,22 @@ def build_paper_timeline(
         },
         "portfolios": portfolios,
         "comparison": comparison,
+        "decisions": _decision_events(
+            fills=fills,
+            risk_rows=risk_rows,
+            advice_rows=advice_rows,
+            names=names,
+        ),
+        "intraday": _intraday_payload(
+            minute_rows=minute_rows,
+            fills=fills,
+            names=names,
+        ),
+        "errors": _error_events(
+            cycle_rows=cycle_rows,
+            advice_rows=advice_rows,
+            names=names,
+        ),
     }
 
 
@@ -353,21 +442,24 @@ def _portfolio_days(
 def _fill(row: Sequence[Any]) -> dict[str, Any]:
     return {
         "portfolioId": str(row[0]),
-        "symbol": str(row[1]),
-        "side": Side(str(row[2])),
-        "quantity": Decimal(row[3]),
-        "price": Decimal(row[4]),
-        "notional": Decimal(row[5]),
-        "commission": Decimal(row[6]),
-        "tax": Decimal(row[7]),
-        "reason": str(row[8]),
-        "executedAt": _datetime(row[9]),
+        "signalId": str(row[1]),
+        "symbol": str(row[2]),
+        "side": Side(str(row[3])),
+        "quantity": Decimal(row[4]),
+        "price": Decimal(row[5]),
+        "notional": Decimal(row[6]),
+        "commission": Decimal(row[7]),
+        "tax": Decimal(row[8]),
+        "reason": str(row[9]),
+        "executedAt": _datetime(row[10]),
     }
 
 
 def _public_fill(item: Mapping[str, Any], names: Mapping[str, str]) -> dict[str, Any]:
     return {
+        "portfolioId": item["portfolioId"],
         "symbol": item["symbol"],
+        "signalId": item["signalId"],
         "name": names.get(str(item["symbol"])),
         "side": item["side"].value,
         "executedAt": item["executedAt"].isoformat(),
@@ -378,6 +470,165 @@ def _public_fill(item: Mapping[str, Any], names: Mapping[str, str]) -> dict[str,
         "realizedPnl": "0",
         "reason": item["reason"],
     }
+
+
+def _decision_events(
+    *,
+    fills: Sequence[Mapping[str, Any]],
+    risk_rows: Sequence[Sequence[Any]],
+    advice_rows: Sequence[Sequence[Any]],
+    names: Mapping[str, str],
+) -> list[dict[str, Any]]:
+    fills_by_signal = {str(item["signalId"]): item for item in fills}
+    advice_by_signal: dict[str, dict[str, Any]] = {}
+    for status, error, raw_details, finished_at in advice_rows:
+        details = _json_mapping(raw_details)
+        signal_id = details.get("signalId")
+        if not isinstance(signal_id, str) or signal_id in advice_by_signal:
+            continue
+        advice_by_signal[signal_id] = {
+            "status": str(status),
+            "approved": details.get("approved"),
+            "rationale": details.get("rationale"),
+            "error": str(error) if error is not None else None,
+            "finishedAt": _datetime(finished_at).isoformat(),
+        }
+    events = []
+    for row in risk_rows:
+        portfolio_id = str(row[0])
+        signal_id = str(row[1])
+        symbol = str(row[2])
+        side = Side(str(row[3]))
+        approved = bool(row[5])
+        violations = _string_list(row[6])
+        fill = fills_by_signal.get(signal_id)
+        if fill is not None:
+            outcome = "bought" if side is Side.BUY else "sold"
+        elif not approved:
+            outcome = "rejected"
+        else:
+            outcome = "approved-not-filled"
+        events.append(
+            {
+                "portfolioId": portfolio_id,
+                "signalId": signal_id,
+                "symbol": symbol,
+                "name": names.get(symbol),
+                "side": side.value,
+                "outcome": outcome,
+                "signalReason": str(row[4]),
+                "riskApproved": approved,
+                "violations": violations,
+                "hermes": advice_by_signal.get(signal_id),
+                "evaluatedAt": _datetime(row[7]).isoformat(),
+                "executedAt": (
+                    fill["executedAt"].isoformat() if fill is not None else None
+                ),
+            }
+        )
+    return events
+
+
+def _json_mapping(value: Any) -> Mapping[str, Any]:
+    if isinstance(value, Mapping):
+        return value
+    if isinstance(value, str):
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, Mapping) else {}
+    return {}
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        value = json.loads(value)
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    return [str(item) for item in value]
+
+
+def _intraday_payload(
+    *,
+    minute_rows: Sequence[Sequence[Any]],
+    fills: Sequence[Mapping[str, Any]],
+    names: Mapping[str, str],
+) -> dict[str, Any]:
+    series: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for row in minute_rows:
+        timestamp = _datetime(row[7])
+        trading_date = timestamp.astimezone(SEOUL).date().isoformat()
+        symbol = str(row[0])
+        series.setdefault(trading_date, {}).setdefault(symbol, []).append(
+            {
+                "at": timestamp.isoformat(),
+                "open": str(row[1]),
+                "high": str(row[2]),
+                "low": str(row[3]),
+                "close": str(row[4]),
+                "volume": str(row[5]),
+            }
+        )
+    executions: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for fill in fills:
+        trading_date = fill["executedAt"].astimezone(SEOUL).date().isoformat()
+        executions.setdefault(trading_date, {}).setdefault(
+            str(fill["symbol"]), []
+        ).append(_public_fill(fill, names))
+    symbols = sorted(
+        {str(row[0]) for row in minute_rows} | {str(fill["symbol"]) for fill in fills}
+    )
+    return {
+        "symbols": [
+            {"symbol": symbol, "name": names.get(symbol)} for symbol in symbols
+        ],
+        "dates": sorted(series),
+        "series": series,
+        "executions": executions,
+    }
+
+
+def _error_events(
+    *,
+    cycle_rows: Sequence[Sequence[Any]],
+    advice_rows: Sequence[Sequence[Any]],
+    names: Mapping[str, str],
+) -> list[dict[str, Any]]:
+    errors = []
+    for row in cycle_rows:
+        status = str(row[1])
+        message = str(row[4]) if len(row) > 4 and row[4] is not None else None
+        if status == "succeeded" and message is None:
+            continue
+        errors.append(
+            {
+                "portfolioId": str(row[0]),
+                "source": "cycle",
+                "status": status,
+                "interval": str(row[2]),
+                "symbol": None,
+                "name": None,
+                "message": message or f"cycle status: {status}",
+                "occurredAt": _datetime(row[3]).isoformat(),
+            }
+        )
+    for status, error, raw_details, finished_at in advice_rows:
+        if str(status) == "succeeded" and error is None:
+            continue
+        details = _json_mapping(raw_details)
+        symbol = details.get("symbol")
+        symbol_text = str(symbol) if symbol is not None else None
+        errors.append(
+            {
+                "portfolioId": "hermes",
+                "source": "hermes",
+                "status": str(status),
+                "interval": None,
+                "symbol": symbol_text,
+                "name": names.get(symbol_text) if symbol_text else None,
+                "message": str(error) if error is not None else "Hermes 분석 실패",
+                "occurredAt": _datetime(finished_at).isoformat(),
+            }
+        )
+    return sorted(errors, key=lambda item: str(item["occurredAt"]), reverse=True)
 
 
 def _datetime(value: Any) -> datetime:

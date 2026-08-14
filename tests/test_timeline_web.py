@@ -17,6 +17,7 @@ def _payload():
         fill_rows=(
             (
                 "rule",
+                "rule:samsung-buy",
                 "005930",
                 "BUY",
                 "2",
@@ -29,6 +30,7 @@ def _payload():
             ),
             (
                 "hermes",
+                "hermes:hynix-buy",
                 "000660",
                 "BUY",
                 "1",
@@ -86,7 +88,90 @@ def _payload():
         ),
         cycle_rows=(
             ("rule", "succeeded", "1d", datetime(2026, 8, 13, 0, tzinfo=UTC)),
-            ("hermes", "failed", "1d", datetime(2026, 8, 13, 0, tzinfo=UTC)),
+            (
+                "hermes",
+                "failed",
+                "1d",
+                datetime(2026, 8, 13, 0, tzinfo=UTC),
+                "Hermes API timeout",
+            ),
+        ),
+        risk_rows=(
+            (
+                "rule",
+                "rule:samsung-buy",
+                "005930",
+                "BUY",
+                "MA20/MA60 trend entry",
+                True,
+                [],
+                datetime(2026, 8, 13, 1, tzinfo=UTC),
+            ),
+            (
+                "hermes",
+                "hermes:hynix-buy",
+                "000660",
+                "BUY",
+                "MA20/MA60 trend entry",
+                True,
+                [],
+                datetime(2026, 8, 13, 2, tzinfo=UTC),
+            ),
+            (
+                "hermes",
+                "hermes:hanmi-reject",
+                "042700",
+                "BUY",
+                "MA20/MA60 trend entry",
+                False,
+                ["Hermes 거부"],
+                datetime(2026, 8, 13, 3, tzinfo=UTC),
+            ),
+        ),
+        advice_rows=(
+            (
+                "succeeded",
+                None,
+                {
+                    "signalId": "hermes:hynix-buy",
+                    "approved": True,
+                    "rationale": "위험 한도 안입니다.",
+                },
+                datetime(2026, 8, 13, 2, 0, 1, tzinfo=UTC),
+            ),
+            (
+                "succeeded",
+                None,
+                {
+                    "signalId": "hermes:hanmi-reject",
+                    "approved": False,
+                    "rationale": "변동성 정보가 부족합니다.",
+                },
+                datetime(2026, 8, 13, 3, 0, 1, tzinfo=UTC),
+            ),
+        ),
+        name_rows=(("042700", "한미반도체"),),
+        minute_rows=(
+            (
+                "005930",
+                "70000",
+                "71200",
+                "69800",
+                "71000",
+                "1000",
+                "KRW",
+                datetime(2026, 8, 13, 1, tzinfo=UTC),
+            ),
+            (
+                "000660",
+                "250000",
+                "256000",
+                "249000",
+                "255000",
+                "2000",
+                "KRW",
+                datetime(2026, 8, 13, 2, tzinfo=UTC),
+            ),
         ),
         default_initial_cash=Decimal(1000000),
     )
@@ -107,6 +192,19 @@ class TimelineWebTest(unittest.TestCase):
         self.assertEqual(len(rule["positions"][0]["priceTrend"]), 3)
         self.assertNotEqual(rule["equity"], hermes["equity"])
         self.assertEqual(payload["comparison"][-1]["date"], "2026-08-14")
+        self.assertEqual(payload["decisions"][0]["outcome"], "bought")
+        rejected = next(
+            event
+            for event in payload["decisions"]
+            if event["signalId"] == "hermes:hanmi-reject"
+        )
+        self.assertEqual(rejected["outcome"], "rejected")
+        self.assertEqual(rejected["hermes"]["rationale"], "변동성 정보가 부족합니다.")
+        self.assertEqual(
+            payload["intraday"]["series"]["2026-08-13"]["005930"][0]["close"],
+            "71000",
+        )
+        self.assertEqual(payload["errors"][0]["message"], "Hermes API timeout")
 
     def test_serves_read_only_page_assets_api_and_health(self) -> None:
         payload = _payload()
@@ -191,7 +289,7 @@ class _Cursor:
         self.queries.append(query)
 
     def fetchall(self):
-        rows = [(), (), ()]
+        rows = [(), (), (), (), ()]
         value = rows[self._index]
         self._index += 1
         return value

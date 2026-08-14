@@ -40,6 +40,8 @@
       <div class="portfolio-switch" role="tablist" aria-label="Paper 포트폴리오">
         <button class="portfolio-tab active" data-portfolio="rule" role="tab" aria-selected="true">RULE</button>
         <button class="portfolio-tab" data-portfolio="hermes" role="tab" aria-selected="false">HERMES</button>
+        <button class="portfolio-tab" data-portfolio="compare" role="tab" aria-selected="false">COMPARE</button>
+        <button class="portfolio-tab" data-portfolio="minute" role="tab" aria-selected="false">1MIN</button>
         <span id="comparison-delta" class="comparison-delta">차이 —</span>
       </div>
       <div class="hero">
@@ -55,7 +57,20 @@
         </div>
       </div>
 
-      <section class="kpi-grid" aria-label="일별 핵심 지표">
+      <section id="minute-view" class="minute-view" hidden data-testid="minute-view">
+        <section class="panel minute-panel">
+          <div class="section-head">
+            <div><p class="eyebrow">COLLECTED 1M CANDLES</p><h2>1분봉 · 체결 시점</h2></div>
+            <label class="symbol-select"><span>종목</span><select id="minute-symbol"></select></label>
+          </div>
+          <div class="minute-legend"><span><i class="candle-up"></i>상승봉</span><span><i class="candle-down"></i>하락봉</span><span><i class="marker-rule"></i>Rule 체결</span><span><i class="marker-hermes"></i>Hermes 체결</span></div>
+          <div id="minute-chart" class="minute-chart" role="img" aria-label="수집된 1분봉과 체결 시점"></div>
+          <p id="minute-empty" class="empty" hidden>선택한 날짜·종목의 저장된 1분봉이 없습니다.</p>
+          <ol id="minute-executions" class="minute-executions"></ol>
+        </section>
+      </section>
+
+      <section id="single-kpis" class="kpi-grid" aria-label="일별 핵심 지표">
         <article class="kpi kpi-primary">
           <span>총자산</span><strong id="equity">—</strong><small id="return-rate">—</small>
         </article>
@@ -70,16 +85,28 @@
         </article>
       </section>
 
-      <section class="chart-card">
+      <section id="portfolio-chart-card" class="chart-card">
         <div class="section-head">
           <div><p class="eyebrow">EQUITY CURVE</p><h2>자산 흐름</h2></div>
-          <div class="legend"><span><i class="line-equity"></i>총자산</span><span><i class="line-base"></i>시작 현금</span></div>
+          <div id="chart-legend" class="legend"><span><i class="line-equity"></i>총자산</span><span><i class="line-base"></i>시작 현금</span></div>
         </div>
         <div id="equity-chart" class="chart" role="img" aria-label="날짜별 총자산 그래프" data-testid="equity-chart"></div>
         <div class="chart-foot"><span id="chart-min">—</span><span id="chart-range">—</span><span id="chart-max">—</span></div>
       </section>
 
-      <div class="detail-grid">
+      <section id="comparison-view" class="comparison-view" hidden data-testid="comparison-view">
+        <div class="compare-cards">
+          <article class="compare-card rule-card"><p class="eyebrow">RULE</p><strong id="compare-rule-equity">—</strong><span id="compare-rule-return">—</span></article>
+          <article class="compare-card hermes-card"><p class="eyebrow">HERMES</p><strong id="compare-hermes-equity">—</strong><span id="compare-hermes-return">—</span></article>
+          <article class="compare-card delta-card"><p class="eyebrow">HERMES − RULE</p><strong id="compare-equity-delta">—</strong><span id="compare-return-delta">—</span></article>
+        </div>
+        <div class="compare-holdings">
+          <section class="panel"><div class="section-head"><h2>Rule 보유</h2><span id="compare-rule-count" class="quiet-pill">0종목</span></div><div id="compare-rule-holdings" class="holding-chips"></div></section>
+          <section class="panel"><div class="section-head"><h2>Hermes 보유</h2><span id="compare-hermes-count" class="quiet-pill">0종목</span></div><div id="compare-hermes-holdings" class="holding-chips"></div></section>
+        </div>
+      </section>
+
+      <div id="single-details" class="detail-grid">
         <section class="panel">
           <div class="section-head">
             <div><p class="eyebrow">POSITIONS</p><h2>종목별 장부</h2></div>
@@ -103,6 +130,32 @@
           <p id="trades-empty" class="empty">이 날짜에는 체결이 없습니다.</p>
         </section>
       </div>
+
+      <section id="decision-panel" class="panel decision-panel" data-testid="decision-log">
+        <div class="section-head">
+          <div><p class="eyebrow">DECISION AUDIT</p><h2>왜 샀고, 거부했고, 팔았나</h2></div>
+          <div class="decision-tools">
+            <select id="decision-filter" aria-label="판단 결과 필터">
+              <option value="all">전체 판단</option>
+              <option value="bought">매수</option>
+              <option value="sold">매도</option>
+              <option value="rejected">거부</option>
+            </select>
+            <span id="decision-count" class="quiet-pill">0건</span>
+          </div>
+        </div>
+        <ol id="decision-list" class="decision-list"></ol>
+        <p id="decisions-empty" class="empty" hidden>이 날짜에는 저장된 판단이 없습니다.</p>
+      </section>
+
+      <section id="error-panel" class="panel error-panel" data-testid="error-log">
+        <div class="section-head">
+          <div><p class="eyebrow">ERROR AUDIT</p><h2>오류 로그</h2></div>
+          <span id="error-count" class="quiet-pill">0건</span>
+        </div>
+        <ol id="error-list" class="error-list"></ol>
+        <p id="errors-empty" class="empty" hidden>이 날짜에는 저장된 오류가 없습니다.</p>
+      </section>
     </section>
   </main>
 
