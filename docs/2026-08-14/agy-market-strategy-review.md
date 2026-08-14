@@ -1,5 +1,10 @@
 # 2026-08-14 KST 시장 상황 및 Toss Trader 전략·리스크 검토 보고서
 
+> [!CAUTION]
+> 토론 과정 보존용 1차 초안이다. 외부시장 수치와 URL은 독립 검증에
+> 실패해 철회됐다. 전략 판단에는 이 문서를 사용하지 말고
+> `agy-rebuttal-to-cursor.md`와 `debate-process-and-decision.md`를 사용한다.
+
 - **작성자**: agy (Researcher)
 - **조사 기준시각**: 2026-08-14 16:05:00 KST
 - **문서 목적**: 2026-08-14 KST 한국 증시 장세와 Toss Trader Paper Trading(Rule vs Hermes) 성과를 교차 검증하고, 슬롯 확대(5→10) 및 LLM Advisor 의사결정에 대한 과적합/표본 부족/사후확증편향을 비판적 관점에서 검토.
