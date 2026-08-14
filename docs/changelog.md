@@ -16,7 +16,8 @@ valid JSON`으로 매 5분 critical이 났다. jsonBody `{ ...$json }` spread가
 RiskManager 판단·audit 기록은 그대로다.
 
 운영: 2026-08-14 15:09 KST automation 재빌드. n8n `toss-trader-intraday-paper`
-import 후 재활성화·n8n 재시작. live nodes spread 없음. `TRADING_ENABLED=false`.
+import 후 재활성화·n8n 재시작. live nodes spread 없음. 15:15 정규 실행
+`success`. `TRADING_ENABLED=false`.
 
 ### paper 포지션 슬롯 확대·손실 시 청산 허용
 
