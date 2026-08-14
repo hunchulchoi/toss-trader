@@ -39,5 +39,7 @@
 `max-open-positions`로 거부된다. 일봉 60개가 없으면 저장된 일봉을 쓰고,
 모자라면 그때만 일봉 60개를 수집한다. 마감 일봉 사이클에는 이 경로 없음.
 
-운영: 코드는 이 날짜에 들어갔다. continuation 이미지 배포는 changelog
-작성 시점 기준 미완료. 다음 automation 재빌드 후 산다.
+운영: 2026-08-14 10:22 KST automation·paper-mcp 재빌드. SOUL 반영 후
+공용 hermes 재시작. 수동 1분 사이클 rule·hermes 각 19종, 신호 0, 체결 0.
+`idleReason=no-crossover` (already-held 1, no-crossover 18). MA above 7 /
+below 11 / equal 1. `TRADING_ENABLED=false`. paper-mcp healthz tools=3.
