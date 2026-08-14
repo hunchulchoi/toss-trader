@@ -21,6 +21,14 @@ No active tasks.
 - Tests: 209 unit tests passed; changed-file Ruff passed
 - Risks: stored-candle run blocked until compromised Infisical token revoke/rotate is confirmed
 
+### STRAT-002 Setup hypothesis v2
+
+- Owner: codex
+- Status: REVIEW
+- Result: pure 200-day setup evaluator covers pullback, confirmed oversold reversal, flow overlap, prohibitions, relative valuation tiers, and capped sizing reference
+- Tests: dedicated boundary tests; full suite pending
+- Risks: sector symbols, flow, point-in-time valuation, event calendar, gap threshold, stop derivation, and volatility regime are not yet provided; not connected to orders
+
 ## DONE
 
 ### OPS-001 Intraday Telegram JSON fix
