@@ -5,6 +5,14 @@
 
 ## 2026-08-14
 
+### Herdr 역할별 worktree 운영
+
+Codex·Cursor·agy가 같은 checkout을 공유해 변경 경계가 흐려졌다. 루트
+`AGENTS.md`, 중앙 작업판, 결정 기록을 추가하고 역할별 branch/worktree를
+표준으로 정했다.
+
+운영: 개발 환경 구성만. 거래·n8n 서비스 변경 없음.
+
 ### 장중 특이사항 Telegram JSON·슬롯 거부 도배
 
 성공한 1분 사이클이 `특이사항 Telegram`에서 `JSON parameter needs to be
