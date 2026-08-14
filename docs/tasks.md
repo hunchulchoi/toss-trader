@@ -13,7 +13,13 @@ No active tasks.
 
 ## REVIEW
 
-No tasks awaiting review.
+### STRAT-001 Risk-cap hypothesis backtest
+
+- Owner: codex
+- Status: REVIEW
+- Result: portfolio backtest now models order, position, UTC daily-buy, and open-position limits; deterministic scenarios reject daily-cap expansion and show position-cap duplication
+- Tests: 209 unit tests passed; changed-file Ruff passed
+- Risks: stored-candle run blocked until compromised Infisical token revoke/rotate is confirmed
 
 ## DONE
 

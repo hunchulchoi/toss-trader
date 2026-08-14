@@ -64,6 +64,8 @@ class MetricsCliTest(unittest.TestCase):
                             "2",
                             "--long-window",
                             "3",
+                            "--max-open-positions",
+                            "1",
                             "--format",
                             output_format,
                         ]
@@ -74,11 +76,13 @@ class MetricsCliTest(unittest.TestCase):
         payload = json.loads(outputs[0])
         self.assertEqual(payload["symbols"], ["000660", "005930"])
         self.assertEqual(len(payload["positions"]), 2)
-        self.assertEqual(len(payload["trades"]), 2)
+        self.assertEqual(len(payload["trades"]), 1)
+        self.assertEqual(payload["max_open_position_rejections"], 1)
         csv_lines = outputs[1].splitlines()
         self.assertIn("portfolio_final_equity", csv_lines[0])
         self.assertIn("symbol_unrealized_pnl", csv_lines[0])
         self.assertIn("symbol_insufficient_cash_buys", csv_lines[0])
+        self.assertIn("symbol_max_open_position_rejections", csv_lines[0])
         self.assertEqual(len(csv_lines), 3)
 
     def test_portfolio_backtest_rejects_duplicate_symbols(self) -> None:

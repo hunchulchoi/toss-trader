@@ -114,6 +114,10 @@ def build_parser() -> argparse.ArgumentParser:
     portfolio_backtest.add_argument("--short-window", type=int, default=20)
     portfolio_backtest.add_argument("--long-window", type=int, default=60)
     portfolio_backtest.add_argument("--slippage-bps", type=Decimal, default=Decimal(0))
+    portfolio_backtest.add_argument("--max-open-positions", type=int)
+    portfolio_backtest.add_argument("--max-daily-buys", type=int)
+    portfolio_backtest.add_argument("--max-position-notional", type=Decimal)
+    portfolio_backtest.add_argument("--max-order-notional", type=Decimal)
     portfolio_backtest.add_argument(
         "--format", choices=("json", "csv"), default="json", dest="output_format"
     )
@@ -538,6 +542,10 @@ def _backtest_portfolio_ma(settings: Settings, args: argparse.Namespace) -> int:
         short_window=args.short_window,
         long_window=args.long_window,
         slippage_rate=args.slippage_bps / Decimal(10000),
+        max_open_positions=args.max_open_positions,
+        max_daily_buys=args.max_daily_buys,
+        max_position_notional=args.max_position_notional,
+        max_order_notional=args.max_order_notional,
     )
     if args.output_format == "csv":
         return _emit_portfolio_backtest_csv(result)
@@ -561,6 +569,10 @@ def _emit_portfolio_backtest_csv(result: PortfolioBacktestResult) -> int:
         "portfolio_unrealized_pnl",
         "portfolio_total_costs",
         "portfolio_insufficient_cash_buys",
+        "portfolio_max_open_position_rejections",
+        "portfolio_max_daily_buy_rejections",
+        "portfolio_max_position_notional_rejections",
+        "portfolio_max_order_notional_rejections",
         "symbol_candle_count",
         "symbol_quantity",
         "symbol_cost_basis",
@@ -574,6 +586,10 @@ def _emit_portfolio_backtest_csv(result: PortfolioBacktestResult) -> int:
         "symbol_completed_trades",
         "symbol_winning_trades",
         "symbol_insufficient_cash_buys",
+        "symbol_max_open_position_rejections",
+        "symbol_max_daily_buy_rejections",
+        "symbol_max_position_notional_rejections",
+        "symbol_max_order_notional_rejections",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, lineterminator="\n")
     writer.writeheader()
@@ -595,6 +611,18 @@ def _emit_portfolio_backtest_csv(result: PortfolioBacktestResult) -> int:
                 "portfolio_unrealized_pnl": result.unrealized_pnl,
                 "portfolio_total_costs": result.total_costs,
                 "portfolio_insufficient_cash_buys": (result.insufficient_cash_buys),
+                "portfolio_max_open_position_rejections": (
+                    result.max_open_position_rejections
+                ),
+                "portfolio_max_daily_buy_rejections": (
+                    result.max_daily_buy_rejections
+                ),
+                "portfolio_max_position_notional_rejections": (
+                    result.max_position_notional_rejections
+                ),
+                "portfolio_max_order_notional_rejections": (
+                    result.max_order_notional_rejections
+                ),
                 "symbol_candle_count": position.candle_count,
                 "symbol_quantity": position.quantity,
                 "symbol_cost_basis": position.cost_basis,
@@ -608,6 +636,18 @@ def _emit_portfolio_backtest_csv(result: PortfolioBacktestResult) -> int:
                 "symbol_completed_trades": position.completed_trades,
                 "symbol_winning_trades": position.winning_trades,
                 "symbol_insufficient_cash_buys": (position.insufficient_cash_buys),
+                "symbol_max_open_position_rejections": (
+                    position.max_open_position_rejections
+                ),
+                "symbol_max_daily_buy_rejections": (
+                    position.max_daily_buy_rejections
+                ),
+                "symbol_max_position_notional_rejections": (
+                    position.max_position_notional_rejections
+                ),
+                "symbol_max_order_notional_rejections": (
+                    position.max_order_notional_rejections
+                ),
             }
         )
     return 0

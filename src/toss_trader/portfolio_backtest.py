@@ -46,6 +46,10 @@ class PortfolioBacktestPosition:
     completed_trades: int
     winning_trades: int
     insufficient_cash_buys: int
+    max_open_position_rejections: int
+    max_daily_buy_rejections: int
+    max_position_notional_rejections: int
+    max_order_notional_rejections: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +103,10 @@ class PortfolioBacktestResult:
     winning_trades: int
     win_rate: Decimal
     insufficient_cash_buys: int
+    max_open_position_rejections: int
+    max_daily_buy_rejections: int
+    max_position_notional_rejections: int
+    max_order_notional_rejections: int
     slippage_rate: Decimal
     positions: tuple[PortfolioBacktestPosition, ...]
     trades: tuple[PortfolioBacktestTrade, ...]
@@ -115,6 +123,10 @@ class _PositionState:
     completed_trades: int = 0
     winning_trades: int = 0
     insufficient_cash_buys: int = 0
+    max_open_position_rejections: int = 0
+    max_daily_buy_rejections: int = 0
+    max_position_notional_rejections: int = 0
+    max_order_notional_rejections: int = 0
 
 
 def run_ma_portfolio_backtest(
@@ -125,6 +137,10 @@ def run_ma_portfolio_backtest(
     short_window: int = 20,
     long_window: int = 60,
     slippage_rate: Decimal = Decimal(0),
+    max_open_positions: int | None = None,
+    max_daily_buys: int | None = None,
+    max_position_notional: Decimal | None = None,
+    max_order_notional: Decimal | None = None,
 ) -> PortfolioBacktestResult:
     """Replay per-symbol MA signals against one shared cash balance."""
     symbols, interval, currency = _validate_inputs(
@@ -134,6 +150,10 @@ def run_ma_portfolio_backtest(
         short_window=short_window,
         long_window=long_window,
         slippage_rate=slippage_rate,
+        max_open_positions=max_open_positions,
+        max_daily_buys=max_daily_buys,
+        max_position_notional=max_position_notional,
+        max_order_notional=max_order_notional,
     )
     states = {symbol: _PositionState() for symbol in symbols}
     pending: dict[str, TradeSignal] = {}
@@ -143,6 +163,7 @@ def run_ma_portfolio_backtest(
     max_drawdown_rate = Decimal(0)
     trades: list[PortfolioBacktestTrade] = []
     daily_snapshots: dict[date, PortfolioBacktestSnapshot] = {}
+    daily_buy_counts: dict[date, int] = {}
 
     events: dict[datetime, list[tuple[str, int, Candle]]] = {}
     for symbol in symbols:
@@ -154,7 +175,26 @@ def run_ma_portfolio_backtest(
         for symbol, _, candle in timestamp_events:
             signal = pending.pop(symbol, None)
             if signal is not None:
-                cash = _execute_pending(
+                trading_date = candle.timestamp.date()
+                rejection = _buy_risk_rejection(
+                    signal=signal,
+                    candle=candle,
+                    quantity=quantity,
+                    slippage_rate=slippage_rate,
+                    state=states[symbol],
+                    open_position_count=sum(
+                        state.quantity > 0 for state in states.values()
+                    ),
+                    daily_buy_count=daily_buy_counts.get(trading_date, 0),
+                    max_open_positions=max_open_positions,
+                    max_daily_buys=max_daily_buys,
+                    max_position_notional=max_position_notional,
+                    max_order_notional=max_order_notional,
+                )
+                if rejection is not None:
+                    setattr(states[symbol], rejection, getattr(states[symbol], rejection) + 1)
+                    continue
+                cash, executed = _execute_pending(
                     signal=signal,
                     candle=candle,
                     quantity=quantity,
@@ -163,6 +203,10 @@ def run_ma_portfolio_backtest(
                     state=states[symbol],
                     trades=trades,
                 )
+                if executed and signal.side is Side.BUY:
+                    daily_buy_counts[trading_date] = (
+                        daily_buy_counts.get(trading_date, 0) + 1
+                    )
 
         for symbol, _, candle in timestamp_events:
             last_prices[symbol] = candle.close_price
@@ -252,6 +296,18 @@ def run_ma_portfolio_backtest(
     insufficient_cash_buys = sum(
         position.insufficient_cash_buys for position in positions
     )
+    max_open_position_rejections = sum(
+        position.max_open_position_rejections for position in positions
+    )
+    max_daily_buy_rejections = sum(
+        position.max_daily_buy_rejections for position in positions
+    )
+    max_position_notional_rejections = sum(
+        position.max_position_notional_rejections for position in positions
+    )
+    max_order_notional_rejections = sum(
+        position.max_order_notional_rejections for position in positions
+    )
     total_return_rate = (final_equity - initial_cash) / initial_cash
     buy_hold_return_rate = sum(
         (
@@ -288,6 +344,10 @@ def run_ma_portfolio_backtest(
             else Decimal(0)
         ),
         insufficient_cash_buys=insufficient_cash_buys,
+        max_open_position_rejections=max_open_position_rejections,
+        max_daily_buy_rejections=max_daily_buy_rejections,
+        max_position_notional_rejections=max_position_notional_rejections,
+        max_order_notional_rejections=max_order_notional_rejections,
         slippage_rate=slippage_rate,
         positions=positions,
         trades=tuple(trades),
@@ -304,7 +364,7 @@ def _execute_pending(
     cash: Decimal,
     state: _PositionState,
     trades: list[PortfolioBacktestTrade],
-) -> Decimal:
+) -> tuple[Decimal, bool]:
     direction = Decimal(1) if signal.side is Side.BUY else Decimal(-1)
     price = candle.open_price * (Decimal(1) + direction * slippage_rate)
     execution_quantity = state.quantity if signal.side is Side.SELL else quantity
@@ -321,7 +381,7 @@ def _execute_pending(
         required_cash = execution_signal.notional + costs.total
         if required_cash > cash:
             state.insufficient_cash_buys += 1
-            return cash
+            return cash, False
         cash -= required_cash
         state.quantity = quantity
         state.cost_basis = required_cash
@@ -337,7 +397,7 @@ def _execute_pending(
         if realized_pnl > 0:
             state.winning_trades += 1
     else:
-        return cash
+        return cash, False
     state.total_costs += costs.total
     state.trade_count += 1
     trades.append(
@@ -352,7 +412,42 @@ def _execute_pending(
             realized_pnl=realized_pnl,
         )
     )
-    return cash
+    return cash, True
+
+
+def _buy_risk_rejection(
+    *,
+    signal: TradeSignal,
+    candle: Candle,
+    quantity: Decimal,
+    slippage_rate: Decimal,
+    state: _PositionState,
+    open_position_count: int,
+    daily_buy_count: int,
+    max_open_positions: int | None,
+    max_daily_buys: int | None,
+    max_position_notional: Decimal | None,
+    max_order_notional: Decimal | None,
+) -> str | None:
+    if signal.side is not Side.BUY:
+        return None
+    price = candle.open_price * (Decimal(1) + slippage_rate)
+    if max_order_notional is not None and quantity * price > max_order_notional:
+        return "max_order_notional_rejections"
+    if (
+        max_position_notional is not None
+        and state.quantity * price + quantity * price > max_position_notional
+    ):
+        return "max_position_notional_rejections"
+    if max_daily_buys is not None and daily_buy_count >= max_daily_buys:
+        return "max_daily_buy_rejections"
+    if (
+        max_open_positions is not None
+        and state.quantity <= 0
+        and open_position_count >= max_open_positions
+    ):
+        return "max_open_position_rejections"
+    return None
 
 
 def _position_result(
@@ -379,6 +474,10 @@ def _position_result(
         completed_trades=state.completed_trades,
         winning_trades=state.winning_trades,
         insufficient_cash_buys=state.insufficient_cash_buys,
+        max_open_position_rejections=state.max_open_position_rejections,
+        max_daily_buy_rejections=state.max_daily_buy_rejections,
+        max_position_notional_rejections=state.max_position_notional_rejections,
+        max_order_notional_rejections=state.max_order_notional_rejections,
     )
 
 
@@ -426,6 +525,10 @@ def _validate_inputs(
     short_window: int,
     long_window: int,
     slippage_rate: Decimal,
+    max_open_positions: int | None,
+    max_daily_buys: int | None,
+    max_position_notional: Decimal | None,
+    max_order_notional: Decimal | None,
 ) -> tuple[tuple[str, ...], str, str]:
     if not candles_by_symbol:
         raise ValueError("candles_by_symbol must not be empty")
@@ -437,6 +540,14 @@ def _validate_inputs(
         raise ValueError("initial_cash must be positive")
     if not Decimal(0) <= slippage_rate < Decimal(1):
         raise ValueError("slippage_rate must satisfy 0 <= rate < 1")
+    if max_open_positions is not None and max_open_positions <= 0:
+        raise ValueError("max_open_positions must be positive")
+    if max_daily_buys is not None and max_daily_buys <= 0:
+        raise ValueError("max_daily_buys must be positive")
+    if max_position_notional is not None and max_position_notional <= 0:
+        raise ValueError("max_position_notional must be positive")
+    if max_order_notional is not None and max_order_notional <= 0:
+        raise ValueError("max_order_notional must be positive")
     symbols = tuple(sorted(candles_by_symbol))
     intervals: set[str] = set()
     currencies: set[str] = set()

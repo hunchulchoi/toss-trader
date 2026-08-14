@@ -189,7 +189,9 @@ DYNAMIC_UNIVERSE_SIZE=15
 universe 갱신 시 이미 `MA20 > MA60`인 종목은 최초 trend entry를 허용한다.
 장중 1분봉은 신규 교차 외에, 일봉이 `close > MA20 > MA60`이고 모멘텀이
 양수이며 1분 `close > MA20 > MA60`인 미보유 종목에 하루 1회 trend
-continuation 매수를 허용한다. 하루 최대 매수와 동시 보유는 각각 5종목이다.
+continuation 매수를 허용한다. 현재 paper 실험값은 하루 최대 매수 5회, 동시
+보유 10종목이다. 이 값은 2026-08-14 장중 변경 뒤 아직 온전한 거래일 검증을
+거치지 않은 미확정 값이다.
 보유 종목은 순위에서 빠져도 계속 추적한다. 랭킹 장애 시 보유 종목만 추적하고
 신규 BUY는 `universe-refresh-failed`로 거부한다. `/candles`는 기본 0.25초 간격과
 Toss rate-limit 응답 헤더에 따라 더 느리게 호출한다.

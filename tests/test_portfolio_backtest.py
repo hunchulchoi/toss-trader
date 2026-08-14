@@ -148,6 +148,92 @@ class MovingAveragePortfolioBacktestTest(unittest.TestCase):
         self.assertEqual(result.final_equity, Decimal(955815))
         self.assertEqual(result.max_drawdown_rate, Decimal("0.044185"))
 
+    def test_applies_open_position_limit_in_execution_order(self) -> None:
+        result = run_ma_portfolio_backtest(
+            candles_by_symbol={
+                "005930": _candles("005930", [100, 100, 100, 120, 130]),
+                "000660": _candles("000660", [100, 100, 100, 120, 130]),
+            },
+            quantity=Decimal(1),
+            initial_cash=Decimal(1000),
+            short_window=2,
+            long_window=3,
+            max_open_positions=1,
+        )
+
+        self.assertEqual([trade.symbol for trade in result.trades], ["000660"])
+        self.assertEqual(result.max_open_position_rejections, 1)
+        positions = {position.symbol: position for position in result.positions}
+        self.assertEqual(positions["005930"].max_open_position_rejections, 1)
+
+    def test_applies_daily_buy_limit_by_utc_execution_date(self) -> None:
+        result = run_ma_portfolio_backtest(
+            candles_by_symbol={
+                "005930": _candles("005930", [100, 100, 100, 120, 130]),
+                "000660": _candles("000660", [100, 100, 100, 120, 130]),
+            },
+            quantity=Decimal(1),
+            initial_cash=Decimal(1000),
+            short_window=2,
+            long_window=3,
+            max_daily_buys=1,
+        )
+
+        self.assertEqual([trade.symbol for trade in result.trades], ["000660"])
+        self.assertEqual(result.max_daily_buy_rejections, 1)
+
+    def test_resets_daily_buy_limit_on_next_utc_date(self) -> None:
+        result = run_ma_portfolio_backtest(
+            candles_by_symbol={
+                "005930": _candles("005930", [100, 100, 100, 120, 130]),
+                "000660": _candles(
+                    "000660",
+                    [100, 100, 100, 120, 130],
+                    offset=timedelta(hours=25),
+                ),
+            },
+            quantity=Decimal(1),
+            initial_cash=Decimal(1000),
+            short_window=2,
+            long_window=3,
+            max_daily_buys=1,
+        )
+
+        self.assertEqual(len(result.trades), 2)
+        self.assertEqual(result.max_daily_buy_rejections, 0)
+
+    def test_applies_position_notional_limit_to_execution_price(self) -> None:
+        result = run_ma_portfolio_backtest(
+            candles_by_symbol={
+                "005930": _candles("005930", [100, 100, 100, 120, 130]),
+            },
+            quantity=Decimal(1),
+            initial_cash=Decimal(1000),
+            short_window=2,
+            long_window=3,
+            max_position_notional=Decimal(120),
+        )
+
+        self.assertEqual(result.trades, ())
+        self.assertEqual(result.max_position_notional_rejections, 1)
+        self.assertEqual(result.positions[0].max_position_notional_rejections, 1)
+
+    def test_applies_order_notional_before_position_limit(self) -> None:
+        result = run_ma_portfolio_backtest(
+            candles_by_symbol={
+                "005930": _candles("005930", [100, 100, 100, 120, 130]),
+            },
+            quantity=Decimal(1),
+            initial_cash=Decimal(1000),
+            short_window=2,
+            long_window=3,
+            max_order_notional=Decimal(120),
+            max_position_notional=Decimal(125),
+        )
+
+        self.assertEqual(result.max_order_notional_rejections, 1)
+        self.assertEqual(result.max_position_notional_rejections, 0)
+
     def test_rejects_symbol_key_mismatch(self) -> None:
         candles = _candles("005930", [10, 10, 10, 12])
         with self.assertRaisesRegex(ValueError, "symbol key"):
@@ -196,6 +282,26 @@ class MovingAveragePortfolioBacktestTest(unittest.TestCase):
                 short_window=2,
                 long_window=3,
             )
+
+    def test_rejects_non_positive_risk_limits(self) -> None:
+        candles = {"005930": _candles("005930", [10, 10, 10, 12])}
+        for name, value in (
+            ("max_open_positions", 0),
+            ("max_daily_buys", 0),
+            ("max_position_notional", Decimal(0)),
+            ("max_order_notional", Decimal(0)),
+        ):
+            with self.subTest(name=name), self.assertRaisesRegex(
+                ValueError, f"{name} must be positive"
+            ):
+                run_ma_portfolio_backtest(
+                    candles_by_symbol=candles,
+                    quantity=Decimal(1),
+                    initial_cash=Decimal(100),
+                    short_window=2,
+                    long_window=3,
+                    **{name: value},
+                )
 
 
 if __name__ == "__main__":
