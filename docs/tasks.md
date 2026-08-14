@@ -5,7 +5,14 @@ agents must sync from `main` before claiming or handing off work.
 
 ## TODO
 
-No unassigned tasks.
+### DATA-002 Resume OpenDART backfill
+
+- Owner: codex/cursor
+- Status: TODO
+- Goal: resume idempotent CFS/OFS collection for the remaining symbols and then
+  collect event pages after the provider stops resetting connections
+- Acceptance: 200-symbol completeness manifest, zero failed requests, event
+  coverage manifest, and a final read-only audit
 
 ## IN PROGRESS
 
@@ -16,6 +23,14 @@ No active tasks.
 No tasks awaiting review.
 
 ## DONE
+
+### DATA-001 Official PIT rebuild
+
+- Owner: codex/cursor
+- Status: DONE
+- Result: implemented versioned official-source raw facts, conservative observed-session availability, CFS-preferred TTM EPS/BPS snapshots, bounded post-disclosure event blocks, and completed a 483-session full-market raw ledger; OpenDART backfill is resumable but partial after provider resets
+- Checks: 242 unit tests, scoped Ruff, full DataGo collection, partial OpenDART collection, SQLite invariant queries, Cursor blocker review
+- Risks: OpenDART is partial at 31/200 symbols after connection resets; official instrument-master access remains HTTP 403, so security type is UNKNOWN and TopN stays fail-closed; forward consensus remains disabled
 
 ### DOC-001 External debate verification
 

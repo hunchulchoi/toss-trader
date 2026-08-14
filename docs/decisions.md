@@ -1,5 +1,18 @@
 # Architecture Decisions
 
+## ADR-005 Official PIT inputs remain fail-closed
+
+Status: accepted 2026-08-15
+
+- Preserve OpenDART CFS and OFS account facts; derive valuation in a separate,
+  versioned snapshot and prefer CFS.
+- Unknown filing time becomes next observed market session 08:00 KST.
+- Unscheduled events may only block after availability, never before receipt.
+- DataGo archive rows are not assumed available at the historical close.
+- `security_type=UNKNOWN` forbids TopN eligibility. Name heuristics are not an
+  official instrument master.
+- Forward-consensus multipliers remain x1.0 until licensed PIT snapshots exist.
+
 ## ADR-001 Agent worktree isolation
 
 - Status: accepted

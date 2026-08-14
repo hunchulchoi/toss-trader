@@ -32,6 +32,11 @@ from .execution import PaperTradingService
 from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
 from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
+from .official_data import (
+    OfficialApiClient,
+    OfficialDataCollector,
+    OfficialDataRepository,
+)
 from .paper import DuplicatePaperOrder, open_paper_ledger
 from .paper_mcp import PaperMcpService, PostgresPaperReadStore, serve_paper_mcp
 from .paper_timeline import PostgresPaperTimelineStore
@@ -80,6 +85,18 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--count", type=int, default=100)
     collect.add_argument("--before")
     collect.add_argument("--unadjusted", action="store_true")
+
+    official = subparsers.add_parser(
+        "collect-official-data",
+        help="collect fail-closed PIT data from DataGo and OpenDART",
+    )
+    official.add_argument(
+        "kind", choices=("universe", "events", "financials", "all")
+    )
+    official.add_argument("--start", type=date.fromisoformat)
+    official.add_argument("--end", type=date.fromisoformat)
+    official.add_argument("--symbols", nargs="+")
+    official.add_argument("--years", nargs="+", type=int)
 
     stored_strategy = subparsers.add_parser(
         "scan-ma", help="evaluate MA crossover from stored candles"
@@ -305,6 +322,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _emit(_client(settings).holdings(args.symbol))
         if args.command == "collect-candles":
             return _collect_candles(settings, args)
+        if args.command == "collect-official-data":
+            return _collect_official_data(settings, args)
         if args.command == "scan-ma":
             return _scan_ma(settings, args)
         if args.command == "backtest-ma":
@@ -363,6 +382,46 @@ def _client(settings: Settings) -> TossClient:
         base_url=settings.base_url,
         candle_min_interval_seconds=settings.candle_request_interval_seconds,
     )
+
+
+def _collect_official_data(settings: Settings, args: argparse.Namespace) -> int:
+    dart_key = os.environ.get("OPENDART_API_KEY", "")
+    datago_key = os.environ.get("DATAGOKR_API_KEY", "")
+    if not dart_key or not datago_key:
+        raise ValueError("OPENDART_API_KEY and DATAGOKR_API_KEY are required")
+    end = args.end or datetime.now(UTC).date()
+    start = args.start or end - timedelta(days=730)
+    years = args.years or list(range(start.year - 1, end.year + 1))
+    repository = OfficialDataRepository(settings.market_db_path)
+    try:
+        collector = OfficialDataCollector(
+            OfficialApiClient(
+                opendart_api_key=dart_key,
+                datago_api_key=datago_key,
+            ),
+            repository,
+        )
+        result: dict[str, Any] = {}
+        if args.kind in {"universe", "all"}:
+            result["universeRows"] = collector.collect_universe(start=start, end=end)
+        if args.kind in {"events", "all"}:
+            result["eventRows"] = collector.collect_events(start=start, end=end)
+        if args.kind in {"financials", "all"}:
+            symbols = args.symbols or repository.symbols()
+            if not symbols:
+                raise ValueError("financial collection needs --symbols or market_symbols")
+            result["financialFacts"] = collector.collect_financials(
+                symbols=symbols,
+                years=years,
+            )
+        result["safety"] = {
+            "tradingEnabled": False,
+            "securityType": "UNKNOWN until official instrument master is authorized",
+            "valuationMultiplier": "1.0 until derived snapshots pass audit",
+        }
+        return _emit(result)
+    finally:
+        repository.close()
 
 
 def _serve_paper_mcp(settings: Settings, args: argparse.Namespace) -> int:
