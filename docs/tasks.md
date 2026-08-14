@@ -17,6 +17,14 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-003 Expanded dataset and exit counterfactual
+
+- Owner: codex/cursor/agy
+- Status: DONE
+- Result: validated 200-symbol read-only SQLite data, reran the 5/10 open-cap matrix, diagnosed setup-v2 price and integer sizing, and compared dead-cross, 5/10/15-bar holds, and ATR2 exits across 400,000 minute bars
+- Tests: 6 exit-counterfactual boundaries and full suite 237 passed; 5bps and 10bps full-dataset matrices completed
+- Risks: one-week minute sample, instrument types not normalized, no PIT flow/event/gap data, independent one-share simulations rather than shared-cash portfolio, and no continuation/Hermes replay; no production policy changed
+
 ### STRAT-001 Risk-cap hypothesis backtest
 
 - Owner: codex/cursor/agy
