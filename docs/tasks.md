@@ -26,7 +26,7 @@ No active tasks.
 - Owner: codex
 - Status: REVIEW
 - Result: pure evaluator requires one price setup plus PIT 5-day flow reversal; valuation boost is disabled; sizing uses 0.5% trade, 2% open, 1% cluster heat with ATR, Toss costs, slippage, integer lots, cash and order caps
-- Tests: 15 dedicated boundary tests; full suite pending
+- Tests: 19 dedicated boundary tests; full suite pending
 - Risks: sector symbols, persisted PIT flow, point-in-time valuation, event calendar, gap threshold, stop derivation, cluster mapping, and automatic regime are not yet provided; not connected to orders
 
 ## DONE

@@ -59,6 +59,7 @@ def flow_observations(
         result.append(
             FlowObservation(
                 symbol="005930",
+                session_index=index,
                 session_date=session,
                 available_at=available_at,
                 foreign_net_buy=Decimal(foreign_net),
@@ -73,6 +74,7 @@ def approved_context(candle: Candle) -> SetupContext:
     decision_at = candle.timestamp + timedelta(hours=20)
     return SetupContext(
         decision_at=decision_at,
+        signal_session=candle.timestamp.date(),
         flow_observations=flow_observations(candle.timestamp.date()),
         event_imminent=False,
         gap_up_chase=False,
@@ -124,6 +126,65 @@ class FlowSummaryTest(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_falls_back_to_latest_available_session(self) -> None:
+        signal_session = date(2026, 1, 10)
+        available = list(flow_observations(signal_session - timedelta(days=1)))
+        available.append(
+            FlowObservation(
+                symbol="005930",
+                session_index=6,
+                session_date=signal_session,
+                available_at=datetime(2026, 1, 11, tzinfo=UTC),
+                foreign_net_buy=Decimal(10),
+                institutional_net_buy=Decimal(0),
+                trading_value=Decimal(100),
+            )
+        )
+
+        result = summarize_flow(
+            tuple(available),
+            symbol="005930",
+            signal_session=signal_session,
+            decision_at=datetime(2026, 1, 10, 12, tzinfo=UTC),
+        )
+
+        assert result is not None
+        self.assertEqual(result.latest_session, signal_session - timedelta(days=1))
+        self.assertTrue(result.foreign_reversal)
+
+    def test_uses_pooled_trading_value_normalization(self) -> None:
+        signal_session = date(2026, 1, 9)
+        foreign = (-100, 1, 1, 1, 1, 100)
+        trading_values = (10000, 1, 1, 1, 1, 100)
+        observations = tuple(
+            FlowObservation(
+                symbol="005930",
+                session_index=index,
+                session_date=signal_session - timedelta(days=5 - index),
+                available_at=datetime.combine(
+                    signal_session - timedelta(days=5 - index),
+                    time(18),
+                    tzinfo=UTC,
+                ),
+                foreign_net_buy=Decimal(foreign[index]),
+                institutional_net_buy=Decimal(0),
+                trading_value=Decimal(trading_values[index]),
+            )
+            for index in range(6)
+        )
+
+        result = summarize_flow(
+            observations,
+            symbol="005930",
+            signal_session=signal_session,
+            decision_at=datetime(2026, 1, 9, 20, tzinfo=UTC),
+        )
+
+        assert result is not None
+        self.assertLess(result.previous_5d_ratio, 0)
+        self.assertGreater(result.current_5d_ratio, 0)
+        self.assertTrue(result.foreign_reversal)
+
     def test_rejects_invalid_flow_contracts(self) -> None:
         signal_session = date(2026, 1, 9)
         valid = list(flow_observations(signal_session))
@@ -132,6 +193,7 @@ class FlowSummaryTest(unittest.TestCase):
                 *valid[:-1],
                 FlowObservation(
                     symbol="000660",
+                    session_index=valid[-1].session_index,
                     session_date=valid[-1].session_date,
                     available_at=valid[-1].available_at,
                     foreign_net_buy=valid[-1].foreign_net_buy,
@@ -144,6 +206,7 @@ class FlowSummaryTest(unittest.TestCase):
                 *valid[:-1],
                 FlowObservation(
                     symbol=valid[-1].symbol,
+                    session_index=valid[-1].session_index,
                     session_date=valid[-1].session_date,
                     available_at=valid[-1].available_at,
                     foreign_net_buy=valid[-1].foreign_net_buy,
@@ -181,6 +244,7 @@ class SetupScreeningTest(unittest.TestCase):
             history,
             context=SetupContext(
                 decision_at=history[-1].timestamp + timedelta(hours=20),
+                signal_session=history[-1].timestamp.date(),
                 event_imminent=False,
                 gap_up_chase=False,
             ),
@@ -195,6 +259,26 @@ class SetupScreeningTest(unittest.TestCase):
 
         self.assertFalse(result.approved)
         self.assertIn("missing-price-setup", result.violations)
+
+    def test_rejects_complete_flow_history_without_reversal(self) -> None:
+        history = pullback_candles()
+        context = approved_context(history[-1])
+        result = evaluate_setup(
+            history,
+            context=SetupContext(
+                decision_at=context.decision_at,
+                signal_session=context.signal_session,
+                flow_observations=flow_observations(
+                    context.signal_session,
+                    foreign=(10, 10, 10, 10, 10, 10),
+                ),
+                event_imminent=False,
+                gap_up_chase=False,
+            ),
+        )
+
+        self.assertFalse(result.approved)
+        self.assertIn("flow-not-confirmed", result.violations)
 
     def test_requires_bullish_confirmation_for_oversold_reversal(self) -> None:
         closes = [200] * 185 + list(range(199, 185, -1)) + [190]
@@ -229,6 +313,7 @@ class SetupScreeningTest(unittest.TestCase):
             history,
             context=SetupContext(
                 decision_at=context.decision_at,
+                signal_session=history[-1].timestamp.date(),
                 flow_observations=flow_observations(
                     history[-1].timestamp.date(), institutional=institutional
                 ),
@@ -247,6 +332,7 @@ class SetupScreeningTest(unittest.TestCase):
             history,
             context=SetupContext(
                 decision_at=context.decision_at,
+                signal_session=history[-1].timestamp.date(),
                 flow_observations=context.flow_observations,
             ),
         )
@@ -272,6 +358,7 @@ class SetupScreeningTest(unittest.TestCase):
             history,
             context=SetupContext(
                 decision_at=context.decision_at,
+                signal_session=history[-1].timestamp.date(),
                 flow_observations=context.flow_observations,
                 valuation=ValuationEvidence(
                     forward_eps_growth=Decimal("0.25"),
@@ -383,6 +470,42 @@ class PositionSizingTest(unittest.TestCase):
         self.assertIn("max-order-notional", capped.limiting_factors)
         self.assertFalse(zero.approved)
         self.assertIn("below-one-lot", zero.limiting_factors)
+
+    def test_entry_slippage_and_cash_cannot_exceed_caps(self) -> None:
+        generous = PositionSizingPolicy(
+            per_trade_risk_rate=Decimal("0.5"),
+            max_open_heat_rate=Decimal(1),
+            max_cluster_heat_rate=Decimal(1),
+        )
+        order_limited = position_size_reference(
+            symbol="005930",
+            equity=Decimal(1000000),
+            reference_price=Decimal(10000),
+            stop_price=Decimal(9999),
+            atr=Decimal(1),
+            available_cash=Decimal(1000000),
+            current_open_heat=Decimal(0),
+            current_cluster_heat=Decimal(0),
+            policy=generous,
+            slippage=SlippageAssumption(entry_rate=Decimal("0.01")),
+        )
+        cash_blocked = position_size_reference(
+            symbol="005930",
+            equity=Decimal(1000000),
+            reference_price=Decimal(10000),
+            stop_price=Decimal(9600),
+            atr=Decimal(200),
+            available_cash=Decimal(10000),
+            current_open_heat=Decimal(0),
+            current_cluster_heat=Decimal(0),
+        )
+
+        self.assertEqual(order_limited.quantity, Decimal(29))
+        self.assertLessEqual(order_limited.required_cash, Decimal(300000))
+        self.assertIn("max-order-notional", order_limited.limiting_factors)
+        self.assertFalse(cash_blocked.approved)
+        self.assertIn("available-cash", cash_blocked.limiting_factors)
+        self.assertIn("below-one-lot", cash_blocked.limiting_factors)
 
 
 if __name__ == "__main__":

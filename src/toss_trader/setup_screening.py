@@ -33,6 +33,7 @@ class ValuationTier(StrEnum):
 @dataclass(frozen=True, slots=True)
 class FlowObservation:
     symbol: str
+    session_index: int
     session_date: date
     available_at: datetime
     foreign_net_buy: Decimal
@@ -61,6 +62,7 @@ class ValuationEvidence:
 @dataclass(frozen=True, slots=True)
 class SetupContext:
     decision_at: datetime
+    signal_session: date
     flow_observations: tuple[FlowObservation, ...] = ()
     valuation: ValuationEvidence | None = None
     stop_price: Decimal | None = None
@@ -145,9 +147,10 @@ def summarize_flow(
         raise ValueError("flow trading_value must be positive")
     if any(
         previous.session_date >= current.session_date
+        or current.session_index != previous.session_index + 1
         for previous, current in pairwise(observations)
     ):
-        raise ValueError("flow sessions must be strictly increasing")
+        raise ValueError("flow sessions must be consecutive and strictly increasing")
 
     eligible = tuple(
         item
@@ -206,7 +209,7 @@ def evaluate_setup(
     flow = summarize_flow(
         context.flow_observations,
         symbol=candle.symbol,
-        signal_session=candle.timestamp.date(),
+        signal_session=context.signal_session,
         decision_at=context.decision_at,
     )
     flow_stars = 0
@@ -324,10 +327,12 @@ def position_size_reference(
     base_loss = entry_price - exit_price
     risk_quantity = _floor_lot(usable / base_loss, policy.lot_size)
     order_quantity = _floor_lot(
-        policy.max_order_notional / reference_price, policy.lot_size
+        policy.max_order_notional / entry_price, policy.lot_size
     )
     cash_quantity = _floor_lot(available_cash / entry_price, policy.lot_size)
     quantity = min(risk_quantity, order_quantity, cash_quantity)
+    reduced_for_risk_costs = False
+    reduced_for_cash_costs = False
 
     while quantity > 0:
         planned_heat, required_cash = _round_trip_risk(
@@ -338,6 +343,8 @@ def position_size_reference(
         )
         if planned_heat <= usable and required_cash <= available_cash:
             break
+        reduced_for_risk_costs |= planned_heat > usable
+        reduced_for_cash_costs |= required_cash > available_cash
         quantity -= policy.lot_size
     if quantity <= 0:
         quantity = Decimal(0)
@@ -360,6 +367,8 @@ def position_size_reference(
         remaining_open=remaining_open,
         remaining_cluster=remaining_cluster,
         usable=usable,
+        reduced_for_risk_costs=reduced_for_risk_costs,
+        reduced_for_cash_costs=reduced_for_cash_costs,
     )
     return PositionSizeReference(
         approved=quantity > 0,
@@ -417,6 +426,8 @@ def _limiting_factors(
     remaining_open: Decimal,
     remaining_cluster: Decimal,
     usable: Decimal,
+    reduced_for_risk_costs: bool,
+    reduced_for_cash_costs: bool,
 ) -> tuple[str, ...]:
     factors: list[str] = []
     if usable == per_trade_budget:
@@ -427,9 +438,11 @@ def _limiting_factors(
         factors.append("cluster-heat")
     if quantity == order_quantity:
         factors.append("max-order-notional")
-    if quantity == cash_quantity:
+    if quantity == cash_quantity or reduced_for_cash_costs:
         factors.append("available-cash")
-    if quantity == 0 and min(risk_quantity, order_quantity, cash_quantity) == 0:
+    if reduced_for_risk_costs:
+        factors.append("round-trip-costs")
+    if quantity == 0:
         factors.append("below-one-lot")
     return tuple(dict.fromkeys(factors))
 
