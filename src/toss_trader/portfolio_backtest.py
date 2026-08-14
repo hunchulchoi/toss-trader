@@ -178,7 +178,6 @@ def run_ma_portfolio_backtest(
                 trading_date = candle.timestamp.date()
                 rejections = _risk_rejections(
                     signal=signal,
-                    quantity=quantity,
                     state=states[symbol],
                     open_position_count=sum(
                         state.quantity > 0 for state in states.values()
@@ -421,7 +420,6 @@ def _execute_pending(
 def _risk_rejections(
     *,
     signal: TradeSignal,
-    quantity: Decimal,
     state: _PositionState,
     open_position_count: int,
     daily_buy_count: int,
@@ -431,7 +429,7 @@ def _risk_rejections(
     max_order_notional: Decimal | None,
 ) -> tuple[str, ...]:
     rejections: list[str] = []
-    signal_notional = quantity * signal.reference_price
+    signal_notional = signal.notional
     if max_order_notional is not None and signal_notional > max_order_notional:
         rejections.append("max_order_notional_rejections")
     if signal.side is not Side.BUY:
