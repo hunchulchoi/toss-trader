@@ -6,10 +6,12 @@ const state = {
   decisionFilter: "all",
   minuteSymbol: null,
 };
+const POLL_MS = 30000;
 const $ = (id) => document.getElementById(id);
 const won = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 });
 const qty = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 4 });
 const svgNS = "http://www.w3.org/2000/svg";
+let controlsBound = false;
 const violationLabels = {
   "duplicate-signal": "중복 신호",
   "universe-refresh-failed": "종목군 갱신 실패",
@@ -372,29 +374,74 @@ function selectDay(index) {
 }
 function selectView(view) { state.view = view; renderPage(); }
 
-async function boot() {
-  try {
-    const response = await fetch("/api/timeline", { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    state.data = await response.json();
-    if (!state.data.portfolios?.rule?.days?.length || !state.data.portfolios?.hermes?.days?.length) throw new Error("empty paper timeline");
+function fillMinuteSymbols() {
+  const select = $("minute-symbol");
+  const previous = state.minuteSymbol;
+  select.replaceChildren();
+  const symbols = state.data.intraday?.symbols || [];
+  symbols.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.symbol;
+    option.textContent = `${item.name || item.symbol} · ${item.symbol}`;
+    select.append(option);
+  });
+  const stillThere = symbols.some((item) => item.symbol === previous);
+  state.minuteSymbol = stillThere ? previous : (symbols[0]?.symbol || null);
+  if (state.minuteSymbol) select.value = state.minuteSymbol;
+}
+
+function bindControls() {
+  if (controlsBound) return;
+  controlsBound = true;
+  document.querySelectorAll(".portfolio-tab").forEach((tab) => tab.addEventListener("click", () => selectView(tab.dataset.portfolio)));
+  $("minute-symbol").addEventListener("change", (event) => { state.minuteSymbol = event.target.value; renderMinute(); renderDecisions(); });
+  $("decision-filter").addEventListener("change", (event) => { state.decisionFilter = event.target.value; renderDecisions(); });
+  $("date-filter").addEventListener("input", (event) => { state.filter = event.target.value.trim(); renderRail(); });
+  $("prev-day").addEventListener("click", () => selectDay(state.index - 1));
+  $("next-day").addEventListener("click", () => selectDay(state.index + 1));
+  $("today-latest").addEventListener("click", () => selectDay(timeline().length - 1));
+  document.addEventListener("keydown", (event) => { if (event.key === "ArrowLeft") selectDay(state.index - 1); if (event.key === "ArrowRight") selectDay(state.index + 1); });
+}
+
+function applyPayload(payload) {
+  const previousDate = state.data ? selectedDate() : null;
+  const wasLatest = !state.data || state.index === timeline().length - 1;
+  state.data = payload;
+  if (!state.data.portfolios?.rule?.days?.length || !state.data.portfolios?.hermes?.days?.length) {
+    throw new Error("empty paper timeline");
+  }
+  if (!previousDate) {
     const requested = timeline().findIndex((day) => day.date === location.hash.slice(1));
     state.index = requested >= 0 ? requested : timeline().length - 1;
-    state.minuteSymbol = state.data.intraday.symbols[0]?.symbol || null;
-    state.data.intraday.symbols.forEach((item) => {
-      const option = document.createElement("option"); option.value = item.symbol; option.textContent = `${item.name || item.symbol} · ${item.symbol}`; $("minute-symbol").append(option);
-    });
-    $("day-count").textContent = `${timeline().length}D`;
-    $("period-label").textContent = `${timeline()[0].date} — ${timeline().at(-1).date}`;
-    document.querySelectorAll(".portfolio-tab").forEach((tab) => tab.addEventListener("click", () => selectView(tab.dataset.portfolio)));
-    $("minute-symbol").addEventListener("change", (event) => { state.minuteSymbol = event.target.value; renderMinute(); renderDecisions(); });
-    $("decision-filter").addEventListener("change", (event) => { state.decisionFilter = event.target.value; renderDecisions(); });
-    $("date-filter").addEventListener("input", (event) => { state.filter = event.target.value.trim(); renderRail(); });
-    $("prev-day").addEventListener("click", () => selectDay(state.index - 1));
-    $("next-day").addEventListener("click", () => selectDay(state.index + 1));
-    $("today-latest").addEventListener("click", () => selectDay(timeline().length - 1));
-    document.addEventListener("keydown", (event) => { if (event.key === "ArrowLeft") selectDay(state.index - 1); if (event.key === "ArrowRight") selectDay(state.index + 1); });
-    renderPage();
+  } else if (wasLatest) {
+    state.index = timeline().length - 1;
+  } else {
+    const requested = timeline().findIndex((day) => day.date === previousDate);
+    state.index = requested >= 0 ? requested : timeline().length - 1;
+  }
+  fillMinuteSymbols();
+  $("day-count").textContent = `${timeline().length}D`;
+  const generated = state.data.meta?.generatedAt;
+  $("period-label").textContent = generated
+    ? `${timeline()[0].date} — ${timeline().at(-1).date} · ${localTime(generated)}`
+    : `${timeline()[0].date} — ${timeline().at(-1).date}`;
+  renderPage();
+}
+
+async function loadTimeline() {
+  const response = await fetch("/api/timeline", { cache: "no-store" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  applyPayload(await response.json());
+}
+
+async function boot() {
+  try {
+    await loadTimeline();
+    bindControls();
+    setInterval(() => {
+      if (document.hidden) return;
+      loadTimeline().catch(() => {});
+    }, POLL_MS);
   } catch (error) {
     console.error(error); $("error-state").hidden = false; $("timeline-app").hidden = true;
   }

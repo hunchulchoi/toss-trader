@@ -116,11 +116,15 @@ PYTHONPATH=src python3 -m toss_trader serve-paper-timeline \
 - 오류 로그는 실패/부분 실패 cycle과 Hermes 분석 오류를 날짜별로 표시한다.
 - `1MIN`은 저장된 1분 OHLC 봉 위에 Rule/Hermes 매수·매도 시점을 표시한다.
 - 외부 CDN이나 분석 스크립트를 사용하지 않는다.
-- 서버 시작 때 paper 장부를 읽어 결과를 생성한다. POST와 주문·장부 쓰기 API는 없다.
+- `/api/timeline`은 30초 TTL로 PostgreSQL을 다시 읽어 서빙한다. 페이지는
+  같은 주기로 폴링하고, 최신 날짜를 보고 있으면 새 날짜를 따라간다. 숨은
+  탭은 폴링을 쉰다. 상단 `period-label`에 `meta.generatedAt`(KST)이 보인다.
+- POST와 주문·장부 쓰기 API는 없다.
 - PostgreSQL은 `default_transaction_read_only=on` 연결을 강제한다.
 - compose에서는 `toss_mcp_reader`와 Tailscale host port `19094`를 사용한다.
 
-데이터가 갱신되면 컨테이너를 재시작해 타임라인을 다시 계산한다. paper MCP와 같은
+배포 후 JS가 바뀌면 브라우저를 한 번 새로고침한다. 그 다음부터는 컨테이너
+재시작 없이 사이클이 쌓인 장부를 따라간다. paper MCP와 같은
 SELECT 전용 PostgreSQL 계정(`TOSS_MCP_POSTGRES_USER/PASSWORD`)을 사용하므로 신규
 Infisical secret은 필요 없다.
 

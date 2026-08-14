@@ -5,6 +5,19 @@
 
 ## 2026-08-14
 
+### 타임라인 웹이 기동 시각에 멈춤
+
+`serve-paper-timeline`이 PostgreSQL을 기동 때 한 번만 읽고, 브라우저도
+`/api/timeline`을 한 번만 받아서 장중 체결이 안 보였다. 10:05에 멈춘 건
+그때 timeline 컨테이너가 뜬 스냅샷이다.
+
+- 서버: 30초 TTL `PayloadCache`로 `payload_loader`가 DB를 다시 읽음
+- 페이지: 30초마다 `cache: no-store` 폴링. 최신일을 보면 새 날짜 follow.
+  숨은 탭은 쉼. `meta.generatedAt`을 상단에 표시
+- 배포 후 JS가 바뀌면 브라우저 한 번 새로고침. 그 다음부터 재시작 불필요
+
+운영: 코드만, 배포 대기. timeline 컨테이너 재빌드 후 반영.
+
 ### 무신호 원인 (`idleReason`)
 
 공용 Hermes가 `toss_paper_status`로 신호 수·체결만 보고 현금 대기를

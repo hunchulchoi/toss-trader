@@ -13,6 +13,7 @@ flowchart TB
         METRICS[toss-trader-metrics]
         PROM[Prometheus]
         PAPERMCP[paper-mcp]
+        TIMELINE[timeline]
     end
 
     subgraph OPENCLAW[외부 Docker network: openclaw-net]
@@ -30,6 +31,7 @@ flowchart TB
     AM -->|Bot API| TELEGRAM[Telegram topic]
     PUBHERMES -->|MCP toss-paper| PAPERMCP
     PAPERMCP -->|read-only SQL| DB
+    TIMELINE -->|read-only SQL| DB
     DB --> METRICS
     METRICS --> PROM
     DB --> GRAFANA[Grafana :3001]
@@ -38,6 +40,8 @@ flowchart TB
 
 - `automation`, `hermes-analysis`, `paper-mcp`는 `openclaw-net` 내부에서 통신한다.
 - `hermes-analysis`의 `8642`와 `paper-mcp`의 `8090`은 host port를 publish하지 않는다.
+- `timeline`은 Tailscale `:19094`만 publish한다. 상세는
+  [`backtesting.md`](backtesting.md#rulehermes-paper-웹-타임라인).
 - 분석 sidecar는 Docker socket이 없고 toolset·plugin·MCP·context tool이 모두 0개다.
 - 공용 Hermes Telegram만 `paper-mcp` MCP를 붙인다. 상세는
   [`paper-mcp.md`](paper-mcp.md).
@@ -64,6 +68,7 @@ flowchart TB
             N8N[n8n\n별도 운영 container]
             HERMES[hermes-analysis\n:8642 expose only]
             PAPERMCP[paper-mcp\n:8090 expose only]
+            TIMELINE[timeline\n:8091 expose]
             PUBHERMES[공용 Hermes]
         end
 
@@ -72,6 +77,7 @@ flowchart TB
         AUTO -->|Bearer| HERMES
         PUBHERMES -->|MCP| PAPERMCP
         PAPERMCP -->|read-only SQL| PG
+        TIMELINE -->|read-only SQL| PG
 
         PAPER[(paper-data)] --- TRADER
         PAPER --- AUTO
@@ -84,6 +90,7 @@ flowchart TB
     METRICS -->|Tailscale bind :9108| OPS[운영 조회]
     PROM -->|Tailscale bind :19090| OPS
     ALERT -->|Tailscale bind :19093| OPS
+    TIMELINE -->|Tailscale bind :19094| OPS
     AUTO -->|SQL| PG[(외부 PostgreSQL)]
     ALERT -->|Bot API| TG[Telegram]
 ```
@@ -93,6 +100,7 @@ flowchart TB
 | `trader` | default | `paper-data` read/write | 없음 | 수동 CLI·개발용 one-shot 실행 |
 | `automation` | default + `openclaw-net` | `paper-data` read/write | 없음 (`8088` expose) | n8n task, paper cycle, RiskManager callback, 알림 감사 |
 | `paper-mcp` | `openclaw-net`만 | 없음 | 없음 (`8090` expose) | 공용 Hermes Telegram용 paper 장부 read-only MCP |
+| `timeline` | `openclaw-net`만 | 없음 | Tailscale `:19094` (`8091` expose) | Rule/Hermes paper 장부 웹. `/api/timeline` 30초 캐시 |
 | `hermes-analysis` | `openclaw-net`만 | `hermes-analysis-data` | 없음 (`8642` expose) | zero-tool 분석 전용 LLM API |
 | `metrics` | default | `paper-data` read-only | Tailscale `:9108` | Prometheus 지표·health |
 | `prometheus` | default | `prometheus-data` | Tailscale `:19090` | metrics scrape·alert rule 평가 |
@@ -130,6 +138,8 @@ flowchart LR
     PUB -->|HTTP MCP /mcp| MCP[paper-mcp :8090]
     AUTO -->|SQL| DB[(PostgreSQL)]
     MCP -->|read-only SQL| DB
+    WEB[운영자 브라우저] -->|GET /api/timeline| TL[timeline :8091]
+    TL -->|read-only SQL| DB
     HERMES -->|GET /v1/toolsets 운영 검증만| TOOLSET[enabled 0 / resolved 0]
 ```
 
@@ -143,6 +153,8 @@ flowchart LR
 | 운영자 Telegram → 공용 Hermes | 대화 | 공용 Hermes Telegram 세션 | paper 진행·보유·손익 질의 |
 | 공용 Hermes → paper-mcp | `POST /mcp` | `openclaw-net` 내부 | `toss_paper_status` / `holdings` / `pnl` |
 | paper-mcp → PostgreSQL | 고정 SELECT | DB 계정, session read-only | `rule`/`hermes` paper 장부 조회 |
+| 운영자 브라우저 → timeline | `GET /` · `GET /api/timeline` | Tailscale `:19094` | Rule/Hermes paper 장부 재생. 30초 폴링 |
+| timeline → PostgreSQL | 고정 SELECT | DB 계정, session read-only | 30초 TTL 캐시 후 장부 재계산 |
 | automation → Toss | OAuth2 token·시장·캔들 API | Toss OAuth2 credential | 조회 전용 시장 데이터 수집 |
 | automation → Alertmanager | `POST /api/v2/alerts` | 내부망 | 성공·실패·paper 체결 이벤트 전달 |
 | Alertmanager → Telegram | Telegram Bot API | bot credential | 지정 topic에 리포트·장애 알림 전송 |
@@ -655,6 +667,8 @@ toss-trader/
 │   ├── models.py              # Candle, signal, fill model
 │   ├── paper.py               # fill·Risk·automation 감사 장부
 │   ├── paper_mcp.py           # Telegram용 read-only paper MCP
+│   ├── paper_timeline.py      # Rule/Hermes 일자별 장부 재생
+│   ├── timeline_web.py        # 읽기 전용 타임라인 HTTP. 30초 캐시
 │   ├── portfolio.py           # 포지션·일일 수익률
 │   ├── repository.py          # candle·회사명 repository
 │   ├── risk.py                # RiskManager 정책
