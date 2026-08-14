@@ -4,11 +4,12 @@ import json
 import os
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 
 from .models import Side, TradeSignal
+from .screening import MarketRegime
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,7 @@ class RiskContext:
     new_buys_allowed: bool = True
     advisor_status: str | None = None
     advisor_rationale: str | None = None
+    market_regime: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,24 +66,54 @@ class UniverseRiskContext:
     consecutive_api_errors: int
 
 
+def limits_for_regime(
+    regime: object,
+    *,
+    base: RiskLimits | None = None,
+) -> RiskLimits:
+    limits = base or RiskLimits()
+    if _market_regime(regime) is not MarketRegime.NEUTRAL:
+        return limits
+    return replace(
+        limits,
+        max_daily_buy_count=max(1, limits.max_daily_buy_count // 2),
+        max_open_positions=max(1, limits.max_open_positions // 2),
+    )
+
+
+def _market_regime(value: object) -> MarketRegime | None:
+    if isinstance(value, MarketRegime):
+        return value
+    if isinstance(value, str):
+        try:
+            return MarketRegime(value)
+        except ValueError:
+            return None
+    return None
+
+
 class RiskManager:
     def __init__(self, limits: RiskLimits) -> None:
         self._limits = limits
 
     def evaluate(self, signal: TradeSignal, context: RiskContext) -> RiskDecision:
         violations: list[str] = []
+        limits = limits_for_regime(context.market_regime, base=self._limits)
+        regime = _market_regime(context.market_regime)
 
         if signal.signal_id in context.seen_signal_ids:
             violations.append("duplicate-signal")
         if signal.side is Side.BUY and not context.new_buys_allowed:
             violations.append("universe-refresh-failed")
+        if signal.side is Side.BUY and regime is MarketRegime.RISK_OFF:
+            violations.append("regime-risk-off")
         if context.advisor_status == "rejected":
             violations.append(
                 f"Hermes 거부: {context.advisor_rationale or '구체적 근거 없음'}"
             )
         elif context.advisor_status == "unavailable":
             violations.append("Hermes 분석 실패: 응답을 받지 못해 체결 차단")
-        if signal.notional > self._limits.max_order_notional:
+        if signal.notional > limits.max_order_notional:
             violations.append("max-order-notional")
         if (
             signal.side is Side.BUY
@@ -92,25 +124,25 @@ class RiskManager:
         if (
             signal.side is Side.BUY
             and context.position_notional + signal.notional
-            > self._limits.max_position_notional
+            > limits.max_position_notional
         ):
             violations.append("max-position-notional")
         if signal.side is Side.SELL and signal.quantity > context.position_quantity:
             violations.append("insufficient-position")
         if (
             signal.side is Side.BUY
-            and context.daily_buy_count >= self._limits.max_daily_buy_count
+            and context.daily_buy_count >= limits.max_daily_buy_count
         ):
             violations.append("max-daily-buys")
         if (
             signal.side is Side.BUY
             and context.position_quantity <= 0
-            and context.open_position_count >= self._limits.max_open_positions
+            and context.open_position_count >= limits.max_open_positions
         ):
             violations.append("max-open-positions")
-        if context.daily_return_rate <= self._limits.daily_loss_limit:
+        if context.daily_return_rate <= limits.daily_loss_limit:
             violations.append("daily-loss-limit")
-        if context.consecutive_api_errors >= self._limits.max_consecutive_api_errors:
+        if context.consecutive_api_errors >= limits.max_consecutive_api_errors:
             violations.append("api-error-kill-switch")
         if not context.market_is_business_day:
             violations.append("market-closed")
@@ -118,7 +150,7 @@ class RiskManager:
             signal.side is Side.BUY
             and context.market_close_at is not None
             and context.now
-            >= context.market_close_at - self._limits.block_new_buys_before_close
+            >= context.market_close_at - limits.block_new_buys_before_close
         ):
             violations.append("market-close-window")
 
@@ -174,7 +206,8 @@ class N8nRiskManager:
                 "kind": "trade",
                 "signal": _trade_signal_payload(signal),
                 "context": _risk_context_payload(context),
-            }
+            },
+            limits=limits_for_regime(context.market_regime, base=self._limits),
         )
 
     def evaluate_universe_candidate(
@@ -197,11 +230,12 @@ class N8nRiskManager:
                     "dailyReturnRate": str(context.daily_return_rate),
                     "consecutiveApiErrors": context.consecutive_api_errors,
                 },
-            }
+            },
+            limits=self._limits,
         )
 
-    def _call(self, payload: dict[str, object]) -> RiskDecision:
-        payload["limits"] = _risk_limits_payload(self._limits)
+    def _call(self, payload: dict[str, object], *, limits: RiskLimits) -> RiskDecision:
+        payload["limits"] = _risk_limits_payload(limits)
         payload["parent"] = {
             "workflowId": os.environ.get("N8N_PARENT_WORKFLOW_ID", "unknown"),
             "executionId": os.environ.get("N8N_PARENT_EXECUTION_ID", "unknown"),
@@ -284,6 +318,7 @@ def _risk_context_payload(context: RiskContext) -> dict[str, object]:
         "newBuysAllowed": context.new_buys_allowed,
         "advisorStatus": context.advisor_status,
         "advisorRationale": context.advisor_rationale,
+        "marketRegime": context.market_regime,
     }
 
 

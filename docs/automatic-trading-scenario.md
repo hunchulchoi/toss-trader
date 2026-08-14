@@ -168,8 +168,8 @@ RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저�
 | 1회 주문 금액 | 300,000원 | `max-order-notional` |
 | paper 가용 현금 | 주문 금액 초과 금지 | `insufficient-paper-cash` |
 | 종목별 보유 금액 | 1,000,000원 | `max-position-notional` |
-| 일일 신규 매수 | 5회 | `max-daily-buys` |
-| 동시 신규 포지션 | 5종목 | `max-open-positions` |
+| 일일 신규 매수 | 5회 (`NEUTRAL`이면 2회) | `max-daily-buys` |
+| 동시 신규 포지션 | 5종목 (`NEUTRAL`이면 2종목) | `max-open-positions` |
 | 일일 수익률 | -3% 이하 중단 | `daily-loss-limit` |
 | 연속 API 오류 | 5회 이상 중단 | `api-error-kill-switch` |
 | universe 갱신 실패 | 신규 BUY 금지, 보유 SELL 허용 | `universe-refresh-failed` |
@@ -177,9 +177,17 @@ RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저�
 | 장 마감 전 신규 매수 | 10분 전부터 금지 | `market-close-window` |
 | 동일 신호 | 재체결 금지 | `duplicate-signal` |
 | 보유량 초과 매도 | 금지 | `insufficient-position` |
+| 벤치마크 `RISK_OFF` | 신규 BUY 금지, SELL 허용 | `regime-risk-off` |
 | RiskManager webhook 오류 | 체결 금지. preflight 아님 | `risk-manager-workflow-unavailable` |
 | Hermes advisor 거부 | 한도 통과 후 | `Hermes 거부: <근거>` |
 | Hermes advisor 오류 | 한도 통과 후 | `Hermes 분석 실패: 응답을 받지 못해 체결 차단` |
+
+벤치마크는 `MARKET_BENCHMARK_SYMBOLS` 첫 종목(기본 `069500`) 일봉 60개다.
+Rule과 Hermes가 같은 표를 쓴다. 숫자는 조이기만 한다. `RISK_ON`·캔들 부족은
+기본 한도. `NEUTRAL`은 하루 BUY·동시 신규 슬롯을 절반(5→2). `RISK_OFF`는
+한도 숫자를 올리지 않고 신규 BUY만 막는다. universe 선정 한도는 그대로다.
+Hermes는 이 한도를 완화할 수 없다. hard preflight가 `RISK_OFF`·줄어든 슬롯을
+먼저 보면 advisor를 부르지 않는다.
 
 위 세 줄 제외가 hard preflight. 매도는 보유 수량 안. 단일 통화 포트폴리오의
 `daily_return_rate`는 UTC 일자 시작 총자산 대비 현재 총자산 변화이며, 체결
@@ -335,8 +343,9 @@ API 오류 streak를 검사한 뒤 승인 상위 15개와 기존 보유 종목�
 universe가 갱신된 시점에는 선정 종목 중 `MA20 > MA60`인 기존 상승 추세도
 최초 BUY 신호를 만들 수 있다. 같은 universe run의 신호 ID는 고정해 중복 체결을
 막는다. 장중 1분봉은 그 밖에도 일봉 `RISK_ON`이고 1분 상승 정렬인 미보유
-종목에 하루 1회 continuation 매수를 허용한다. RiskManager는
-하루 BUY 5건과 동시 보유 5종목을 상한으로 적용하고 모든 승인을 장부에 남긴다.
+종목에 하루 1회 continuation 매수를 허용한다. RiskManager 기본 한도는
+하루 BUY 5건·동시 보유 5종목이고, 벤치마크 regime이 `NEUTRAL`이면 2/2,
+`RISK_OFF`면 신규 BUY를 막는다. 모든 승인을 장부에 남긴다.
 
 선정 종목의 `/candles`는 종목별 순차 조회한다. 호출 사이에는 기본 0.25초를
 두고, Toss의 `X-RateLimit-*`와 `Retry-After` 응답에 따라 대기를 늘린다.

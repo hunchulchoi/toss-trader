@@ -11,6 +11,7 @@ const won = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 });
 const qty = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 4 });
 const svgNS = "http://www.w3.org/2000/svg";
 const violationLabels = {
+  "regime-risk-off": "시장 RISK_OFF 신규매수 차단",
   "duplicate-signal": "중복 신호",
   "universe-refresh-failed": "종목군 갱신 실패",
   "max-order-notional": "주문금액 한도 초과",

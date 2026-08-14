@@ -457,6 +457,7 @@ class MonitoringAssetsTest(unittest.TestCase):
             "api-error-kill-switch",
             "market-closed",
             "market-close-window",
+            "regime-risk-off",
             "unsupported-security-type",
             "not-common-share",
             "stock-not-active",

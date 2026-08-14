@@ -74,6 +74,7 @@ class PaperCycleResult:
     realized_pnl: Decimal = Decimal(0)
     unrealized_pnl: Decimal = Decimal(0)
     total_costs: Decimal = Decimal(0)
+    market_regime: str | None = None
 
     @property
     def symbol_count(self) -> int:
@@ -97,7 +98,11 @@ class PaperCycleResult:
 
     @property
     def insight(self) -> dict[str, Any]:
-        return _cycle_insight(self.items, new_buys_allowed=self.snapshot.new_buys_allowed)
+        return _cycle_insight(
+            self.items,
+            new_buys_allowed=self.snapshot.new_buys_allowed,
+            market_regime=self.market_regime,
+        )
 
 
 class PaperCycleRunner:
@@ -111,6 +116,7 @@ class PaperCycleRunner:
         performance: PortfolioPerformance,
         state: CycleStateStore,
         clock: Callable[[], datetime] | None = None,
+        benchmark_symbol: str | None = None,
     ) -> None:
         self._collector = collector
         self._strategy = strategy
@@ -119,6 +125,7 @@ class PaperCycleRunner:
         self._performance = performance
         self._state = state
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._benchmark_symbol = benchmark_symbol
 
     def prepare(
         self,
@@ -362,6 +369,7 @@ class PaperCycleRunner:
                         errors[index] = str(error)
 
         consecutive_api_errors = previous_api_errors + 1 if api_failed else 0
+        market_regime = self._benchmark_regime()
         for index, signal in enumerate(signals):
             if signal is None or errors[index] is not None:
                 continue
@@ -374,6 +382,7 @@ class PaperCycleRunner:
                     performance=performance,
                     consecutive_api_errors=consecutive_api_errors,
                     new_buys_allowed=new_buys_allowed,
+                    market_regime=market_regime,
                 )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
@@ -409,6 +418,7 @@ class PaperCycleRunner:
             realized_pnl=performance.realized_pnl,
             unrealized_pnl=performance.unrealized_pnl,
             total_costs=performance.total_costs,
+            market_regime=market_regime,
         )
 
     def _performance_for_cycle(
@@ -451,6 +461,7 @@ class PaperCycleRunner:
         performance: DailyPortfolioPerformance,
         consecutive_api_errors: int,
         new_buys_allowed: bool,
+        market_regime: str | None,
     ) -> PaperExecutionResult:
         return self._trading.submit(
             signal,
@@ -460,6 +471,7 @@ class PaperCycleRunner:
             daily_return_rate=performance.daily_return_rate,
             consecutive_api_errors=consecutive_api_errors,
             new_buys_allowed=new_buys_allowed,
+            market_regime=market_regime,
         )
 
     def _daily_risk_on(self, symbol: str) -> bool:
@@ -478,6 +490,19 @@ class PaperCycleRunner:
             return analyze_market(candles).regime
         except (TypeError, ValueError):
             return None
+
+    def _benchmark_regime(self) -> str | None:
+        symbol = self._benchmark_symbol
+        if not symbol:
+            return None
+        regime = self._daily_regime(symbol)
+        if regime is None:
+            try:
+                self._collector.collect(symbol=symbol, interval="1d", count=60)
+            except HANDLED_CYCLE_ERRORS:
+                return None
+            regime = self._daily_regime(symbol)
+        return None if regime is None else regime.value
 
     def _finished_at(self, started_at: datetime) -> datetime:
         finished_at = self._clock()
@@ -612,6 +637,7 @@ def _cycle_insight(
     items: Sequence[SymbolCycleResult],
     *,
     new_buys_allowed: bool,
+    market_regime: str | None = None,
 ) -> dict[str, Any]:
     reasons = Counter(
         item.idle_reason for item in items if item.idle_reason is not None
@@ -634,6 +660,7 @@ def _cycle_insight(
     return {
         "idleReason": _pick_idle_reason(reasons),
         "newBuysAllowed": new_buys_allowed,
+        "marketRegime": market_regime,
         "funnel": funnel,
         "reasons": dict(reasons),
         "symbols": [_symbol_insight(item) for item in items],

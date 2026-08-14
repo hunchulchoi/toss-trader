@@ -250,6 +250,43 @@ class PaperTradingServiceTest(unittest.TestCase):
         self.assertEqual(risk_calls, ["rule-too-large"])
         self.assertEqual(len(self.ledger.recent_risk_decisions()), 1)
 
+    def test_risk_off_preflight_skips_advisor_and_remote_risk(self) -> None:
+        advisor_calls: list[str] = []
+        risk_calls: list[str] = []
+
+        class Advisor:
+            def advise(self, signal, context):  # type: ignore[no-untyped-def]
+                advisor_calls.append(signal.signal_id)
+                return TradeAdvice(approved=True, rationale="approve")
+
+        class RemoteRisk:
+            def evaluate(self, signal, context):  # type: ignore[no-untyped-def]
+                risk_calls.append(signal.signal_id)
+                return RiskManager(RiskLimits()).evaluate(signal, context)
+
+        service = PaperTradingService(
+            ledger=self.ledger,
+            risk_manager=RemoteRisk(),  # type: ignore[arg-type]
+            advisor=Advisor(),
+        )
+        result = service.submit(
+            TradeSignal(
+                signal_id="regime-off-buy",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(70000),
+                quantity=Decimal(1),
+                reason="test",
+            ),
+            now=self.now,
+            market_regime="RISK_OFF",
+        )
+
+        self.assertEqual(result.decision.violations, ("regime-risk-off",))
+        self.assertIsNone(result.fill)
+        self.assertEqual(advisor_calls, [])
+        self.assertEqual(risk_calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()

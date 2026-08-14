@@ -34,6 +34,9 @@ Alertmanager Telegram은 리포트·장애를 **밀어 넣는** 경로다. 이 M
 - `error`: 종목 처리 실패
 - `ok`: 이번 cycle에 idle 사유 없음
 
+`marketRegime`은 벤치마크 일봉 상태(`RISK_ON` / `NEUTRAL` / `RISK_OFF`)다.
+없으면 한도 조정 전 cycle이거나 캔들 부족이다.
+
 옛 `paper_cycle_runs` 행은 `cycle_insight`가 비어 `idleReason`이 null이다.
 다음 cycle부터 채워진다. 칼럼은 paper cycle 프로세스가 기동될 때
 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS cycle_insight`로 생긴다.

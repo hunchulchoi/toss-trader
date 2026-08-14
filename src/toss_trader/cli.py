@@ -838,6 +838,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             calendar=MarketCalendarService(client),
             performance=performance,
             state=cycle_state,
+            benchmark_symbol=settings.market_benchmark_symbols[0],
         ).run(
             symbols=symbols,
             interval=interval,

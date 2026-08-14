@@ -1259,6 +1259,7 @@ def _evaluate_risk_payload(payload: dict[str, Any]) -> dict[str, object]:
             new_buys_allowed=_required_bool(context_payload, "newBuysAllowed"),
             advisor_status=_optional_text(context_payload.get("advisorStatus")),
             advisor_rationale=_optional_text(context_payload.get("advisorRationale")),
+            market_regime=_optional_text(context_payload.get("marketRegime")),
         )
         decision = manager.evaluate(signal, context)
     elif kind == "universe":

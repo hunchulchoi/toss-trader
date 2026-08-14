@@ -5,6 +5,18 @@
 
 ## 2026-08-14
 
+### 벤치마크 regime으로 RM 신규매수 한도만 조이기
+
+고정 한도(하루 BUY 5·슬롯 5)가 장 상태와 무관했다. `MARKET_BENCHMARK_SYMBOLS`
+첫 종목 일봉으로만 조인다. 숫자는 올리지 않는다. Rule = Hermes.
+
+- `RISK_ON`·캔들 부족: 기본 한도
+- `NEUTRAL`: 하루 BUY·신규 슬롯 2
+- `RISK_OFF`: 신규 BUY `regime-risk-off`, SELL 허용. Hermes 호출 안 함
+- universe 선정 한도는 그대로. cycle_insight·paper-mcp에 `marketRegime`
+
+운영: 코드만, 배포 대기. automation 재빌드 + n8n RiskManager workflow 재import.
+
 ### 무신호 원인 (`idleReason`)
 
 공용 Hermes가 `toss_paper_status`로 신호 수·체결만 보고 현금 대기를

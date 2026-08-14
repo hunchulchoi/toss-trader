@@ -248,6 +248,57 @@ class WorkflowTaskServiceTest(unittest.TestCase):
         self.assertFalse(result["approved"])
         self.assertEqual(result["violations"], ["insufficient-position"])
 
+    def test_evaluates_risk_off_buy_as_regime_block(self) -> None:
+        class Stub:
+            def report(self, _: dict[str, object]) -> dict[str, object]:
+                return {}
+
+        service = WorkflowTaskService(
+            paper=None,  # type: ignore[arg-type]
+            market_scan=None,  # type: ignore[arg-type]
+            market_analyzer=None,  # type: ignore[arg-type]
+            daily_analyzer=None,  # type: ignore[arg-type]
+            market_reporter=Stub(),  # type: ignore[arg-type]
+            paper_reporter=Stub(),  # type: ignore[arg-type]
+            daily_reporter=Stub(),  # type: ignore[arg-type]
+            failure_reporter=Stub(),  # type: ignore[arg-type]
+        )
+
+        result = service.run(
+            "/workflow/risk-manager-evaluate",
+            {
+                "kind": "trade",
+                "signal": {
+                    "signalId": "signal-off",
+                    "symbol": "005930",
+                    "side": "BUY",
+                    "referencePrice": "70000",
+                    "quantity": "1",
+                    "reason": "MA20 crossed above MA60",
+                },
+                "context": {
+                    "now": "2026-08-13T06:00:00Z",
+                    "marketCloseAt": "2026-08-13T06:30:00Z",
+                    "marketIsBusinessDay": True,
+                    "positionNotional": "0",
+                    "positionQuantity": "0",
+                    "availableCash": "900000",
+                    "dailyBuyCount": 0,
+                    "openPositionCount": 0,
+                    "dailyReturnRate": "0",
+                    "consecutiveApiErrors": 0,
+                    "seenSignalIds": [],
+                    "newBuysAllowed": True,
+                    "advisorStatus": None,
+                    "advisorRationale": None,
+                    "marketRegime": "RISK_OFF",
+                },
+            },
+        )
+
+        self.assertFalse(result["approved"])
+        self.assertEqual(result["violations"], ["regime-risk-off"])
+
     def test_audits_n8n_risk_manager_decision_without_recalculating(self) -> None:
         audits: list[AutomationRunLog] = []
 
