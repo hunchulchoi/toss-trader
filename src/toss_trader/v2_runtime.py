@@ -69,4 +69,3 @@ class OfficialV2CycleStrategy:
         # No trustworthy sector master is available yet. Treat every unknown
         # instrument as one conservative cluster instead of bypassing the cap.
         return "UNKNOWN"
-
