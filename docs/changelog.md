@@ -5,6 +5,15 @@
 
 ## 2026-08-18
 
+### Rule/Hermes paper 실험 세대 전환
+
+15:40 마감 workflow 성공 후 기존 Rule/Hermes 자료를 삭제하지 않고
+`rule-v1-20260818`·`hermes-v1-20260818`로 archive했다. 2026-08-19 시작
+활성 계정은 각각 초기현금 1,000,000원, 체결·보유 0으로 생성했다. 전환 전
+복구 dump를 만들었고 paper MCP 및 DB 불변식을 재검증했다.
+
+운영: `TRADING_ENABLED=false` 유지. KIS 수급 6세션 미충족 시 BUY 0건 정상.
+
 ### 장전 분석 setup-v2.2 정렬
 
 08:30 시장 스캔의 종목 후보를 MA20/60·20일 모멘텀 랭킹에서 setup-v2.2로
