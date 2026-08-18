@@ -422,6 +422,30 @@ class PaperCycleRunnerTest(unittest.TestCase):
         )
         self.assertIsNone(self.paper_ledger.v2_position_plan("005930"))
 
+    def test_v2_held_plan_without_exit_is_v2_idle(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+        runner = self._runner(client, v2_strategy=strategy)
+        runner.run(
+            symbols=("005930",), interval="1m", short_window=2, long_window=3,
+            quantity=Decimal(1), now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        result = runner.run(
+            symbols=("005930",), interval="1m", short_window=2, long_window=3,
+            quantity=Decimal(1), now=datetime(2026, 8, 12, 7, 5, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(result.items[0].idle_reason, "v2-idle")
+        self.assertEqual(result.insight["funnel"]["v2Idle"], 1)
+
     def test_v2_rebuilds_candidate_for_shared_snapshot_portfolio(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         strategy = FakeV2CycleStrategy(

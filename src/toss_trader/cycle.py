@@ -891,6 +891,7 @@ def _error_message(items: tuple[SymbolCycleResult, ...]) -> str | None:
 
 IDLE_PRIORITY = (
     "setup-v2-block",
+    "v2-idle",
     "no-crossover",
     "sell-no-position",
     "already-held",
@@ -932,6 +933,7 @@ def _symbol_result(
             signal=signal,
             decision=decision,
             fill=fill,
+            ma_state=ma_state,
         ),
         close_price=ma_state.close if ma_state else None,
         short_ma=ma_state.short_ma if ma_state else None,
@@ -949,6 +951,7 @@ def _idle_reason(
     signal: TradeSignal | None,
     decision: RiskDecision | None,
     fill: PaperFill | None,
+    ma_state: MaCrossoverEvaluation | None = None,
 ) -> str | None:
     if fill is not None:
         return None
@@ -970,7 +973,7 @@ def _idle_reason(
             return "advisor-reject"
         return "risk-block"
     if signal is None:
-        return "no-crossover"
+        return "no-crossover" if ma_state is not None else "v2-idle"
     return None
 
 
@@ -989,6 +992,7 @@ def _cycle_insight(
         ),
         "skippedCandles": reasons.get("insufficient-candles", 0),
         "setupV2Blocked": reasons.get("setup-v2-block", 0),
+        "v2Idle": reasons.get("v2-idle", 0),
         "noCrossover": reasons.get("no-crossover", 0),
         "sellNoPosition": reasons.get("sell-no-position", 0),
         "alreadyHeld": reasons.get("already-held", 0),
@@ -1021,6 +1025,9 @@ def _symbol_insight(item: SymbolCycleResult) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "symbol": item.symbol,
         "reason": item.idle_reason,
+        "skipReason": item.skip_reason,
+        "error": item.error,
+        "fillSide": item.fill.side.value if item.fill is not None else None,
     }
     if item.close_price is not None:
         payload["close"] = str(item.close_price)

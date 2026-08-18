@@ -5,6 +5,16 @@
 
 ## 2026-08-18
 
+### 마감 리포트 당일 1m 퍼널
+
+15:40 마감 Hermes가 1d cycle의 `no-crossover`만 읽고 장중 v2 판정을
+놓치던 구멍을 막았다. 같은 서울 일자 1m `cycle_insight`를 모아
+체결·마지막 사유를 `intradayReview`로 넘긴다. v2 무신호 idle은
+`no-crossover`가 아니라 `v2-idle`이다.
+
+- 동작 변화: 마감 JSON `dailyReview`, 텔레그램 당일 1m 한두 줄
+- 운영: 코드만, 배포 대기
+
 ### Rule/Hermes paper 실험 세대 전환
 
 15:40 마감 workflow 성공 후 기존 Rule/Hermes 자료를 삭제하지 않고

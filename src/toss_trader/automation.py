@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 from .calendar import MarketCalendarService, MarketSession
 from .client import TossClient
 from .config import Settings
+from .cycle_funnel import REVIEW_PURPOSE, format_intraday_review_lines
 from .models import Side, TradeSignal
 from .paper import open_paper_ledger
 from .risk import (
@@ -152,6 +153,10 @@ def paper_cycle_notice(job: dict[str, Any]) -> PaperCycleNotice | None:
                     else "warning"
                 )
                 severity = _higher_severity(severity, target)
+
+    review = cycle.get("intradayReview")
+    if isinstance(review, dict):
+        lines.extend(format_intraday_review_lines(review))
 
     if not lines:
         return None
@@ -1260,6 +1265,21 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "cycle": {
             "comparison": True,
             "portfolios": portfolios,
+            "dailyReview": {
+                "purpose": REVIEW_PURPOSE,
+                "portfolios": {
+                    "rule": (
+                        portfolios["rule"].get("intradayReview")
+                        if isinstance(portfolios["rule"], dict)
+                        else None
+                    ),
+                    "hermes": (
+                        portfolios["hermes"].get("intradayReview")
+                        if isinstance(portfolios["hermes"], dict)
+                        else None
+                    ),
+                },
+            },
             "summary": {
                 key: sum(int(summary.get(key, 0)) for summary in summaries)
                 for key in ("symbols", "signals", "fills", "skipped", "failed")

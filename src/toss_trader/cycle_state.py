@@ -55,6 +55,14 @@ class CycleStateStore(Protocol):
 
     def latest_run(self) -> PaperCycleRun | None: ...
 
+    def list_runs(
+        self,
+        *,
+        interval: str,
+        started_from: datetime,
+        started_to: datetime,
+    ) -> tuple[PaperCycleRun, ...]: ...
+
 
 SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS paper_cycle_runs (
@@ -222,6 +230,37 @@ class SqliteCycleStateStore:
         ).fetchone()
         return _run_from_row(row) if row else None
 
+    def list_runs(
+        self,
+        *,
+        interval: str,
+        started_from: datetime,
+        started_to: datetime,
+    ) -> tuple[PaperCycleRun, ...]:
+        _validate_run_window(interval, started_from, started_to)
+        rows = self._connection.execute(
+            """
+            SELECT run_id, started_at, finished_at, status, interval,
+                   symbol_count, signal_count, fill_count, failed_count,
+                   consecutive_api_errors, daily_return_rate, error_message,
+                   cycle_insight
+            FROM paper_cycle_runs
+            WHERE portfolio_id = ?
+              AND interval = ?
+              AND status <> 'running'
+              AND started_at >= ?
+              AND started_at <= ?
+            ORDER BY started_at ASC, run_id ASC
+            """,
+            (
+                self._portfolio_id,
+                interval,
+                started_from.isoformat(),
+                started_to.isoformat(),
+            ),
+        ).fetchall()
+        return tuple(_run_from_row(row) for row in rows)
+
 
 class PostgresCycleStateStore:
     def __init__(
@@ -364,6 +403,34 @@ class PostgresCycleStateStore:
             row = cursor.fetchone()
         return _run_from_row(row) if row else None
 
+    def list_runs(
+        self,
+        *,
+        interval: str,
+        started_from: datetime,
+        started_to: datetime,
+    ) -> tuple[PaperCycleRun, ...]:
+        _validate_run_window(interval, started_from, started_to)
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT run_id, started_at, finished_at, status, interval,
+                       symbol_count, signal_count, fill_count, failed_count,
+                       consecutive_api_errors, daily_return_rate, error_message,
+                       cycle_insight
+                FROM paper_cycle_runs
+                WHERE portfolio_id = %s
+                  AND interval = %s
+                  AND status <> 'running'
+                  AND started_at >= %s
+                  AND started_at <= %s
+                ORDER BY started_at ASC, run_id ASC
+                """,
+                (self._portfolio_id, interval, started_from, started_to),
+            )
+            rows = cursor.fetchall()
+        return tuple(_run_from_row(row) for row in rows)
+
 
 def open_cycle_state_store(
     *,
@@ -380,6 +447,17 @@ def _validate_portfolio_id(portfolio_id: str) -> str:
     if portfolio_id not in {"legacy", "rule", "hermes", "comparison"}:
         raise ValueError("invalid paper portfolio id")
     return portfolio_id
+
+
+def _validate_run_window(
+    interval: str, started_from: datetime, started_to: datetime
+) -> None:
+    if interval not in {"1m", "1d"}:
+        raise ValueError("interval must be 1m or 1d")
+    _require_aware(started_from, "started_from")
+    _require_aware(started_to, "started_to")
+    if started_to < started_from:
+        raise ValueError("run window end must not precede start")
 
 
 def _validate_start(started_at: datetime, interval: str, symbol_count: int) -> None:

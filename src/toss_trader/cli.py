@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .advisor import create_hermes_trade_advisor
 from .automation import (
@@ -26,7 +27,8 @@ from .calendar import MarketCalendarService
 from .client import TossClient
 from .config import Settings
 from .cycle import PaperCycleRunner, PaperCycleSnapshot
-from .cycle_state import open_cycle_state_store
+from .cycle_funnel import aggregate_intraday_review, insights_from_runs
+from .cycle_state import CycleStateStore, open_cycle_state_store
 from .errors import TossApiError
 from .execution import PaperTradingService
 from .kis_flow import KisInvestorFlowClient, KisInvestorFlowCollector
@@ -1124,6 +1126,11 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 "failed": result.failed_count,
                 "idleReason": result.insight["idleReason"],
             },
+            "intradayReview": (
+                _intraday_review_for_day(cycle_state, now)
+                if interval == "1d"
+                else None
+            ),
             "items": [
                 {**asdict(item), "name": symbol_names[item.symbol]}
                 for item in result.items
@@ -1131,6 +1138,22 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
         }
     )
     return 3 if result.failed_count else 0
+
+
+def _seoul_day_window(now: datetime) -> tuple[datetime, datetime]:
+    local = now.astimezone(ZoneInfo("Asia/Seoul"))
+    start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start.astimezone(UTC), now.astimezone(UTC)
+
+
+def _intraday_review_for_day(store: CycleStateStore, now: datetime) -> dict[str, Any]:
+    started_from, started_to = _seoul_day_window(now)
+    runs = store.list_runs(
+        interval="1m", started_from=started_from, started_to=started_to
+    )
+    return aggregate_intraday_review(
+        insights_from_runs(runs), cycle_count=len(runs)
+    )
 
 
 def _cycle_snapshot_to_dict(

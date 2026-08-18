@@ -17,6 +17,7 @@ from toss_trader.automation import (
     PaperCycleProcess,
     PaperPortfolioProcess,
     WorkflowTaskService,
+    _comparison_payload,
     automation_response,
     paper_cycle_notice,
 )
@@ -734,6 +735,55 @@ class PaperCycleNoticeTest(unittest.TestCase):
         self.assertIsNotNone(notice)
         self.assertEqual(
             notice.lines, ("003010 RiskManager 거부: max-daily-buys",)
+        )
+
+    def test_daily_notice_includes_intraday_review(self) -> None:
+        notice = paper_cycle_notice(
+            {
+                "exitCode": 0,
+                "cycle": {
+                    "summary": {
+                        "symbols": 1,
+                        "signals": 0,
+                        "fills": 0,
+                        "failed": 0,
+                    },
+                    "intradayReview": {
+                        "cycles": 3,
+                        "symbols": 1,
+                        "buyFills": 0,
+                        "sellFills": 0,
+                        "lastReasons": {"v2-idle": 1},
+                        "symbolsDetail": [],
+                    },
+                },
+            }
+        )
+
+        assert notice is not None
+        self.assertTrue(any("당일 1m 사이클 3" in line for line in notice.lines))
+        self.assertTrue(any("v2-idle 1" in line for line in notice.lines))
+
+    def test_comparison_payload_copies_intraday_review(self) -> None:
+        payload = _comparison_payload(
+            {
+                "rule": {
+                    "exitCode": 0,
+                    "cycle": {"intradayReview": {"cycles": 2, "buyFills": 1}},
+                },
+                "hermes": {
+                    "exitCode": 0,
+                    "cycle": {"intradayReview": {"cycles": 2, "buyFills": 0}},
+                },
+            }
+        )
+
+        self.assertEqual(
+            payload["cycle"]["dailyReview"]["portfolios"]["rule"]["cycles"], 2
+        )
+        self.assertEqual(
+            payload["cycle"]["dailyReview"]["portfolios"]["hermes"]["buyFills"],
+            0,
         )
 
 
