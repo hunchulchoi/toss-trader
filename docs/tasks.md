@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-005 Activate strict setup-v2 entry gate
+
+- Owner: codex
+- Status: DONE
+- Result: every paper BUY candidate now requires 200 daily candles and strict
+  setup-v2 approval before RiskManager or Hermes; missing PIT flow/events are
+  recorded as `setup-v2-block`, while SELL and risk reduction remain available
+- Checks: dedicated missing-input, complete-input, runtime preflight, and SELL
+  bypass tests plus full regression suite
+- Risks: setup-v2 currently gates MA-generated BUY candidates rather than
+  generating independent entries; executable v2 integer sizing and persisted
+  open/cluster heat are not connected, so strict missing inputs intentionally
+  keep new BUY at zero
+
 ### STRAT-004 Setup-v2 weekly replay
 
 - Owner: codex

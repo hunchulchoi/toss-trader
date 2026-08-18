@@ -141,15 +141,18 @@ Rule: preflight 없이 n8n 1회. payload는 신호+RiskContext. 뉴스·호가 �
 종목별 처리:
 
 1. Toss OAuth 토큰 획득 또는 캐시 토큰 재사용
-2. `long_window + 1`개 캔들 수집. 장중은 1분봉 61개, 마감은 기본 일봉 61개
+2. 기본 MA용 `long_window + 1`개 캔들 수집. v2 BUY 후보가 있으면 일봉 200개,
+   마감 cycle은 처음부터 일봉 200개 수집
 3. 저장된 종가로 이전·현재 MA20/MA60 계산
 4. 골든크로스면 `BUY`, 데드크로스면 `SELL`. 장중 1분봉은 교차가 없어도
    일봉 상승 추세 + 1분 단기>장기 + 종가>단기MA + 미보유면 하루 1회
    continuation `BUY`. 그 외는 신호 없음
-5. 신호가 있으면 국가별 정규장 일정과 시장 휴장 여부 조회
-6. Hermes면 hard preflight → 통과 시 advisor → n8n Risk. Rule은 n8n 1회
-7. 승인 시 paper 체결 기록
-8. 사이클 결과·API 오류 수 저장
+5. BUY는 strict setup-v2 가격·PIT 수급·이벤트·3% 갭 필터 적용. 누락 또는
+   위반이면 `setup-v2-block`; SELL은 우회
+6. 통과 신호가 있으면 국가별 정규장 일정과 시장 휴장 여부 조회
+7. Hermes면 hard preflight → 통과 시 advisor → n8n Risk. Rule은 n8n 1회
+8. 승인 시 paper 체결 기록
+9. 사이클 결과·API 오류 수 저장
 
 한 종목 실패는 다른 종목 처리를 막지 않는다. 일부 실패는
 `partial_failure`, 전부 실패는 `failed`로 저장된다. 같은 캔들에서 생성된
@@ -173,6 +176,7 @@ RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저�
 | 일일 수익률 | -3% 이하 신규 BUY 중단 | `daily-loss-limit` |
 | 연속 API 오류 | 5회 이상 중단 | `api-error-kill-switch` |
 | universe 갱신 실패 | 신규 BUY 금지, 보유 SELL 허용 | `universe-refresh-failed` |
+| setup-v2 필수 입력 누락·금지필터 | 신규 BUY 금지, SELL 허용 | `setup-v2-block` |
 | 휴장일 매수·매도 | 금지 | `market-closed` |
 | 장 마감 전 신규 매수 | 10분 전부터 금지 | `market-close-window` |
 | 동일 신호 | 재체결 금지 | `duplicate-signal` |

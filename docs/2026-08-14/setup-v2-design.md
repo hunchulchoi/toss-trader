@@ -1,7 +1,8 @@
 # 셋업 가설 v2 구현 경계
 
 매매 권고가 아니다. 사용자가 제시한 후보 선정 규칙을 코드로 옮길 때의 명시적
-가정과 미구현 데이터 경계를 기록한다. live/paper 주문 경로에는 연결하지 않았다.
+가정과 미구현 데이터 경계를 기록한다. 2026-08-18부터 paper BUY의 strict
+사전 게이트로 연결했다. 실거래 주문 경로는 없다.
 
 ## 구현한 순수 평가 규칙
 
@@ -63,19 +64,22 @@ open/cluster heat가 소진됐으면 최소 1주로 올리지 않고 0주로 거
 | 외인/기관 수급 | 순수 PIT 계약만 구현 | 6세션 `available_at`, 순매수, 거래대금 저장 |
 | 선행 PER 성장/업종 percentile | 없음 | point-in-time 재무·컨센서스 데이터 |
 | 이벤트 직전 | 없음 | 실적·공시·기업행사 달력과 임박 기간 정의 |
-| 갭상승 추격 | 임계값 미정 | 전일 종가 대비 시가 gap 기준 |
+| 갭상승 추격 | 전일 종가 대비 시가 `+3%` 이상 차단 | threshold walk-forward |
 | 손절선 | 신규 후보에 없음 | setup별 stop 산출 규칙 |
 | 자동 regime | 보류 | benchmark 기반 사전 정의와 walk-forward |
 
 누락 입력을 임의의 `false`나 현재값으로 채우면 look-ahead 또는 안전 필터 우회가
-생긴다. 실제 scanner/백테스트 연결은 위 데이터 계약과 임계값을 정한 뒤 한다.
+생긴다. 현재 strict gate는 누락을 `setup-v2-block`으로 기록하고 BUY를 RiskManager,
+Hermes, 체결 전에 제거한다. SELL과 리스크 축소는 이 게이트를 거치지 않는다.
 
 ## 현재 결정
 
-- pure evaluator, PIT 수급 집계, 정수 사이징과 회귀 테스트만 추가
-- 기존 dynamic ranking universe와 주문 경로 변경 없음
-- 기존 MA 전략, daily/open/risk notional 값 변경 없음
-- 실제 200일 캔들·수급·point-in-time 밸류 데이터 백테스트 전 성과 주장 없음
+- MA가 만든 BUY 후보에 strict setup-v2 gate를 적용하고 200개 일봉을 요구
+- 보유 종목의 모든 추가 BUY 차단. 기존 SELL·dynamic universe는 유지
+- 유효 PIT 수급과 이벤트 일정이 없으므로 현재 신규 BUY는 전부 fail-closed
+- 정수 사이징 함수는 아직 실행 신호 수량에 연결하지 않음. 데이터 readiness와
+  open/cluster heat 저장 계약 전에는 기존 수량으로 우회하지 않고 BUY 0건 유지
+- 실제 PIT 데이터와 다주간 walk-forward 전 성과 주장 없음
 
 ## 협업 검증 결과
 

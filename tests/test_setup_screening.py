@@ -2,13 +2,15 @@ import unittest
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
-from toss_trader.models import Candle
+from toss_trader.models import Candle, Side, TradeSignal
+from toss_trader.repository import SqliteMarketRepository
 from toss_trader.setup_screening import (
     FlowObservation,
     PositionSizingPolicy,
     SetupContext,
     SetupType,
     SlippageAssumption,
+    StrictSetupV2EntryGate,
     ValuationEvidence,
     ValuationTier,
     evaluate_setup,
@@ -263,6 +265,70 @@ class FlowSummaryTest(unittest.TestCase):
 
 
 class SetupScreeningTest(unittest.TestCase):
+    def test_strict_entry_gate_blocks_missing_pit_inputs(self) -> None:
+        repository = SqliteMarketRepository(":memory:")
+        history = pullback_candles()
+        repository.upsert_candles(history)
+        signal = TradeSignal(
+            signal_id="candidate",
+            symbol="005930",
+            side=Side.BUY,
+            reference_price=history[-1].close_price,
+            quantity=Decimal(1),
+            reason="candidate",
+        )
+        try:
+            result = StrictSetupV2EntryGate(repository).evaluate(
+                signal, history[-1].timestamp + timedelta(hours=20)
+            )
+        finally:
+            repository.close()
+
+        self.assertFalse(result.approved)
+        self.assertEqual(
+            result.reason,
+            "setup-v2:missing:flow-history,missing:event-calendar",
+        )
+
+    def test_strict_entry_gate_passes_complete_setup(self) -> None:
+        repository = SqliteMarketRepository(":memory:")
+        history = pullback_candles()
+        repository.upsert_candles(history)
+        signal = TradeSignal(
+            signal_id="candidate",
+            symbol="005930",
+            side=Side.BUY,
+            reference_price=history[-1].close_price,
+            quantity=Decimal(1),
+            reason="candidate",
+        )
+
+        def context_factory(
+            symbol: str,
+            signal_session: date,
+            decision_at: datetime,
+            gap_up: bool,
+        ) -> SetupContext:
+            self.assertEqual(symbol, "005930")
+            self.assertFalse(gap_up)
+            return SetupContext(
+                decision_at=decision_at,
+                signal_session=signal_session,
+                flow_observations=flow_observations(signal_session),
+                event_imminent=False,
+                gap_up_chase=gap_up,
+            )
+
+        try:
+            result = StrictSetupV2EntryGate(
+                repository, context_factory=context_factory
+            ).evaluate(signal, history[-1].timestamp + timedelta(hours=20))
+        finally:
+            repository.close()
+
+        self.assertTrue(result.approved)
+        self.assertIsNone(result.reason)
+
     def test_approves_pullback_with_independent_flow_reversal(self) -> None:
         history = pullback_candles()
         result = evaluate_setup(history, context=approved_context(history[-1]))

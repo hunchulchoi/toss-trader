@@ -23,6 +23,7 @@ from .models import PaperFill, Side, TradeSignal
 from .portfolio import DailyPortfolioPerformance, PortfolioPerformance
 from .risk import RiskDecision
 from .screening import MarketRegime, analyze_market
+from .setup_screening import EntryGateDecision
 from .strategy import MaCrossoverEvaluation, ma_trend_continuation_signal
 
 HANDLED_CYCLE_ERRORS = (OSError, RuntimeError, TossApiError, TypeError, ValueError)
@@ -110,6 +111,7 @@ class PaperCycleRunner:
         calendar: MarketCalendarService,
         performance: PortfolioPerformance,
         state: CycleStateStore,
+        entry_gate: Callable[[TradeSignal, datetime], EntryGateDecision] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._collector = collector
@@ -118,6 +120,7 @@ class PaperCycleRunner:
         self._calendar = calendar
         self._performance = performance
         self._state = state
+        self._entry_gate = entry_gate
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def prepare(
@@ -148,7 +151,11 @@ class PaperCycleRunner:
                 collections[index] = self._collector.collect(
                     symbol=symbol,
                     interval=interval,
-                    count=long_window + 1,
+                    count=(
+                        max(long_window + 1, 200)
+                        if self._entry_gate is not None and interval == "1d"
+                        else long_window + 1
+                    ),
                 )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
@@ -193,6 +200,26 @@ class PaperCycleRunner:
                     quantity=quantity,
                     entry_key=entry_key,
                 )
+
+        if self._entry_gate is not None:
+            for index, signal in enumerate(signals):
+                if signal is None or signal.side is not Side.BUY:
+                    continue
+                try:
+                    if interval != "1d":
+                        self._collector.collect(
+                            symbol=signal.symbol,
+                            interval="1d",
+                            count=200,
+                        )
+                    gate = self._entry_gate(signal, now)
+                    if not gate.approved:
+                        signals[index] = None
+                        skips[index] = gate.reason or "setup-v2:rejected"
+                except HANDLED_CYCLE_ERRORS as error:
+                    errors[index] = f"setup-v2: {error}"
+                    signals[index] = None
+                    api_failed = True
 
         return PaperCycleSnapshot(
             evaluated_at=now,
@@ -331,7 +358,6 @@ class PaperCycleRunner:
             if (
                 signals[index] is not None
                 and signals[index].side is Side.BUY
-                and "trend continuation" in signals[index].reason
                 and self._trading.has_position(symbol)
             ):
                 signals[index] = None
@@ -526,6 +552,7 @@ def _error_message(items: tuple[SymbolCycleResult, ...]) -> str | None:
 
 
 IDLE_PRIORITY = (
+    "setup-v2-block",
     "no-crossover",
     "sell-no-position",
     "already-held",
@@ -590,6 +617,8 @@ def _idle_reason(
     if error is not None:
         return "error"
     if skip_reason is not None:
+        if skip_reason.startswith("setup-v2:"):
+            return "setup-v2-block"
         return "insufficient-candles"
     if sell_dropped:
         return "sell-no-position"
@@ -597,8 +626,7 @@ def _idle_reason(
         return "already-held"
     if decision is not None and not decision.approved:
         if any(
-            violation.startswith("Hermes 거부")
-            or violation.startswith("Hermes 분석 실패")
+            violation.startswith(("Hermes 거부", "Hermes 분석 실패"))
             for violation in decision.violations
         ):
             return "advisor-reject"
@@ -622,6 +650,7 @@ def _cycle_insight(
             item.error is None and item.skip_reason is None for item in items
         ),
         "skippedCandles": reasons.get("insufficient-candles", 0),
+        "setupV2Blocked": reasons.get("setup-v2-block", 0),
         "noCrossover": reasons.get("no-crossover", 0),
         "sellNoPosition": reasons.get("sell-no-position", 0),
         "alreadyHeld": reasons.get("already-held", 0),

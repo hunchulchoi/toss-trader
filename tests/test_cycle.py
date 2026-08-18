@@ -15,6 +15,7 @@ from toss_trader.paper import PaperLedger
 from toss_trader.portfolio import PortfolioPerformance
 from toss_trader.repository import SqliteMarketRepository
 from toss_trader.risk import RiskLimits, RiskManager
+from toss_trader.setup_screening import EntryGateDecision
 
 
 class WatchlistCandleClient:
@@ -131,7 +132,12 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.paper_ledger.close()
         self.cycle_state.close()
 
-    def _runner(self, client: WatchlistCandleClient) -> PaperCycleRunner:
+    def _runner(
+        self,
+        client: WatchlistCandleClient,
+        *,
+        entry_gate=None,
+    ) -> PaperCycleRunner:
         return PaperCycleRunner(
             collector=MarketCollector(client=client, repository=self.market_repository),
             strategy=StoredMaStrategy(self.market_repository),
@@ -145,6 +151,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
                 market_repository=self.market_repository,
             ),
             state=self.cycle_state,
+            entry_gate=entry_gate,
             clock=lambda: datetime(2026, 8, 12, 7, 0, 2, tzinfo=UTC),
         )
 
@@ -181,6 +188,37 @@ class PaperCycleRunnerTest(unittest.TestCase):
         assert latest is not None
         self.assertEqual(latest.status, "succeeded")
         self.assertEqual(latest.fill_count, 1)
+
+    def test_setup_v2_gate_blocks_buy_before_risk_and_advisor(self) -> None:
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(
+            client,
+            entry_gate=lambda signal, now: EntryGateDecision(
+                approved=False,
+                reason="setup-v2:missing:flow-history,event-calendar",
+            ),
+        ).run(
+            symbols=("005930",),
+            interval="1d",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(client.calls, [("005930", 200)])
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(result.items[0].idle_reason, "setup-v2-block")
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "setup-v2:missing:flow-history,event-calendar",
+        )
+        self.assertEqual(result.insight["funnel"]["setupV2Blocked"], 1)
+        self.assertEqual(self.paper_ledger.recent_risk_decisions(), [])
 
     def test_records_no_crossover_when_watchlist_has_no_signal(self) -> None:
         client = WatchlistCandleClient(
@@ -288,7 +326,10 @@ class PaperCycleRunnerTest(unittest.TestCase):
             {"005930": [Decimal(10), Decimal(12), Decimal(13), Decimal(10)]}
         )
 
-        result = self._runner(client).run(
+        def buy_only_gate(signal, now):
+            raise AssertionError("setup-v2 entry gate must not inspect SELL")
+
+        result = self._runner(client, entry_gate=buy_only_gate).run(
             symbols=("005930",),
             interval="1d",
             short_window=2,

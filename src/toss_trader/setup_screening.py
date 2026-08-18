@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import ROUND_FLOOR, Decimal
 from enum import StrEnum
 from itertools import pairwise
+from zoneinfo import ZoneInfo
 
 from .models import Candle, Side, TradeSignal
 from .paper import toss_trade_costs
+from .repository import MarketReadRepository
 
 
 class SetupType(StrEnum):
@@ -87,6 +90,66 @@ class SetupDecision:
     valuation_tier: ValuationTier
     confidence_multiplier: Decimal
     proposed_confidence_multiplier: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class EntryGateDecision:
+    approved: bool
+    reason: str | None = None
+
+
+SetupContextFactory = Callable[[str, date, datetime, bool], SetupContext]
+
+
+class StrictSetupV2EntryGate:
+    def __init__(
+        self,
+        repository: MarketReadRepository,
+        *,
+        context_factory: SetupContextFactory | None = None,
+        gap_up_threshold: Decimal = Decimal("0.03"),
+    ) -> None:
+        if gap_up_threshold < 0:
+            raise ValueError("gap-up threshold must not be negative")
+        self._repository = repository
+        self._context_factory = context_factory or _missing_setup_context
+        self._gap_up_threshold = gap_up_threshold
+
+    def evaluate(self, signal: TradeSignal, now: datetime) -> EntryGateDecision:
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("setup-v2 decision time must include a timezone offset")
+        if signal.side is not Side.BUY:
+            return EntryGateDecision(approved=True)
+        candles = self._repository.latest_candles(signal.symbol, "1d", limit=200)
+        if len(candles) < 200:
+            return EntryGateDecision(
+                approved=False,
+                reason=f"setup-v2:missing:daily-candles({len(candles)}/200)",
+            )
+        latest = candles[-1]
+        previous = candles[-2]
+        gap_up = (
+            latest.open_price / previous.close_price - Decimal(1)
+            >= self._gap_up_threshold
+        )
+        signal_session = latest.timestamp.astimezone(ZoneInfo("Asia/Seoul")).date()
+        context = self._context_factory(
+            signal.symbol,
+            signal_session,
+            now,
+            gap_up,
+        )
+        decision = evaluate_setup(candles, context=context)
+        if decision.approved:
+            return EntryGateDecision(approved=True)
+        reasons = (
+            *(f"missing:{value}" for value in decision.missing_checks),
+            *(f"violation:{value}" for value in decision.violations),
+        )
+        return EntryGateDecision(
+            approved=False,
+            reason="setup-v2:" + ",".join(reasons),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,6 +349,21 @@ def valuation_tier(evidence: ValuationEvidence | None) -> ValuationTier:
     ):
         return ValuationTier.A
     return ValuationTier.B
+
+
+def _missing_setup_context(
+    symbol: str,
+    signal_session: date,
+    decision_at: datetime,
+    gap_up_chase: bool,
+) -> SetupContext:
+    del symbol
+    return SetupContext(
+        decision_at=decision_at,
+        signal_session=signal_session,
+        event_imminent=None,
+        gap_up_chase=gap_up_chase,
+    )
 
 
 def position_size_reference(
