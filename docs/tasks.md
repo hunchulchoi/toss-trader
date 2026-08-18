@@ -57,11 +57,12 @@ No tasks awaiting review.
   setup-v2 approval before RiskManager or Hermes; missing PIT flow/events are
   recorded as `setup-v2-block`, while SELL and risk reduction remain available
 - Checks: dedicated missing-input, complete-input, runtime preflight, and SELL
-  bypass tests plus full regression suite
+  bypass tests plus full regression suite; 2026-08-18 12:03 KST 배포 후 실행
+  이미지의 v2 게이트·health·`TRADING_ENABLED=false` 확인
 - Risks: setup-v2 currently gates MA-generated BUY candidates rather than
   generating independent entries; executable v2 integer sizing and persisted
-  open/cluster heat are not connected, so strict missing inputs intentionally
-  keep new BUY at zero
+  open/cluster heat are not connected; KIS 수급 0행이라 신규 BUY는 현재
+  의도적으로 0건
 
 ### STRAT-004 Setup-v2 weekly replay
 

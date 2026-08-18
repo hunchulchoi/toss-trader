@@ -15,6 +15,9 @@
 - 운영: 11:54 KST `pit-collector` 재빌드·재기동 완료. Infisical prod의
   `KIS_APP_KEY`/`KIS_APP_SECRET`이 주입됐고 `TRADING_ENABLED=false`를 확인했다.
   Docker 수집 DB에는 검증된 로컬 `market_symbols` 200종목만 멱등 동기화했다.
+- 운영: 12:03 KST `automation`도 재빌드·재기동했다. 실행 이미지에서
+  setup-v2 게이트와 `setupV2Blocked` funnel을 확인했고 health는 정상이다.
+  수급 0행 상태이므로 현재 신규 BUY는 fail-closed다.
 
 ## 2026-08-14
 
