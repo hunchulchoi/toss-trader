@@ -12,8 +12,9 @@
 `available_at`은 `INSERT OR IGNORE`로 고정한다.
 
 - 동작: `collect-kis-flow`, pit-collector 15:40 KST 이후 당일 포함
-- 운영: 코드만, 배포 대기. Infisical `KIS_APP_KEY`/`KIS_APP_SECRET` 필요.
-  키 없으면 pit-collector 기동 실패
+- 운영: 11:54 KST `pit-collector` 재빌드·재기동 완료. Infisical prod의
+  `KIS_APP_KEY`/`KIS_APP_SECRET`이 주입됐고 `TRADING_ENABLED=false`를 확인했다.
+  Docker 수집 DB에는 검증된 로컬 `market_symbols` 200종목만 멱등 동기화했다.
 
 ## 2026-08-14
 

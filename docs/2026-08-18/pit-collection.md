@@ -51,3 +51,6 @@ On 2026-08-18 an Infisical-injected local run collected:
 - zero rows missing `available_at`
 - KIS credentials authenticated at 11:45 KST; the flow TR returned `OPSQ2001`
   before its 15:40 availability boundary, so no row was written
+- 11:54 KST 새 컨테이너 배포 후 KIS 키 존재와 `TRADING_ENABLED=false`를
+  확인했다. 검증된 200종목 명단을 수집 DB에 동기화했으며 시작 결과는
+  `WAITING_FOR_KIS_1540`; 다음 정규 실행은 18:30 KST다.

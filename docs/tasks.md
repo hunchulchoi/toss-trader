@@ -33,8 +33,8 @@ No tasks awaiting review.
 - Checks: 257 unit tests; scoped Ruff; fake-transport TR/header parse and
   immutable first availability; live auth reached KIS and the pre-15:40 call
   was safely rejected as `OPSQ2001` without a DB write
-- Risks: first full collection awaits the post-15:40 provider window; history
-  cannot be used before its first retrieval timestamp; not deployed yet
+- Risks: first full collection awaits the 18:30 run; history cannot be used
+  before its first retrieval timestamp
 
 ### DATA-003 Prospective PIT event collection
 
