@@ -72,5 +72,10 @@ Codex가 cycle·영속·사이징 연결을 구현하고 Cursor가 순수 엔진
 - SQLite/Postgres plan 컬럼과 복원 인덱스를 교차검증했다.
 - 전체 281개 단위·회귀테스트를 통과했다.
 
-운영 배포는 별도 승인 전까지 하지 않는다. KIS 수급은 현재 로컬 기준 0행이며
-6개 first-observed 연속 세션 전까지 신규 BUY 0이 정상이다.
+## 운영 반영
+
+2026-08-18 13:22 KST `main`의 `4bdf516`까지 원격 푸시하고 `automation`을
+재빌드·재기동했다. 컨테이너 health `healthy`, restart count 0,
+`OfficialV2CycleStrategy` 로드를 확인했다. `TRADING_ENABLED=false`는 유지했다.
+
+KIS 수급은 6개 first-observed 연속 세션 전까지 신규 BUY 0이 정상이다.
