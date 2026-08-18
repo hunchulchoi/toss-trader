@@ -229,6 +229,7 @@ def format_market_scan_report(
         scan.get("candidates") if isinstance(scan.get("candidates"), list) else []
     )
     errors = scan.get("errors") if isinstance(scan.get("errors"), dict) else {}
+    is_v2 = scan.get("entryStrategy") == "setup-v2.2-independent-daily"
 
     market_lines = [
         f"• {_market_label(item)}: {item.get('regime', 'UNKNOWN')}\n"
@@ -236,19 +237,50 @@ def format_market_scan_report(
         for item in markets
         if isinstance(item, dict)
     ]
-    candidate_lines = [
-        f"{index}. {_candidate_label(item)}\n"
-        f"   모멘텀 {_percent(item.get('momentum20d'))}\n"
-        f"   거래량 {_ratio(item.get('volumeRatio'))}\n"
-        f"   점수 {item.get('score', '?')}"
-        for index, item in enumerate(
-            (item for item in candidates if isinstance(item, dict)), start=1
+    candidate_lines = (
+        [
+            f"{index}. {_candidate_label(item)}\n"
+            f"   셋업 {', '.join(item.get('setups', [])) or '?'}\n"
+            f"   수급 {'⭐' * int(item.get('flowStars', 0)) or '-'} · "
+            f"RSI {item.get('rsi14', '?')} · "
+            f"50MA 이격 {_percent(item.get('ma50Distance'))}"
+            for index, item in enumerate(
+                (item for item in candidates if isinstance(item, dict)), start=1
+            )
+        ]
+        if is_v2
+        else [
+            f"{index}. {_candidate_label(item)}\n"
+            f"   모멘텀 {_percent(item.get('momentum20d'))}\n"
+            f"   거래량 {_ratio(item.get('volumeRatio'))}\n"
+            f"   점수 {item.get('score', '?')}"
+            for index, item in enumerate(
+                (item for item in candidates if isinstance(item, dict)), start=1
+            )
+        ]
+    )
+    readiness = ""
+    if is_v2:
+        summary = scan.get("candidateSummary")
+        summary = summary if isinstance(summary, dict) else {}
+        blocked = scan.get("blockedReasons")
+        blocked = blocked if isinstance(blocked, dict) else {}
+        reason_lines = [
+            f"• {reason}: {count}"
+            for reason, count in sorted(blocked.items(), key=lambda item: (-item[1], item[0]))[:5]
+        ]
+        readiness = (
+            "🧭 v2.2 준비도\n"
+            f"스캔 {summary.get('scanned', 0)} · 평가 {summary.get('evaluated', 0)} · "
+            f"승인 {summary.get('approved', 0)} · "
+            f"차단 {summary.get('blocked', 0)}\n"
+            f"{'\n'.join(reason_lines) if reason_lines else '차단 사유 없음'}\n\n"
         )
-    ]
     return (
         "📊 시장 분석\n"
         f"{'\n\n'.join(market_lines) if market_lines else '분석 결과 없음'}\n\n"
-        "🔎 발굴 종목\n"
+        f"{readiness}"
+        f"🔎 {'v2.2 후보' if is_v2 else '발굴 종목'}\n"
         f"{'\n\n'.join(candidate_lines) if candidate_lines else '조건 충족 종목 없음'}\n\n"
         "💬 Hermes 의견\n"
         f"{opinion[:1500]}\n\n"

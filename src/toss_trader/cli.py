@@ -46,12 +46,12 @@ from .portfolio import PortfolioPerformance
 from .portfolio_backtest import PortfolioBacktestResult, run_ma_portfolio_backtest
 from .repository import open_market_repository
 from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
-from .screening import MarketScanner, market_scan_to_dict
 from .setup_screening import OfficialSetupContextFactory
 from .strategy import MaCrossoverEvaluation, ma_crossover_signal
 from .timeline_web import serve_timeline
 from .universe import DynamicUniverseSelector, open_universe_store
 from .v2_runtime import OfficialV2CycleStrategy
+from .v2_screening import V2MarketScanner, v2_market_scan_to_dict
 from .walk_forward import WalkForwardResult, run_ma_walk_forward
 
 
@@ -1326,17 +1326,23 @@ def _run_market_scan(settings: Settings, args: argparse.Namespace) -> int:
         sqlite_path=settings.market_db_path,
     )
     try:
-        result = MarketScanner(
-            collector=MarketCollector(client=_client(settings), repository=repository),
+        collector = MarketCollector(client=_client(settings), repository=repository)
+        result = V2MarketScanner(
+            collector=collector,
             repository=repository,
+            candidate_builder=OfficialV2CycleStrategy(
+                repository,
+                context_factory=OfficialSetupContextFactory(settings.market_db_path),
+            ),
         ).run(
             benchmark_symbols=benchmarks,
             discovery_symbols=symbols,
             top_n=top_n,
+            now=datetime.now(UTC),
         )
     finally:
         repository.close()
-    _emit(market_scan_to_dict(result))
+    _emit(v2_market_scan_to_dict(result))
     return 3 if result.errors else 0
 
 

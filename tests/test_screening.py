@@ -148,6 +148,43 @@ class DiscoveryTest(unittest.TestCase):
         self.assertIn("조건 충족 종목 없음", report)
         self.assertIn("방향성 불명확", report)
 
+    def test_formats_v2_readiness_and_candidate_evidence(self) -> None:
+        report = format_market_scan_report(
+            {
+                "exitCode": 0,
+                "scan": {
+                    "entryStrategy": "setup-v2.2-independent-daily",
+                    "markets": [],
+                    "candidateSummary": {
+                        "scanned": 15,
+                        "evaluated": 15,
+                        "approved": 1,
+                        "blocked": 14,
+                    },
+                    "candidates": [
+                        {
+                            "symbol": "005930",
+                            "name": "삼성전자",
+                            "setups": ["pullback", "flow-reversal"],
+                            "flowStars": 2,
+                            "rsi14": "48.1",
+                            "ma50Distance": "0.02",
+                        }
+                    ],
+                    "blockedReasons": {"missing:flow-history": 14},
+                    "errors": {},
+                },
+            },
+            opinion="승인 후보는 한 종목이며 수급 누적 전에는 보수적 해석이 필요합니다.",
+        )
+
+        self.assertIn("🧭 v2.2 준비도", report)
+        self.assertIn("스캔 15 · 평가 15 · 승인 1 · 차단 14", report)
+        self.assertIn("missing:flow-history: 14", report)
+        self.assertIn("🔎 v2.2 후보", report)
+        self.assertIn("셋업 pullback, flow-reversal", report)
+        self.assertIn("수급 ⭐⭐ · RSI 48.1 · 50MA 이격 +2.00%", report)
+
     def test_requires_non_empty_llm_opinion(self) -> None:
         with self.assertRaisesRegex(ValueError, "LLM opinion"):
             format_market_scan_report(

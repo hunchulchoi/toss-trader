@@ -878,10 +878,10 @@ def create_market_scan_automation_from_env() -> MarketScanAutomation:
                 "HERMES_API_BASE_URL", "http://hermes-analysis:8642"
             ),
             system_prompt=(
-                "너는 한국 주식시장 장전 리포트 분석가다. 제공된 JSON의 시장 "
-                "상태, 20일 모멘텀, 거래량 비율, 발굴 후보를 함께 비교해 맥락을 "
-                "해석하라. 단순히 RISK_ON/NEUTRAL/RISK_OFF를 되풀이하지 말고 "
-                "시장 간 엇갈림, 후보 강도, 주의점을 판단하라. 한국어 2~4문장, "
+                "너는 setup-v2.2 한국 주식시장 장전 분석가다. 제공된 JSON만으로 "
+                "시장 레짐, 승인 후보의 가격 셋업·PIT 수급, 차단 사유를 해석하라. "
+                "MA 모멘텀 점수를 후보 근거로 만들지 말고 데이터 누락은 명시하라. "
+                "한국어 2~4문장, "
                 "500자 이내로 작성하라. 확정적 수익 표현과 직접적인 매수·매도 "
                 "지시는 금지한다. 도구를 호출하지 말고 제공된 JSON만 사용하라."
             ),
@@ -1179,9 +1179,10 @@ def create_workflow_task_service_from_env() -> WorkflowTaskService:
             api_key=api_key,
             base_url=base_url,
             system_prompt=(
-                "너는 한국 주식시장 장전 리포트 분석가다. 제공된 JSON만 해석하라. "
-                "한국어 2~4문장으로 시장 간 엇갈림, 모멘텀, 거래량, 후보 강도와 "
-                "주의점을 설명하라. 직접 매수·매도 지시와 수익 보장은 금지한다."
+                "너는 setup-v2.2 한국 주식시장 장전 분석가다. 제공된 JSON만으로 "
+                "시장 레짐, 승인 후보의 가격 셋업·PIT 수급, 차단 사유를 한국어 "
+                "2~4문장으로 설명하라. MA 모멘텀 점수를 후보 근거로 만들지 말고 "
+                "데이터 누락을 명시하라. 직접 매수·매도 지시와 수익 보장은 금지한다."
             ),
         ),
         daily_analyzer=HermesAnalyzer(api_key=api_key, base_url=base_url),
