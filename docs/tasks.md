@@ -24,6 +24,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-004 Setup-v2 weekly replay
+
+- Owner: codex
+- Status: DONE
+- Result: replayed 2026-08-10 through 2026-08-14 with 200-bar Toss
+  warmup, price setups, hard filters, and integer sizing; strict v2 stayed
+  fail-closed because valid PIT flow and event data are unavailable
+- Checks: 196 eligible symbols per session, 980 symbol-sessions, 34 price setups,
+  32 hard-filter survivors, 0 strict approvals; 200 warmup requests had 0 failures
+- Risks: current 200-symbol universe is not PIT membership; the 9-trade one-day
+  counterfactual is not a v2 exit rule or shared-cash portfolio backtest
+
 ### OPS-003 Toss holiday schedule gate
 
 - Owner: codex
