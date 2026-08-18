@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,17 +21,28 @@ HERMES_TRADE_PROMPT = (
 
 
 class HermesTradeAdvisor:
-    def __init__(self, *, analyzer: HermesAnalyzer, audit: PaperLedgerStore) -> None:
+    def __init__(
+        self,
+        *,
+        analyzer: HermesAnalyzer,
+        audit: PaperLedgerStore,
+        symbol_names: Mapping[str, str],
+    ) -> None:
         self._analyzer = analyzer
         self._audit = audit
+        self._symbol_names = dict(symbol_names)
 
     def advise(self, signal: TradeSignal, context: RiskContext) -> TradeAdvice:
+        name = self._symbol_names.get(signal.symbol, "").strip()
+        if not name:
+            raise RuntimeError(f"company name missing for Hermes symbol: {signal.symbol}")
         started_at = datetime.now(UTC)
         usage = HermesAnalysis(content="")
         payload = {
             "signal": {
                 "id": signal.signal_id,
                 "symbol": signal.symbol,
+                "name": name,
                 "side": signal.side.value,
                 "quantity": str(signal.quantity),
                 "referencePrice": str(signal.reference_price),
@@ -113,7 +125,11 @@ class HermesTradeAdvisor:
 
 
 def create_hermes_trade_advisor(
-    *, api_key: str, base_url: str, audit: PaperLedgerStore
+    *,
+    api_key: str,
+    base_url: str,
+    audit: PaperLedgerStore,
+    symbol_names: Mapping[str, str],
 ) -> HermesTradeAdvisor:
     return HermesTradeAdvisor(
         analyzer=HermesAnalyzer(
@@ -122,6 +138,7 @@ def create_hermes_trade_advisor(
             system_prompt=HERMES_TRADE_PROMPT,
         ),
         audit=audit,
+        symbol_names=symbol_names,
     )
 
 

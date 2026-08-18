@@ -24,6 +24,17 @@ No tasks awaiting review.
 
 ## DONE
 
+### OPS-002 Hermes instrument names
+
+- Owner: codex
+- Status: DONE
+- Result: Hermes trade signals now include company `name`; daily cycle payloads
+  include `instruments[{symbol,name}]`, and result items include their name while
+  preserving existing symbol fields
+- Checks: 243 unit tests; scoped Ruff passed
+- Risks: a symbol missing from both `market_symbols` and the Toss stock-info API
+  now fails before Hermes analysis instead of sending an ambiguous code
+
 ### DATA-001 Official PIT rebuild
 
 - Owner: codex/cursor

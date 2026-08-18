@@ -15,6 +15,8 @@ class MarketRepository(Protocol):
 
     def upsert_symbol_names(self, names: Mapping[str, str]) -> int: ...
 
+    def symbol_names(self, symbols: Sequence[str]) -> dict[str, str]: ...
+
     def latest_candles(
         self, symbol: str, interval: str, *, limit: int
     ) -> list[Candle]: ...
@@ -30,6 +32,8 @@ class MarketReadRepository(Protocol):
     ) -> list[Candle]: ...
 
     def count(self, symbol: str, interval: str) -> int: ...
+
+    def symbol_names(self, symbols: Sequence[str]) -> dict[str, str]: ...
 
     def close(self) -> None: ...
 
@@ -132,6 +136,17 @@ class SqliteMarketRepository:
             )
         return len(names)
 
+    def symbol_names(self, symbols: Sequence[str]) -> dict[str, str]:
+        if not symbols:
+            return {}
+        placeholders = ",".join("?" for _ in symbols)
+        rows = self._connection.execute(
+            f"SELECT symbol, display_name FROM market_symbols "
+            f"WHERE symbol IN ({placeholders})",
+            tuple(symbols),
+        ).fetchall()
+        return {str(symbol): str(name) for symbol, name in rows}
+
     def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
         _validate_limit(limit)
         rows = self._connection.execute(
@@ -196,6 +211,17 @@ class SqliteMarketReadRepository:
             (symbol, interval),
         ).fetchone()
         return int(row[0]) if row else 0
+
+    def symbol_names(self, symbols: Sequence[str]) -> dict[str, str]:
+        if not symbols:
+            return {}
+        placeholders = ",".join("?" for _ in symbols)
+        rows = self._connection.execute(
+            f"SELECT symbol, display_name FROM market_symbols "
+            f"WHERE symbol IN ({placeholders})",
+            tuple(symbols),
+        ).fetchall()
+        return {str(symbol): str(name) for symbol, name in rows}
 
 
 class PostgresMarketRepository:
@@ -272,6 +298,19 @@ class PostgresMarketRepository:
             )
         self._connection.commit()
         return len(names)
+
+    def symbol_names(self, symbols: Sequence[str]) -> dict[str, str]:
+        if not symbols:
+            return {}
+        placeholders = ",".join("%s" for _ in symbols)
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT symbol, display_name FROM market_symbols "
+                f"WHERE symbol IN ({placeholders})",
+                tuple(symbols),
+            )
+            rows = cursor.fetchall()
+        return {str(symbol): str(name) for symbol, name in rows}
 
     def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
         _validate_limit(limit)
@@ -375,6 +414,24 @@ class PostgresMarketReadRepository:
             raise RuntimeError("PostgreSQL market count query failed") from error
         self._connection.rollback()
         return int(row[0]) if row else 0
+
+    def symbol_names(self, symbols: Sequence[str]) -> dict[str, str]:
+        if not symbols:
+            return {}
+        placeholders = ",".join("%s" for _ in symbols)
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    f"SELECT symbol, display_name FROM market_symbols "
+                    f"WHERE symbol IN ({placeholders})",
+                    tuple(symbols),
+                )
+                rows = cursor.fetchall()
+        except self._database_error as error:
+            self._connection.rollback()
+            raise RuntimeError("PostgreSQL market symbol query failed") from error
+        self._connection.rollback()
+        return {str(symbol): str(name) for symbol, name in rows}
 
 
 def open_market_repository(

@@ -65,6 +65,16 @@ class MarketCollector:
         self._repository.upsert_symbol_names(names)
         return names
 
+    def resolve_symbol_names(self, symbols: tuple[str, ...]) -> dict[str, str]:
+        requested = tuple(dict.fromkeys(symbols))
+        if not requested:
+            raise ValueError("symbols must not be empty")
+        names = self._repository.symbol_names(requested)
+        missing = tuple(symbol for symbol in requested if symbol not in names)
+        if missing:
+            names = {**names, **self.collect_symbol_names(missing)}
+        return {symbol: names[symbol] for symbol in requested}
+
     def collect(
         self,
         *,

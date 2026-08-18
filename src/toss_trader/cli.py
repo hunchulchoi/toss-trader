@@ -5,7 +5,7 @@ import csv
 import json
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
@@ -915,8 +915,10 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 ),
             )
             symbols = universe_result.symbols
+        collector = MarketCollector(client=client, repository=market_repository)
+        symbol_names = collector.resolve_symbol_names(symbols)
         result = PaperCycleRunner(
-            collector=MarketCollector(client=client, repository=market_repository),
+            collector=collector,
             strategy=StoredMaStrategy(market_repository),
             trading=PaperTradingService(
                 ledger=paper_ledger,
@@ -929,6 +931,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                             "HERMES_API_BASE_URL", "http://hermes-analysis:8642"
                         ),
                         audit=paper_ledger,
+                        symbol_names=symbol_names,
                     )
                     if args.hermes_advisor
                     else None
@@ -982,7 +985,13 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             "initialCash": settings.paper_initial_cash,
             "cashBalance": cash_balance,
             "consecutiveApiErrors": result.consecutive_api_errors,
-            "sharedSnapshot": _cycle_snapshot_to_dict(result.snapshot),
+            "sharedSnapshot": _cycle_snapshot_to_dict(
+                result.snapshot, symbol_names=symbol_names
+            ),
+            "instruments": [
+                {"symbol": symbol, "name": symbol_names[symbol]}
+                for symbol in symbols
+            ],
             "universe": (
                 {
                     "runId": universe_result.run_id,
@@ -1002,17 +1011,29 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 "failed": result.failed_count,
                 "idleReason": result.insight["idleReason"],
             },
-            "items": [asdict(item) for item in result.items],
+            "items": [
+                {**asdict(item), "name": symbol_names[item.symbol]}
+                for item in result.items
+            ],
         }
     )
     return 3 if result.failed_count else 0
 
 
-def _cycle_snapshot_to_dict(snapshot: PaperCycleSnapshot) -> dict[str, Any]:
+def _cycle_snapshot_to_dict(
+    snapshot: PaperCycleSnapshot,
+    *,
+    symbol_names: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    names = symbol_names or {}
     return {
         "version": 1,
         "evaluatedAt": snapshot.evaluated_at,
         "symbols": list(snapshot.symbols),
+        "instruments": [
+            {"symbol": symbol, "name": names.get(symbol, symbol)}
+            for symbol in snapshot.symbols
+        ],
         "interval": snapshot.interval,
         "collections": [
             (

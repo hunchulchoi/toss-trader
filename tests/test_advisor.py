@@ -50,11 +50,16 @@ class HermesTradeAdvisorTest(unittest.TestCase):
                 total_tokens=40,
             )
         )
-        advisor = HermesTradeAdvisor(analyzer=analyzer, audit=self.ledger)  # type: ignore[arg-type]
+        advisor = HermesTradeAdvisor(
+            analyzer=analyzer,  # type: ignore[arg-type]
+            audit=self.ledger,
+            symbol_names={"005930": "삼성전자"},
+        )
 
         advice = advisor.advise(self.signal, self.context)
 
         self.assertFalse(advice.approved)
+        self.assertEqual(analyzer.payloads[0]["signal"]["name"], "삼성전자")  # type: ignore[index]
         self.assertNotIn("apiKey", str(analyzer.payloads[0]))
         run = self.ledger.recent_automation_runs(run_type="hermes_trade")[0]
         self.assertEqual(run["totalTokens"], 40)
@@ -64,6 +69,7 @@ class HermesTradeAdvisorTest(unittest.TestCase):
         advisor = HermesTradeAdvisor(
             analyzer=StubAnalyzer(RuntimeError("offline")),  # type: ignore[arg-type]
             audit=self.ledger,
+            symbol_names={"005930": "삼성전자"},
         )
 
         with self.assertRaisesRegex(RuntimeError, "offline"):
@@ -71,6 +77,16 @@ class HermesTradeAdvisorTest(unittest.TestCase):
 
         run = self.ledger.recent_automation_runs(run_type="hermes_trade")[0]
         self.assertEqual(run["status"], "failed")
+
+    def test_rejects_ambiguous_symbol_without_company_name(self) -> None:
+        advisor = HermesTradeAdvisor(
+            analyzer=StubAnalyzer(HermesAnalysis(content="unused")),  # type: ignore[arg-type]
+            audit=self.ledger,
+            symbol_names={},
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "company name missing"):
+            advisor.advise(self.signal, self.context)
 
 
 class PortfolioIsolationTest(unittest.TestCase):

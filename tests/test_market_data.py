@@ -20,12 +20,14 @@ class FakeCandleClient:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
         self.calls: list[dict] = []
+        self.stock_calls: list[tuple[str, ...]] = []
 
     def candles(self, symbol: str, **kwargs: object) -> dict:
         self.calls.append({"symbol": symbol, **kwargs})
         return self.payload
 
     def stocks(self, symbols: tuple[str, ...]) -> list[dict]:
+        self.stock_calls.append(symbols)
         return [{"symbol": symbol, "name": f"Name {symbol}"} for symbol in symbols]
 
 
@@ -107,6 +109,16 @@ class MarketCollectorTest(unittest.TestCase):
             "SELECT display_name FROM market_symbols WHERE symbol = ?", ("005930",)
         ).fetchone()
         self.assertEqual(row, ("Name 005930",))
+
+    def test_resolves_cached_names_without_second_api_call(self) -> None:
+        client = FakeCandleClient(candle_payload())
+        collector = MarketCollector(client=client, repository=self.repository)
+
+        first = collector.resolve_symbol_names(("005930", "000660"))
+        second = collector.resolve_symbol_names(("005930", "000660"))
+
+        self.assertEqual(first, second)
+        self.assertEqual(client.stock_calls, [("005930", "000660")])
 
     def test_rejects_malformed_api_candle_without_writing(self) -> None:
         payload = candle_payload()

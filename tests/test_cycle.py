@@ -578,7 +578,12 @@ class PaperCycleRunnerTest(unittest.TestCase):
             quantity=Decimal(1),
             now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
         )
-        payload = _cycle_snapshot_to_dict(snapshot)
+        payload = _cycle_snapshot_to_dict(
+            snapshot, symbol_names={"AAPL": "Apple Inc."}
+        )
+        self.assertEqual(
+            payload["instruments"], [{"symbol": "AAPL", "name": "Apple Inc."}]
+        )
         payload["evaluatedAt"] = snapshot.evaluated_at.isoformat()
         stdin = json.dumps(payload)
 
