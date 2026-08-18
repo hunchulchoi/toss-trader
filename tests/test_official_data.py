@@ -8,7 +8,11 @@ from decimal import Decimal
 from pathlib import Path
 
 from toss_trader.client import HttpResponse
-from toss_trader.kis_flow import KisInvestorFlowClient, KisInvestorFlowCollector
+from toss_trader.kis_flow import (
+    KisInvestorFlowClient,
+    KisInvestorFlowCollector,
+    KisTokenRequestError,
+)
 from toss_trader.official_data import (
     FinancialFact,
     OfficialDataCollector,
@@ -57,6 +61,33 @@ class OfficialDataTest(unittest.TestCase):
         self.assertIn("FID_INPUT_ISCD=005930", request.url)
         self.assertEqual(request.headers["tr_id"], "FHPTJ04160001")
         self.assertEqual(request.headers["authorization"], "Bearer memory-only")
+
+    def test_kis_token_cooldown_retries_once(self) -> None:
+        class FakeTransport:
+            def __init__(self) -> None:
+                self.requests = []
+
+            def send(self, request, timeout):
+                del timeout
+                self.requests.append(request)
+                if len(self.requests) == 1:
+                    return HttpResponse(429, {}, b'{"error_code":"EGW00133"}')
+                return HttpResponse(
+                    200,
+                    {},
+                    b'{"access_token":"memory-only","expires_in":86400}',
+                )
+
+        waits: list[float] = []
+        client = KisInvestorFlowClient(
+            app_key="app-key",
+            app_secret="app-secret",
+            transport=FakeTransport(),
+            sleeper=waits.append,
+        )
+
+        self.assertEqual(client._get_access_token(), "memory-only")
+        self.assertEqual(waits, [61.0])
 
     def test_kis_collector_keeps_first_observed_availability(self) -> None:
         class FakeClient:
@@ -138,6 +169,85 @@ class OfficialDataTest(unittest.TestCase):
                     "kis:FHPTJ04160001",
                 ),
             )
+
+    def test_kis_collector_skips_invalid_and_failed_symbols(self) -> None:
+        class FakeClient:
+            def __init__(self) -> None:
+                self.symbols: list[str] = []
+
+            def daily_investor_flow(self, symbol, *, as_of):
+                del as_of
+                self.symbols.append(symbol)
+                if symbol == "000001":
+                    raise RuntimeError("KIS API error temporary")
+                return [
+                    {
+                        "stck_bsop_date": "20260817",
+                        "frgn_ntby_tr_pbmn": "1",
+                        "orgn_ntby_tr_pbmn": "2",
+                        "acml_tr_pbmn": "3",
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = OfficialDataRepository(str(Path(directory) / "market.db"))
+            repository.upsert_universe_rows(
+                [
+                    {
+                        "session_date": "2026-08-17",
+                        "symbol": "005930",
+                        "isin_code": "KR7005930003",
+                        "display_name": "삼성전자",
+                        "market_category": "KOSPI",
+                        "close_price": "100",
+                        "market_cap": "1",
+                        "trading_value": "3",
+                        "listed_share_count": "1",
+                        "security_type": "COMMON",
+                        "source": "test",
+                        "source_record_id": "2026-08-17",
+                        "published_at": None,
+                        "available_at": None,
+                        "retrieved_at": "2026-08-18T00:00:00+00:00",
+                        "payload_hash": "test",
+                    }
+                ]
+            )
+            client = FakeClient()
+            stored = KisInvestorFlowCollector(client, repository).collect(
+                symbols=["000001", "AAPL", "005930"],
+                as_of=date(2026, 8, 18),
+                completed_through=date(2026, 8, 17),
+                retrieved_at=datetime(2026, 8, 18, 9, tzinfo=UTC),
+            )
+            repository.close()
+
+        self.assertEqual(client.symbols, ["000001", "005930"])
+        self.assertEqual(stored, 1)
+
+    def test_kis_collector_stops_after_token_failure(self) -> None:
+        class FakeClient:
+            def __init__(self) -> None:
+                self.symbols: list[str] = []
+
+            def daily_investor_flow(self, symbol, *, as_of):
+                del as_of
+                self.symbols.append(symbol)
+                raise KisTokenRequestError("KIS token request failed: EGW00133")
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = OfficialDataRepository(str(Path(directory) / "market.db"))
+            client = FakeClient()
+            stored = KisInvestorFlowCollector(client, repository).collect(
+                symbols=["005930", "000660"],
+                as_of=date(2026, 8, 18),
+                completed_through=date(2026, 8, 17),
+                retrieved_at=datetime(2026, 8, 18, 9, tzinfo=UTC),
+            )
+            repository.close()
+
+        self.assertEqual(client.symbols, ["005930"])
+        self.assertEqual(stored, 0)
 
     def test_event_collection_checkpoints_each_date_and_resumes(self) -> None:
         class FakeClient:

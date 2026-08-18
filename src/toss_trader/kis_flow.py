@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 import time
@@ -18,6 +19,13 @@ KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
 KIS_FLOW_PATH = "/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily"
 KIS_FLOW_TR_ID = "FHPTJ04160001"
 _SYMBOL = re.compile(r"^[0-9]{6}$")
+KIS_TOKEN_COOLDOWN_SECONDS = 61.0
+
+logger = logging.getLogger(__name__)
+
+
+class KisTokenRequestError(RuntimeError):
+    """KIS could not issue an access token for this collection run."""
 
 
 class KisInvestorFlowClient:
@@ -110,27 +118,32 @@ class KisInvestorFlowClient:
                 "appsecret": self._app_secret,
             }
         ).encode()
-        response = self._transport.send(
-            HttpRequest(
-                "POST",
-                f"{self._base_url}/oauth2/tokenP",
-                {"content-type": "application/json; charset=utf-8"},
-                body,
-            ),
-            self._timeout,
-        )
-        payload = _json_object(response.body)
-        token = payload.get("access_token")
-        if response.status != 200 or not isinstance(token, str) or not token:
+        for attempt in range(2):
+            response = self._transport.send(
+                HttpRequest(
+                    "POST",
+                    f"{self._base_url}/oauth2/tokenP",
+                    {"content-type": "application/json; charset=utf-8"},
+                    body,
+                ),
+                self._timeout,
+            )
+            payload = _json_object(response.body)
+            token = payload.get("access_token")
+            if response.status == 200 and isinstance(token, str) and token:
+                try:
+                    expires_in = float(payload.get("expires_in", 300))
+                except (TypeError, ValueError):
+                    expires_in = 300
+                self._access_token = token
+                self._token_expires_at = self._clock() + max(1.0, expires_in - 60.0)
+                return token
             code = str(payload.get("error_code") or f"HTTP_{response.status}")
-            raise RuntimeError(f"KIS token request failed: {code}")
-        try:
-            expires_in = float(payload.get("expires_in", 300))
-        except (TypeError, ValueError):
-            expires_in = 300
-        self._access_token = token
-        self._token_expires_at = self._clock() + max(1.0, expires_in - 60.0)
-        return token
+            if code == "EGW00133" and attempt == 0:
+                self._sleeper(KIS_TOKEN_COOLDOWN_SECONDS)
+                continue
+            raise KisTokenRequestError(f"KIS token request failed: {code}")
+        raise AssertionError("unreachable")
 
     def _wait_for_slot(self) -> None:
         with self._request_lock:
@@ -165,8 +178,18 @@ class KisInvestorFlowCollector:
         retrieved_text = retrieved_at.isoformat()
         stored = 0
         for symbol in symbols:
+            if not _SYMBOL.fullmatch(symbol):
+                logger.warning("KIS flow skipped invalid symbol=%r", symbol)
+                continue
             rows: list[dict[str, object]] = []
-            payload_rows = self._client.daily_investor_flow(symbol, as_of=as_of)
+            try:
+                payload_rows = self._client.daily_investor_flow(symbol, as_of=as_of)
+            except KisTokenRequestError as error:
+                logger.warning("KIS flow stopped because token issuance failed: %s", error)
+                break
+            except (RuntimeError, TypeError, ValueError) as error:
+                logger.warning("KIS flow skipped symbol=%s: %s", symbol, error)
+                continue
             for payload in payload_rows:
                 raw_date = str(payload.get("stck_bsop_date", ""))
                 if len(raw_date) != 8 or not raw_date.isdigit():
