@@ -1,11 +1,16 @@
+import sqlite3
+import tempfile
 import unittest
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from toss_trader.models import Candle, Side, TradeSignal
+from toss_trader.official_data import OfficialDataRepository
 from toss_trader.repository import SqliteMarketRepository
 from toss_trader.setup_screening import (
     FlowObservation,
+    OfficialSetupContextFactory,
     PositionSizingPolicy,
     SetupContext,
     SetupType,
@@ -18,6 +23,8 @@ from toss_trader.setup_screening import (
     summarize_flow,
     valuation_tier,
 )
+
+SEOUL = ZoneInfo("Asia/Seoul")
 
 
 def candles(closes: list[int], *, opens: list[int] | None = None) -> list[Candle]:
@@ -425,6 +432,59 @@ class SetupScreeningTest(unittest.TestCase):
 
         self.assertTrue(result.approved)
         self.assertEqual(result.flow_stars, 2)
+
+    def test_official_context_reads_covered_events_and_valid_flow(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = f"{directory}/market.db"
+            repository = OfficialDataRepository(path)
+            repository.record_coverage(
+                dataset="events",
+                start=date(2026, 8, 1),
+                end=date(2026, 8, 18),
+                completed_at="2026-08-18T01:00:00+00:00",
+                source="opendart:list",
+                row_count=1,
+            )
+            repository.upsert_events(
+                [{
+                    "symbol": "005930", "corp_code": "00126380",
+                    "receipt_no": "20260818000001", "receipt_date": "2026-08-18",
+                    "report_name": "유상증자결정",
+                    "available_at": "2026-08-18T08:00:00+09:00",
+                    "blocked_through": "2026-08-21T08:00:00+09:00",
+                    "is_entry_blocking": 1, "is_preannounced": 0,
+                    "scheduled_for": None, "source": "opendart:list",
+                    "retrieved_at": "2026-08-18T01:00:00+00:00",
+                    "payload_hash": "event",
+                }]
+            )
+            repository.close()
+            connection = sqlite3.connect(path)
+            connection.executemany(
+                "INSERT INTO market_flow_pit_v2 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        "005930", f"2026-08-{day:02d}", index,
+                        f"2026-08-{day + 1:02d}T08:00:00+09:00",
+                        str(-10 if index < 5 else 60), "10", "1000",
+                        "krx:investor-trading", f"005930:{day}",
+                        "2026-08-18T01:00:00+00:00", str(day),
+                    )
+                    for index, day in enumerate(range(11, 17), start=1)
+                ],
+            )
+            connection.commit()
+            connection.close()
+
+            context = OfficialSetupContextFactory(path)(
+                "005930",
+                date(2026, 8, 18),
+                datetime(2026, 8, 18, 15, 0, tzinfo=SEOUL),
+                False,
+            )
+
+            self.assertTrue(context.event_imminent)
+            self.assertEqual(len(context.flow_observations), 6)
 
     def test_fails_closed_when_manual_safety_checks_are_missing(self) -> None:
         history = pullback_candles()

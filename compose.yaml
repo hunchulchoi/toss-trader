@@ -144,6 +144,29 @@ services:
       retries: 3
       start_period: 10s
 
+  pit-collector:
+    build: .
+    command: ["serve-pit-collector"]
+    restart: unless-stopped
+    environment:
+      TOSS_CLIENT_ID: ${TOSS_CLIENT_ID:-}
+      TOSS_CLIENT_SECRET: ${TOSS_CLIENT_SECRET:-}
+      TOSS_API_BASE_URL: https://openapi.tossinvest.com
+      OPENDART_API_KEY: ${OPENDART_API_KEY:-}
+      DATAGOKR_API_KEY: ${DATAGOKR_API_KEY:-}
+      TRADING_ENABLED: "false"
+      MARKET_DB_PATH: /app/data/market.db
+      CANDLE_REQUEST_INTERVAL_SECONDS: ${CANDLE_REQUEST_INTERVAL_SECONDS:-0.25}
+    volumes:
+      - paper-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
   paper-mcp:
     build: .
     image: toss-trader-paper-mcp:local

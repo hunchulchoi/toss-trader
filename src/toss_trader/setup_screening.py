@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -149,6 +150,76 @@ class StrictSetupV2EntryGate:
         return EntryGateDecision(
             approved=False,
             reason="setup-v2:" + ",".join(reasons),
+        )
+
+
+class OfficialSetupContextFactory:
+    def __init__(self, database_path: str) -> None:
+        self._database_path = database_path
+
+    def __call__(
+        self,
+        symbol: str,
+        signal_session: date,
+        decision_at: datetime,
+        gap_up_chase: bool,
+    ) -> SetupContext:
+        decision_utc = decision_at.astimezone(ZoneInfo("UTC")).isoformat()
+        try:
+            connection = sqlite3.connect(self._database_path)
+            coverage = connection.execute(
+                """SELECT 1 FROM market_pit_coverage
+                WHERE dataset='events' AND status='SUCCESS'
+                  AND coverage_start<=? AND coverage_end>=?
+                  AND completed_at<=?
+                ORDER BY completed_at DESC LIMIT 1""",
+                (signal_session.isoformat(), signal_session.isoformat(), decision_utc),
+            ).fetchone()
+            event_imminent = None
+            if coverage is not None:
+                event_imminent = connection.execute(
+                    """SELECT 1 FROM market_events_pit_v2
+                    WHERE symbol=? AND available_at<=? AND is_entry_blocking=1
+                      AND blocked_through IS NOT NULL AND ?<blocked_through
+                    ORDER BY available_at DESC LIMIT 1""",
+                    (symbol, decision_at.isoformat(), decision_at.isoformat()),
+                ).fetchone() is not None
+            rows = connection.execute(
+                """SELECT session_index, session_date, available_at,
+                          foreign_net_buy, institutional_net_buy, trading_value
+                FROM market_flow_pit_v2
+                WHERE symbol=? AND session_date<=? AND available_at<=?
+                ORDER BY session_index DESC LIMIT 6""",
+                (symbol, signal_session.isoformat(), decision_at.isoformat()),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return SetupContext(
+                decision_at=decision_at,
+                signal_session=signal_session,
+                event_imminent=None,
+                gap_up_chase=gap_up_chase,
+            )
+        finally:
+            if "connection" in locals():
+                connection.close()
+        observations = tuple(
+            FlowObservation(
+                symbol=symbol,
+                session_index=int(row[0]),
+                session_date=date.fromisoformat(str(row[1])),
+                available_at=datetime.fromisoformat(str(row[2])),
+                foreign_net_buy=Decimal(str(row[3])),
+                institutional_net_buy=Decimal(str(row[4])),
+                trading_value=Decimal(str(row[5])),
+            )
+            for row in reversed(rows)
+        )
+        return SetupContext(
+            decision_at=decision_at,
+            signal_session=signal_session,
+            flow_observations=observations,
+            event_imminent=event_imminent,
+            gap_up_chase=gap_up_chase,
         )
 
 

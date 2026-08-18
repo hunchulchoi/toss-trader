@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### DATA-003 Prospective PIT event collection
+
+- Owner: codex
+- Status: DONE
+- Result: added a restart-safe daily collector that refreshes the recent
+  DataGo session ledger, resolves future Korean sessions through the Toss
+  calendar, and checkpoints OpenDART events one date at a time; setup-v2 now
+  reads covered event state and the reserved official-flow table
+- Checks: 253 unit tests; scoped Ruff; live Infisical-injected OpenDART backfill
+  populated 12,711 events with zero missing `available_at` values
+- Risks: per-symbol foreign/institutional flow remains fail-closed because no
+  authorized official API source is configured; KRX Data Marketplace rejected
+  unauthenticated automation with `LOGOUT`
+
 ### STRAT-005 Activate strict setup-v2 entry gate
 
 - Owner: codex

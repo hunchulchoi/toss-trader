@@ -9,6 +9,7 @@ from pathlib import Path
 
 from toss_trader.official_data import (
     FinancialFact,
+    OfficialDataCollector,
     OfficialDataRepository,
     compute_ttm_eps,
     next_session_available_at,
@@ -16,6 +17,55 @@ from toss_trader.official_data import (
 
 
 class OfficialDataTest(unittest.TestCase):
+    def test_event_collection_checkpoints_each_date_and_resumes(self) -> None:
+        class FakeClient:
+            def __init__(self) -> None:
+                self.calls: list[date] = []
+
+            def dart_events(self, *, start, end, page=1, page_count=100):
+                del end, page, page_count
+                self.calls.append(start)
+                return {
+                    "status": "000",
+                    "total_page": 1,
+                    "list": [{
+                        "stock_code": "005930", "corp_code": "00126380",
+                        "rcept_no": start.strftime("%Y%m%d") + "000001",
+                        "rcept_dt": start.strftime("%Y%m%d"),
+                        "report_nm": "유상증자결정",
+                    }],
+                }
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = OfficialDataRepository(str(Path(directory) / "market.db"))
+            client = FakeClient()
+            collector = OfficialDataCollector(client, repository)
+            sessions = [date(2026, 8, 19), date(2026, 8, 20), date(2026, 8, 21)]
+
+            first = collector.collect_events(
+                start=date(2026, 8, 17),
+                end=date(2026, 8, 18),
+                additional_sessions=sessions,
+            )
+            second = collector.collect_events(
+                start=date(2026, 8, 17),
+                end=date(2026, 8, 18),
+                additional_sessions=sessions,
+            )
+
+            self.assertEqual(first, 2)
+            self.assertEqual(second, 0)
+            self.assertEqual(client.calls, [date(2026, 8, 17), date(2026, 8, 18)])
+            self.assertEqual(
+                repository.covered_dates(
+                    dataset="events",
+                    start=date(2026, 8, 17),
+                    end=date(2026, 8, 18),
+                ),
+                {date(2026, 8, 17), date(2026, 8, 18)},
+            )
+            repository.close()
+
     def test_next_session_skips_weekend_and_holiday_from_observed_sessions(self) -> None:
         sessions = [date(2025, 8, 14), date(2025, 8, 18)]
 
@@ -88,7 +138,6 @@ class OfficialDataTest(unittest.TestCase):
                 "SELECT ttm_eps, trailing_eps_growth_yoy, status, method "
                 "FROM market_valuation_snapshots_v2"
             ).fetchone()
-            connection.close()
             self.assertEqual(
                 row,
                 (
@@ -102,6 +151,15 @@ class OfficialDataTest(unittest.TestCase):
                 snapshot,
                 ("6605", None, "VALID_EPS_ONLY", "DART_CUMULATIVE_EPS_TTM_V1"),
             )
+            flow_table = connection.execute(
+                "SELECT name FROM sqlite_master WHERE name='market_flow_pit_v2'"
+            ).fetchone()
+            coverage_table = connection.execute(
+                "SELECT name FROM sqlite_master WHERE name='market_pit_coverage'"
+            ).fetchone()
+            connection.close()
+            self.assertIsNotNone(flow_table)
+            self.assertIsNotNone(coverage_table)
 
     def test_unscheduled_event_cannot_be_blocked_before_availability(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

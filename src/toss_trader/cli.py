@@ -40,12 +40,13 @@ from .official_data import (
 from .paper import DuplicatePaperOrder, open_paper_ledger
 from .paper_mcp import PaperMcpService, PostgresPaperReadStore, serve_paper_mcp
 from .paper_timeline import PostgresPaperTimelineStore
+from .pit_collector import run_pit_collection, serve_pit_collector
 from .portfolio import PortfolioPerformance
 from .portfolio_backtest import PortfolioBacktestResult, run_ma_portfolio_backtest
 from .repository import open_market_repository
 from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
 from .screening import MarketScanner, market_scan_to_dict
-from .setup_screening import StrictSetupV2EntryGate
+from .setup_screening import OfficialSetupContextFactory, StrictSetupV2EntryGate
 from .strategy import MaCrossoverEvaluation, ma_crossover_signal
 from .timeline_web import serve_timeline
 from .universe import DynamicUniverseSelector, open_universe_store
@@ -98,6 +99,13 @@ def build_parser() -> argparse.ArgumentParser:
     official.add_argument("--end", type=date.fromisoformat)
     official.add_argument("--symbols", nargs="+")
     official.add_argument("--years", nargs="+", type=int)
+
+    pit_collector = subparsers.add_parser(
+        "serve-pit-collector",
+        help="collect official PIT events daily; flow stays UNKNOWN without a source",
+    )
+    pit_collector.add_argument("--once", action="store_true")
+    pit_collector.add_argument("--lookback-days", type=int, default=14)
 
     stored_strategy = subparsers.add_parser(
         "scan-ma", help="evaluate MA crossover from stored candles"
@@ -325,6 +333,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _collect_candles(settings, args)
         if args.command == "collect-official-data":
             return _collect_official_data(settings, args)
+        if args.command == "serve-pit-collector":
+            return _serve_pit_collector(settings, args)
         if args.command == "scan-ma":
             return _scan_ma(settings, args)
         if args.command == "backtest-ma":
@@ -423,6 +433,35 @@ def _collect_official_data(settings: Settings, args: argparse.Namespace) -> int:
         return _emit(result)
     finally:
         repository.close()
+
+
+def _serve_pit_collector(settings: Settings, args: argparse.Namespace) -> int:
+    dart_key = os.environ.get("OPENDART_API_KEY", "")
+    datago_key = os.environ.get("DATAGOKR_API_KEY", "")
+    if not dart_key or not datago_key:
+        raise ValueError("OPENDART_API_KEY and DATAGOKR_API_KEY are required")
+    repository = OfficialDataRepository(settings.market_db_path)
+    try:
+        collector = OfficialDataCollector(
+            OfficialApiClient(
+                opendart_api_key=dart_key,
+                datago_api_key=datago_key,
+            ),
+            repository,
+        )
+        calendar = MarketCalendarService(_client(settings))
+        serve_pit_collector(
+            lambda now: run_pit_collection(
+                collector,
+                calendar,
+                now=now,
+                lookback_days=args.lookback_days,
+            ),
+            once=args.once,
+        )
+    finally:
+        repository.close()
+    return 0
 
 
 def _serve_paper_mcp(settings: Settings, args: argparse.Namespace) -> int:
@@ -941,7 +980,10 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             calendar=MarketCalendarService(client),
             performance=performance,
             state=cycle_state,
-            entry_gate=StrictSetupV2EntryGate(market_repository).evaluate,
+            entry_gate=StrictSetupV2EntryGate(
+                market_repository,
+                context_factory=OfficialSetupContextFactory(settings.market_db_path),
+            ).evaluate,
         ).run(
             symbols=symbols,
             interval=interval,

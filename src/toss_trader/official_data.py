@@ -112,6 +112,36 @@ CREATE TABLE IF NOT EXISTS market_universe_raw_v2 (
 )
 """
 
+FLOW_SCHEMA = """
+CREATE TABLE IF NOT EXISTS market_flow_pit_v2 (
+    symbol TEXT NOT NULL,
+    session_date TEXT NOT NULL,
+    session_index INTEGER NOT NULL,
+    available_at TEXT NOT NULL,
+    foreign_net_buy TEXT NOT NULL,
+    institutional_net_buy TEXT NOT NULL,
+    trading_value TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_record_id TEXT NOT NULL,
+    retrieved_at TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    PRIMARY KEY (symbol, session_date, source)
+)
+"""
+
+COVERAGE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS market_pit_coverage (
+    dataset TEXT NOT NULL,
+    coverage_start TEXT NOT NULL,
+    coverage_end TEXT NOT NULL,
+    completed_at TEXT NOT NULL,
+    source TEXT NOT NULL,
+    row_count INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    PRIMARY KEY (dataset, coverage_start, coverage_end)
+)
+"""
+
 OFFICIAL_INDEXES = (
     (
         "CREATE INDEX IF NOT EXISTS market_universe_v2_symbol_available_idx "
@@ -320,7 +350,14 @@ class OfficialDataRepository:
         if database_path != ":memory:":
             Path(database_path).parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(database_path)
-        for schema in (FINANCIAL_SCHEMA, EVENT_SCHEMA, UNIVERSE_SCHEMA, VALUATION_SCHEMA):
+        for schema in (
+            FINANCIAL_SCHEMA,
+            EVENT_SCHEMA,
+            UNIVERSE_SCHEMA,
+            VALUATION_SCHEMA,
+            FLOW_SCHEMA,
+            COVERAGE_SCHEMA,
+        ):
             self._connection.execute(schema)
         event_columns = {
             row[1]
@@ -442,6 +479,50 @@ class OfficialDataRepository:
                 [tuple(row[field] for field in fields) for row in rows],
             )
         return len(rows)
+
+    def record_coverage(
+        self,
+        *,
+        dataset: str,
+        start: date,
+        end: date,
+        completed_at: str,
+        source: str,
+        row_count: int,
+    ) -> None:
+        with self._connection:
+            self._connection.execute(
+                """INSERT INTO market_pit_coverage VALUES (?, ?, ?, ?, ?, ?, 'SUCCESS')
+                ON CONFLICT(dataset, coverage_start, coverage_end) DO UPDATE SET
+                    completed_at=excluded.completed_at,
+                    source=excluded.source,
+                    row_count=excluded.row_count,
+                    status=excluded.status""",
+                (
+                    dataset,
+                    start.isoformat(),
+                    end.isoformat(),
+                    completed_at,
+                    source,
+                    row_count,
+                ),
+            )
+
+    def covered_dates(self, *, dataset: str, start: date, end: date) -> set[date]:
+        rows = self._connection.execute(
+            """SELECT coverage_start, coverage_end FROM market_pit_coverage
+            WHERE dataset=? AND status='SUCCESS'
+              AND coverage_end>=? AND coverage_start<=?""",
+            (dataset, start.isoformat(), end.isoformat()),
+        ).fetchall()
+        covered: set[date] = set()
+        for raw_start, raw_end in rows:
+            current = max(start, date.fromisoformat(str(raw_start)))
+            final = min(end, date.fromisoformat(str(raw_end)))
+            while current <= final:
+                covered.add(current)
+                current += timedelta(days=1)
+        return covered
 
     def event_blocks_entry(self, symbol: str, decision_at: str) -> bool:
         row = self._connection.execute(
@@ -780,19 +861,33 @@ class OfficialDataCollector:
             "failedRequests": failed_requests,
         }
 
-    def collect_events(self, *, start: date, end: date) -> int:
-        sessions = self._repository.observed_sessions()
+    def collect_events(
+        self,
+        *,
+        start: date,
+        end: date,
+        additional_sessions: Sequence[date] = (),
+    ) -> int:
+        sessions = sorted(
+            set(self._repository.observed_sessions()).union(additional_sessions)
+        )
         if not sessions:
             raise RuntimeError("official market sessions must be collected first")
         retrieved_at = datetime.now(UTC).isoformat()
         stored = 0
+        covered = self._repository.covered_dates(
+            dataset="events", start=start, end=end
+        )
         chunk_start = start
         while chunk_start <= end:
-            chunk_end = min(end, chunk_start + timedelta(days=89))
+            if chunk_start in covered:
+                chunk_start += timedelta(days=1)
+                continue
+            day_stored = 0
             page = 1
             while True:
                 payload = self._client.dart_events(
-                    start=chunk_start, end=chunk_end, page=page
+                    start=chunk_start, end=chunk_start, page=page
                 )
                 status = str(payload.get("status", ""))
                 if status == "013":
@@ -852,12 +947,21 @@ class OfficialDataCollector:
                             "payload_hash": hashlib.sha256(raw).hexdigest(),
                         }
                     )
-                stored += self._repository.upsert_events(events)
+                day_stored += self._repository.upsert_events(events)
                 total_pages = int(payload.get("total_page", page))
                 if page >= total_pages:
                     break
                 page += 1
-            chunk_start = chunk_end + timedelta(days=1)
+            self._repository.record_coverage(
+                dataset="events",
+                start=chunk_start,
+                end=chunk_start,
+                completed_at=datetime.now(UTC).isoformat(),
+                source="opendart:list",
+                row_count=day_stored,
+            )
+            stored += day_stored
+            chunk_start += timedelta(days=1)
         return stored
 
 
