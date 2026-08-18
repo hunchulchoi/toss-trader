@@ -202,10 +202,24 @@ class OfficialSetupContextFactory:
                         (symbol, decision_at.isoformat(), decision_at.isoformat()),
                     ).fetchone() is not None
             rows = connection.execute(
-                """SELECT session_index, session_date, available_at,
-                          foreign_net_buy, institutional_net_buy, trading_value
-                FROM market_flow_pit_v2
-                WHERE symbol=? AND session_date<=? AND available_at<=?
+                """WITH ranked_flow AS (
+                    SELECT session_index, session_date, available_at,
+                           foreign_net_buy, institutional_net_buy, trading_value,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY session_date
+                               ORDER BY CASE
+                                   WHEN source LIKE 'krx:%' THEN 0
+                                   WHEN source LIKE 'kis:%' THEN 1
+                                   ELSE 2
+                               END, available_at
+                           ) AS source_rank
+                    FROM market_flow_pit_v2
+                    WHERE symbol=? AND session_date<=? AND available_at<=?
+                )
+                SELECT session_index, session_date, available_at,
+                       foreign_net_buy, institutional_net_buy, trading_value
+                FROM ranked_flow
+                WHERE source_rank=1
                 ORDER BY session_index DESC LIMIT 6""",
                 (symbol, signal_session.isoformat(), decision_at.isoformat()),
             ).fetchall()

@@ -742,6 +742,31 @@ class OfficialDataRepository:
             for index, row in enumerate(rows, start=1)
         }
 
+    def trading_values(self, session: date) -> dict[str, Decimal]:
+        rows = self._connection.execute(
+            """SELECT symbol, trading_value
+            FROM market_universe_raw_v2
+            WHERE session_date=? AND trading_value IS NOT NULL
+            ORDER BY source""",
+            (session.isoformat(),),
+        ).fetchall()
+        result: dict[str, Decimal] = {}
+        for symbol, raw_value in rows:
+            try:
+                value = Decimal(str(raw_value))
+            except InvalidOperation:
+                continue
+            result.setdefault(str(symbol), value)
+        return result
+
+    def flow_symbols(self, *, session: date, source: str) -> set[str]:
+        rows = self._connection.execute(
+            """SELECT symbol FROM market_flow_pit_v2
+            WHERE session_date=? AND source=?""",
+            (session.isoformat(), source),
+        ).fetchall()
+        return {str(row[0]) for row in rows}
+
     def insert_flow_rows(self, rows: Sequence[Mapping[str, object]]) -> int:
         fields = (
             "symbol",

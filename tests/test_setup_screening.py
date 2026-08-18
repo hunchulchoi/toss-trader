@@ -473,6 +473,19 @@ class SetupScreeningTest(unittest.TestCase):
                     for index, day in enumerate(range(11, 17), start=1)
                 ],
             )
+            connection.executemany(
+                "INSERT INTO market_flow_pit_v2 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        "005930", f"2026-08-{day:02d}", index,
+                        f"2026-08-{day + 1:02d}T08:00:00+09:00",
+                        "999", "999", "1000", "kis:FHPTJ04160001",
+                        f"005930:{day}:kis", "2026-08-18T01:00:00+00:00",
+                        f"kis-{day}",
+                    )
+                    for index, day in enumerate(range(11, 17), start=1)
+                ],
+            )
             connection.commit()
             connection.close()
 
@@ -485,6 +498,7 @@ class SetupScreeningTest(unittest.TestCase):
 
             self.assertTrue(context.event_imminent)
             self.assertEqual(len(context.flow_observations), 6)
+            self.assertEqual(context.flow_observations[-1].foreign_net_buy, Decimal(60))
 
     def test_unknown_preannounced_schedule_blocks_until_realized_event(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

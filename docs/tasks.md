@@ -24,6 +24,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### DATA-005 Official KRX flow CSV import
+
+- Owner: codex
+- Status: DONE
+- Result: added a fail-closed manual importer for matched KRX foreign and
+  institutional whole-market CSV files, immutable first-observed availability,
+  source file hashes, coverage records, and KRX-over-KIS per-session precedence
+- Checks: dedicated UTF-8 import, coverage, idempotency, missing-symbol, and
+  duplicate-source precedence tests plus full regression suite
+- Risks: downloading the two KRX CSV files remains an authenticated/manual
+  operator step; no web scraping or source substitution occurs automatically
+
 ### STRAT-006 Independent setup-v2.2 lifecycle
 
 - Owner: codex/cursor

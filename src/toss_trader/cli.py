@@ -33,6 +33,7 @@ from .cycle_state import CycleStateStore, open_cycle_state_store
 from .errors import TossApiError
 from .execution import PaperTradingService
 from .kis_flow import KisInvestorFlowClient, KisInvestorFlowCollector
+from .krx_flow import KrxInvestorFlowCsvImporter
 from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
 from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
@@ -117,6 +118,14 @@ def build_parser() -> argparse.ArgumentParser:
     kis_flow.add_argument("--symbols", nargs="+")
     kis_flow.add_argument("--as-of", type=date.fromisoformat)
     kis_flow.add_argument("--completed-through", type=date.fromisoformat)
+
+    krx_flow = subparsers.add_parser(
+        "import-krx-flow-csv",
+        help="import first-observed official KRX investor flow CSV files",
+    )
+    krx_flow.add_argument("--session-date", required=True, type=date.fromisoformat)
+    krx_flow.add_argument("--foreign-csv", required=True)
+    krx_flow.add_argument("--institutional-csv", required=True)
 
     stored_strategy = subparsers.add_parser(
         "scan-ma", help="evaluate MA crossover from stored candles"
@@ -348,6 +357,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _serve_pit_collector(settings, args)
         if args.command == "collect-kis-flow":
             return _collect_kis_flow(settings, args)
+        if args.command == "import-krx-flow-csv":
+            return _import_krx_flow_csv(settings, args)
         if args.command == "scan-ma":
             return _scan_ma(settings, args)
         if args.command == "backtest-ma":
@@ -544,6 +555,20 @@ def _collect_kis_flow(settings: Settings, args: argparse.Namespace) -> int:
                 "tradingEnabled": False,
             }
         )
+    finally:
+        repository.close()
+
+
+def _import_krx_flow_csv(settings: Settings, args: argparse.Namespace) -> int:
+    repository = OfficialDataRepository(settings.market_db_path)
+    try:
+        result = KrxInvestorFlowCsvImporter(repository).import_files(
+            session_date=args.session_date,
+            foreign_csv=args.foreign_csv,
+            institutional_csv=args.institutional_csv,
+            target_symbols=repository.symbols(),
+        )
+        return _emit({**asdict(result), "tradingEnabled": False})
     finally:
         repository.close()
 

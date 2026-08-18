@@ -145,6 +145,20 @@ PYTHONPATH=src python3 -m toss_trader walk-forward-ma 005930 \
   --train-ratio 0.7 --slippage-bps 5 --format csv
 ```
 
+KRX 정보데이터시스템에서 같은 날짜·전체 종목으로 각각 내려받은 외국인 및
+기관합계 CSV는 첫 관측 시각을 보존해 공식 수급 원장으로 가져올 수 있다.
+
+```bash
+infisical run --env=prod --path=/ -- toss-trader import-krx-flow-csv \
+  --session-date 2026-08-18 \
+  --foreign-csv /path/to/foreign.csv \
+  --institutional-csv /path/to/institutional.csv
+```
+
+두 파일의 현재 유니버스 종목이 모두 일치하고 해당 세션의 공식 거래대금이
+있을 때만 원자적으로 저장한다. `available_at`은 실제 import 시각이며 과거로
+소급하지 않는다. 동일 세션에 KIS와 KRX가 모두 있으면 setup-v2는 KRX를 우선한다.
+
 paper 주문:
 
 ```bash
