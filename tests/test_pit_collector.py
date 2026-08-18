@@ -39,6 +39,15 @@ class FakeCollector:
         return 7
 
 
+class FakeFlowCollector:
+    def __init__(self) -> None:
+        self.call = None
+
+    def collect(self, **kwargs) -> int:
+        self.call = kwargs
+        return 12
+
+
 class PitCollectorTest(unittest.TestCase):
     def test_future_sessions_skip_weekend_and_holiday(self) -> None:
         open_days = {
@@ -90,6 +99,37 @@ class PitCollectorTest(unittest.TestCase):
 
         self.assertEqual(seconds_until_next_run(before), 30 * 60)
         self.assertEqual(seconds_until_next_run(after), 23.5 * 60 * 60)
+
+    def test_kis_flow_waits_until_provider_window(self) -> None:
+        flow = FakeFlowCollector()
+        result = run_pit_collection(
+            FakeCollector(),
+            FakeCalendar(
+                {date(2026, 8, 19), date(2026, 8, 20), date(2026, 8, 21)}
+            ),
+            now=datetime(2026, 8, 18, 11, 45, tzinfo=SEOUL),
+            flow_collector=flow,
+            flow_symbols=["005930"],
+        )
+
+        self.assertIsNone(flow.call)
+        self.assertEqual(result.flow_status, "WAITING_FOR_KIS_1540")
+
+    def test_kis_flow_collects_completed_day_after_provider_window(self) -> None:
+        flow = FakeFlowCollector()
+        result = run_pit_collection(
+            FakeCollector(),
+            FakeCalendar(
+                {date(2026, 8, 19), date(2026, 8, 20), date(2026, 8, 21)}
+            ),
+            now=datetime(2026, 8, 18, 18, 30, tzinfo=SEOUL),
+            flow_collector=flow,
+            flow_symbols=["005930"],
+        )
+
+        self.assertEqual(flow.call["completed_through"], date(2026, 8, 18))
+        self.assertEqual(result.flow_rows, 12)
+        self.assertEqual(result.flow_status, "AVAILABLE_FIRST_OBSERVED")
 
 
 if __name__ == "__main__":

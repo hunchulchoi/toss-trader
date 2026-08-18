@@ -16,20 +16,20 @@
 - `market_events_pit_v2`: OpenDART filing facts and entry-block windows.
 - `market_pit_coverage`: successful source/date coverage, including zero-event
   dates.
-- `market_flow_pit_v2`: strict schema reserved for an authorized official
-  per-symbol investor-flow source.
+- `market_flow_pit_v2`: Korea Investment Open API `FHPTJ04160001` per-symbol
+  investor net buy. First retrieval time is `available_at`; later polls cannot
+  overwrite it.
 
-## Flow limitation
+## Flow source
 
-Toss Open API exposes investor trading for KOSPI/KOSDAQ market indicators, not
-individual equities. The KRX Data Marketplace contains per-symbol investor
-statistics, but its unauthenticated automation endpoint returned `LOGOUT`.
-Therefore flow remains `UNKNOWN_NO_AUTHORIZED_SOURCE`; Naver values and guessed
-publication timestamps are not promoted into the strict table.
+Toss Open API still has market-index investor trading only. Per-symbol flow
+comes from KIS `investor-trade-by-stock-daily`. Rows after `completed_through`
+are dropped so an incomplete session is not stored as if it were final.
+Naver values are not promoted.
 
-Once an authorized source is configured, six completed sessions are required by
-setup-v2. Starting on 2026-08-18 would make the first strict six-session window
-available at the 2026-08-26 open, assuming no intervening closure.
+Six completed PIT sessions are still required by setup-v2. First-observed
+collection starting 2026-08-18 makes the first strict window available at the
+2026-08-26 open, assuming no intervening closure.
 
 ## Verification snapshot
 
@@ -38,4 +38,5 @@ On 2026-08-18 an Infisical-injected local run collected:
 - 12,711 unique OpenDART event receipts covering 2026-08-04 through 2026-08-18
 - 611 entry-blocking reports
 - zero rows missing `available_at`
-- zero official flow rows, intentionally fail-closed
+- KIS per-symbol flow collector added after this snapshot; live row counts
+  depend on a later `collect-kis-flow` or pit-collector run with Infisical keys

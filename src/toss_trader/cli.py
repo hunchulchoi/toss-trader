@@ -29,6 +29,7 @@ from .cycle import PaperCycleRunner, PaperCycleSnapshot
 from .cycle_state import open_cycle_state_store
 from .errors import TossApiError
 from .execution import PaperTradingService
+from .kis_flow import KisInvestorFlowClient, KisInvestorFlowCollector
 from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
 from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
@@ -92,9 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
         "collect-official-data",
         help="collect fail-closed PIT data from DataGo and OpenDART",
     )
-    official.add_argument(
-        "kind", choices=("universe", "events", "financials", "all")
-    )
+    official.add_argument("kind", choices=("universe", "events", "financials", "all"))
     official.add_argument("--start", type=date.fromisoformat)
     official.add_argument("--end", type=date.fromisoformat)
     official.add_argument("--symbols", nargs="+")
@@ -106,6 +105,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pit_collector.add_argument("--once", action="store_true")
     pit_collector.add_argument("--lookback-days", type=int, default=14)
+
+    kis_flow = subparsers.add_parser(
+        "collect-kis-flow",
+        help="collect first-observed KIS per-symbol investor flow",
+    )
+    kis_flow.add_argument("--symbols", nargs="+")
+    kis_flow.add_argument("--as-of", type=date.fromisoformat)
+    kis_flow.add_argument("--completed-through", type=date.fromisoformat)
 
     stored_strategy = subparsers.add_parser(
         "scan-ma", help="evaluate MA crossover from stored candles"
@@ -335,6 +342,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _collect_official_data(settings, args)
         if args.command == "serve-pit-collector":
             return _serve_pit_collector(settings, args)
+        if args.command == "collect-kis-flow":
+            return _collect_kis_flow(settings, args)
         if args.command == "scan-ma":
             return _scan_ma(settings, args)
         if args.command == "backtest-ma":
@@ -420,7 +429,9 @@ def _collect_official_data(settings: Settings, args: argparse.Namespace) -> int:
         if args.kind in {"financials", "all"}:
             symbols = args.symbols or repository.symbols()
             if not symbols:
-                raise ValueError("financial collection needs --symbols or market_symbols")
+                raise ValueError(
+                    "financial collection needs --symbols or market_symbols"
+                )
             result["financialFacts"] = collector.collect_financials(
                 symbols=symbols,
                 years=years,
@@ -440,6 +451,7 @@ def _serve_pit_collector(settings: Settings, args: argparse.Namespace) -> int:
     datago_key = os.environ.get("DATAGOKR_API_KEY", "")
     if not dart_key or not datago_key:
         raise ValueError("OPENDART_API_KEY and DATAGOKR_API_KEY are required")
+    kis_key, kis_secret = _kis_credentials()
     repository = OfficialDataRepository(settings.market_db_path)
     try:
         collector = OfficialDataCollector(
@@ -450,18 +462,78 @@ def _serve_pit_collector(settings: Settings, args: argparse.Namespace) -> int:
             repository,
         )
         calendar = MarketCalendarService(_client(settings))
+        flow_collector = KisInvestorFlowCollector(
+            KisInvestorFlowClient(
+                app_key=kis_key,
+                app_secret=kis_secret,
+                base_url=os.environ.get(
+                    "KIS_API_BASE_URL",
+                    "https://openapi.koreainvestment.com:9443",
+                ),
+            ),
+            repository,
+        )
         serve_pit_collector(
             lambda now: run_pit_collection(
                 collector,
                 calendar,
                 now=now,
                 lookback_days=args.lookback_days,
+                flow_collector=flow_collector,
+                flow_symbols=repository.symbols(),
             ),
             once=args.once,
         )
     finally:
         repository.close()
     return 0
+
+
+def _collect_kis_flow(settings: Settings, args: argparse.Namespace) -> int:
+    key, secret = _kis_credentials()
+    repository = OfficialDataRepository(settings.market_db_path)
+    try:
+        symbols = args.symbols or repository.symbols()
+        if not symbols:
+            raise ValueError("KIS flow collection needs --symbols or market_symbols")
+        now = datetime.now(UTC)
+        as_of = args.as_of or now.astimezone().date()
+        completed_through = args.completed_through or as_of - timedelta(days=1)
+        rows = KisInvestorFlowCollector(
+            KisInvestorFlowClient(
+                app_key=key,
+                app_secret=secret,
+                base_url=os.environ.get(
+                    "KIS_API_BASE_URL",
+                    "https://openapi.koreainvestment.com:9443",
+                ),
+            ),
+            repository,
+        ).collect(
+            symbols=symbols,
+            as_of=as_of,
+            completed_through=completed_through,
+            retrieved_at=now,
+        )
+        return _emit(
+            {
+                "flowRows": rows,
+                "symbols": len(symbols),
+                "completedThrough": completed_through,
+                "source": "KIS FHPTJ04160001",
+                "tradingEnabled": False,
+            }
+        )
+    finally:
+        repository.close()
+
+
+def _kis_credentials() -> tuple[str, str]:
+    key = os.environ.get("KIS_APP_KEY", "")
+    secret = os.environ.get("KIS_APP_SECRET", "")
+    if not key or not secret:
+        raise ValueError("KIS_APP_KEY and KIS_APP_SECRET are required")
+    return key, secret
 
 
 def _serve_paper_mcp(settings: Settings, args: argparse.Namespace) -> int:
@@ -713,9 +785,7 @@ def _emit_portfolio_backtest_csv(result: PortfolioBacktestResult) -> int:
                 "portfolio_max_open_position_rejections": (
                     result.max_open_position_rejections
                 ),
-                "portfolio_max_daily_buy_rejections": (
-                    result.max_daily_buy_rejections
-                ),
+                "portfolio_max_daily_buy_rejections": (result.max_daily_buy_rejections),
                 "portfolio_max_position_notional_rejections": (
                     result.max_position_notional_rejections
                 ),
@@ -738,9 +808,7 @@ def _emit_portfolio_backtest_csv(result: PortfolioBacktestResult) -> int:
                 "symbol_max_open_position_rejections": (
                     position.max_open_position_rejections
                 ),
-                "symbol_max_daily_buy_rejections": (
-                    position.max_daily_buy_rejections
-                ),
+                "symbol_max_daily_buy_rejections": (position.max_daily_buy_rejections),
                 "symbol_max_position_notional_rejections": (
                     position.max_position_notional_rejections
                 ),
@@ -1034,8 +1102,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 result.snapshot, symbol_names=symbol_names
             ),
             "instruments": [
-                {"symbol": symbol, "name": symbol_names[symbol]}
-                for symbol in symbols
+                {"symbol": symbol, "name": symbol_names[symbol]} for symbol in symbols
             ],
             "universe": (
                 {

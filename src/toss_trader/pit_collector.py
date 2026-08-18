@@ -8,9 +8,11 @@ from time import sleep
 from zoneinfo import ZoneInfo
 
 from .calendar import MarketCalendarService
+from .kis_flow import KisInvestorFlowCollector
 from .official_data import OfficialDataCollector
 
 SEOUL = ZoneInfo("Asia/Seoul")
+KIS_FLOW_AVAILABLE_AT = time(15, 40)
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +21,7 @@ class PitCollectionResult:
     universe_rows: int
     event_rows: int
     future_sessions: tuple[str, ...]
+    flow_rows: int = 0
     flow_status: str = "UNKNOWN_NO_AUTHORIZED_SOURCE"
 
 
@@ -53,6 +56,8 @@ def run_pit_collection(
     *,
     now: datetime,
     lookback_days: int = 14,
+    flow_collector: KisInvestorFlowCollector | None = None,
+    flow_symbols: tuple[str, ...] | list[str] = (),
 ) -> PitCollectionResult:
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must include a timezone offset")
@@ -67,11 +72,28 @@ def run_pit_collection(
         end=local_day,
         additional_sessions=sessions,
     )
+    flow_rows = 0
+    flow_status = "UNKNOWN_NO_AUTHORIZED_SOURCE"
+    if flow_collector is not None:
+        if not flow_symbols:
+            raise ValueError("configured KIS flow collector needs symbols")
+        if now.astimezone(SEOUL).time() < KIS_FLOW_AVAILABLE_AT:
+            flow_status = "WAITING_FOR_KIS_1540"
+        else:
+            flow_rows = flow_collector.collect(
+                symbols=flow_symbols,
+                as_of=local_day,
+                completed_through=local_day,
+                retrieved_at=now.astimezone(UTC),
+            )
+            flow_status = "AVAILABLE_FIRST_OBSERVED"
     return PitCollectionResult(
         started_at=now.astimezone(UTC).isoformat(),
         universe_rows=universe_rows,
         event_rows=event_rows,
         future_sessions=tuple(session.isoformat() for session in sessions),
+        flow_rows=flow_rows,
+        flow_status=flow_status,
     )
 
 

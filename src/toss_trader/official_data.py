@@ -381,8 +381,13 @@ class OfficialDataRepository:
             ).fetchall()
         }
         for name in (
-            "owner_equity", "listed_share_count", "bps", "reference_price",
-            "trailing_per", "pbr", "bps_method",
+            "owner_equity",
+            "listed_share_count",
+            "bps",
+            "reference_price",
+            "trailing_per",
+            "pbr",
+            "bps_method",
         ):
             if name not in valuation_columns:
                 self._connection.execute(
@@ -434,9 +439,19 @@ class OfficialDataRepository:
 
     def upsert_events(self, events: Sequence[Mapping[str, object]]) -> int:
         fields = (
-            "symbol", "corp_code", "receipt_no", "receipt_date", "report_name",
-            "available_at", "blocked_through", "is_entry_blocking",
-            "is_preannounced", "scheduled_for", "source", "retrieved_at", "payload_hash",
+            "symbol",
+            "corp_code",
+            "receipt_no",
+            "receipt_date",
+            "report_name",
+            "available_at",
+            "blocked_through",
+            "is_entry_blocking",
+            "is_preannounced",
+            "scheduled_for",
+            "source",
+            "retrieved_at",
+            "payload_hash",
         )
         with self._connection:
             self._connection.executemany(
@@ -458,10 +473,22 @@ class OfficialDataRepository:
 
     def upsert_universe_rows(self, rows: Sequence[Mapping[str, object]]) -> int:
         fields = (
-            "session_date", "symbol", "isin_code", "display_name",
-            "market_category", "close_price", "market_cap", "trading_value",
-            "listed_share_count", "security_type", "source", "source_record_id",
-            "published_at", "available_at", "retrieved_at", "payload_hash",
+            "session_date",
+            "symbol",
+            "isin_code",
+            "display_name",
+            "market_category",
+            "close_price",
+            "market_cap",
+            "trading_value",
+            "listed_share_count",
+            "security_type",
+            "source",
+            "source_record_id",
+            "published_at",
+            "available_at",
+            "retrieved_at",
+            "payload_hash",
         )
         with self._connection:
             self._connection.executemany(
@@ -550,8 +577,13 @@ class OfficialDataRepository:
         ] = {}
         for symbol, year, code, fs_div, receipt_no, available_at, amount in eps_rows:
             record = (
-                str(symbol), int(year), str(code), str(fs_div), str(receipt_no),
-                str(available_at), Decimal(str(amount)),
+                str(symbol),
+                int(year),
+                str(code),
+                str(fs_div),
+                str(receipt_no),
+                str(available_at),
+                Decimal(str(amount)),
             )
             records.setdefault(record[:4], []).append((record[5], record[4], record[6]))
             candidate_key = (record[0], record[1], record[2], record[4])
@@ -561,7 +593,15 @@ class OfficialDataRepository:
         for revisions in records.values():
             revisions.sort(key=lambda item: (item[0], item[1]))
         snapshots: list[tuple[object, ...]] = []
-        for symbol, year, code, fs_div, receipt_no, available_at, current in candidates.values():
+        for (
+            symbol,
+            year,
+            code,
+            fs_div,
+            receipt_no,
+            available_at,
+            current,
+        ) in candidates.values():
             ttm = _ttm_as_of(
                 records,
                 symbol=symbol,
@@ -606,10 +646,24 @@ class OfficialDataRepository:
             ).fetchone()
             equity = Decimal(str(equity_row[0])) if equity_row else None
             shares = Decimal(str(market_row[0])) if market_row else None
-            price = Decimal(str(market_row[1])) if market_row and market_row[1] else None
-            bps = equity / shares if equity is not None and shares not in {None, Decimal(0)} else None
-            trailing_per = price / ttm if price is not None and ttm is not None and ttm > 0 else None
-            pbr = price / bps if price is not None and bps is not None and bps > 0 else None
+            price = (
+                Decimal(str(market_row[1])) if market_row and market_row[1] else None
+            )
+            bps = (
+                equity / shares
+                if equity is not None and shares not in {None, Decimal(0)}
+                else None
+            )
+            trailing_per = (
+                price / ttm
+                if price is not None and ttm is not None and ttm > 0
+                else None
+            )
+            pbr = (
+                price / bps
+                if price is not None and bps is not None and bps > 0
+                else None
+            )
             if ttm is None:
                 status = "INSUFFICIENT_HISTORY"
             elif bps is None:
@@ -618,10 +672,20 @@ class OfficialDataRepository:
                 status = "VALID"
             snapshots.append(
                 (
-                    symbol, year, code, fs_div, receipt_no, available_at,
-                    _decimal_text(ttm), _decimal_text(growth),
-                    _decimal_text(equity), _decimal_text(shares), _decimal_text(bps),
-                    _decimal_text(price), _decimal_text(trailing_per), _decimal_text(pbr),
+                    symbol,
+                    year,
+                    code,
+                    fs_div,
+                    receipt_no,
+                    available_at,
+                    _decimal_text(ttm),
+                    _decimal_text(growth),
+                    _decimal_text(equity),
+                    _decimal_text(shares),
+                    _decimal_text(bps),
+                    _decimal_text(price),
+                    _decimal_text(trailing_per),
+                    _decimal_text(pbr),
                     (
                         f"{equity_row[1]}_PER_LISTED_SHARE"
                         if equity_row and bps is not None
@@ -669,6 +733,39 @@ class OfficialDataRepository:
             return []
         return [str(row[0]) for row in rows]
 
+    def session_indexes(self) -> dict[date, int]:
+        rows = self._connection.execute(
+            "SELECT DISTINCT session_date FROM market_universe_raw_v2 ORDER BY 1"
+        ).fetchall()
+        return {
+            date.fromisoformat(str(row[0])): index
+            for index, row in enumerate(rows, start=1)
+        }
+
+    def insert_flow_rows(self, rows: Sequence[Mapping[str, object]]) -> int:
+        fields = (
+            "symbol",
+            "session_date",
+            "session_index",
+            "available_at",
+            "foreign_net_buy",
+            "institutional_net_buy",
+            "trading_value",
+            "source",
+            "source_record_id",
+            "retrieved_at",
+            "payload_hash",
+        )
+        before = self._connection.total_changes
+        with self._connection:
+            self._connection.executemany(
+                """INSERT OR IGNORE INTO market_flow_pit_v2 VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )""",
+                [tuple(row[field] for field in fields) for row in rows],
+            )
+        return self._connection.total_changes - before
+
     def collected_financial_keys(self) -> set[tuple[str, int, str, str]]:
         rows = self._connection.execute(
             """SELECT DISTINCT symbol, business_year, report_code, fs_div
@@ -705,7 +802,9 @@ class OfficialDataRepository:
 
 
 class OfficialDataCollector:
-    def __init__(self, client: OfficialApiClient, repository: OfficialDataRepository) -> None:
+    def __init__(
+        self, client: OfficialApiClient, repository: OfficialDataRepository
+    ) -> None:
         self._client = client
         self._repository = repository
 
@@ -782,9 +881,7 @@ class OfficialDataCollector:
             ]
             for future in as_completed(futures):
                 stored += store_payload(future.result())
-        self._repository.set_universe_availability(
-            self._repository.observed_sessions()
-        )
+        self._repository.set_universe_availability(self._repository.observed_sessions())
         return stored
 
     def collect_financials(
@@ -875,9 +972,7 @@ class OfficialDataCollector:
             raise RuntimeError("official market sessions must be collected first")
         retrieved_at = datetime.now(UTC).isoformat()
         stored = 0
-        covered = self._repository.covered_dates(
-            dataset="events", start=start, end=end
-        )
+        covered = self._repository.covered_dates(dataset="events", start=start, end=end)
         chunk_start = start
         while chunk_start <= end:
             if chunk_start in covered:
@@ -930,7 +1025,9 @@ class OfficialDataCollector:
                             "receipt_no": receipt_no,
                             "receipt_date": receipt_date.isoformat(),
                             "report_name": report_name,
-                            "available_at": available.isoformat() if available else None,
+                            "available_at": available.isoformat()
+                            if available
+                            else None,
                             "blocked_through": (
                                 blocked_through.isoformat() if blocked_through else None
                             ),
@@ -1025,9 +1122,7 @@ def _optional_text(value: object) -> str | None:
 
 
 def _ttm_as_of(
-    records: Mapping[
-        tuple[str, int, str, str], Sequence[tuple[str, str, Decimal]]
-    ],
+    records: Mapping[tuple[str, int, str, str], Sequence[tuple[str, str, Decimal]]],
     *,
     symbol: str,
     year: int,
@@ -1037,9 +1132,7 @@ def _ttm_as_of(
     current: Decimal | None = None,
 ) -> Decimal | None:
     if current is None:
-        current = _amount_as_of(
-            records, (symbol, year, code, fs_div), cutoff=cutoff
-        )
+        current = _amount_as_of(records, (symbol, year, code, fs_div), cutoff=cutoff)
     return compute_ttm_eps(
         report_code=code,
         current_cumulative=current,
@@ -1053,9 +1146,7 @@ def _ttm_as_of(
 
 
 def _amount_as_of(
-    records: Mapping[
-        tuple[str, int, str, str], Sequence[tuple[str, str, Decimal]]
-    ],
+    records: Mapping[tuple[str, int, str, str], Sequence[tuple[str, str, Decimal]]],
     key: tuple[str, int, str, str],
     *,
     cutoff: str,
@@ -1076,7 +1167,14 @@ def _is_entry_blocking_report(report_name: str) -> bool:
     if "예고" in report_name or "안내" in report_name:
         return False
     keywords = (
-        "유상증자", "무상증자", "감자", "합병", "분할", "전환사채",
-        "신주인수권부사채", "잠정실적", "영업(잠정)실적",
+        "유상증자",
+        "무상증자",
+        "감자",
+        "합병",
+        "분할",
+        "전환사채",
+        "신주인수권부사채",
+        "잠정실적",
+        "영업(잠정)실적",
     )
     return any(keyword in report_name for keyword in keywords)

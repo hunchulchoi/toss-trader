@@ -21,15 +21,15 @@ SELL은 setup-v2를 우회한다. 보유 종목의 모든 추가 BUY는 continua
 
 ## 현재 동작
 
-유효 PIT 수급과 이벤트 일정 provider가 아직 없다. 이를 `false`로 간주하지 않고
-`setup-v2:missing:flow-history,missing:event-calendar`로 기록한다. 따라서 현재
-신규 BUY 0건이 의도한 fail-closed 결과다. cycle funnel에는
-`setupV2Blocked`, 종목 결과에는 `skip_reason`과 `idle_reason=setup-v2-block`이
-남는다. v2에서 차단된 후보는 Hermes token과 RiskManager 판단 행을 만들지 않는다.
+이벤트 provider는 OpenDART `market_events_pit_v2`를 읽는다. 수급 provider는
+KIS first-observed `market_flow_pit_v2`다. 6세션이 쌓이기 전에는
+`setup-v2:missing:flow-history`로 기록하고 BUY를 막는다. 누락을 `false`로
+채우지 않는다. cycle funnel에는 `setupV2Blocked`, 종목 결과에는
+`skip_reason`과 `idle_reason=setup-v2-block`이 남는다.
 
 ## 남은 연결
 
-- 유효 `available_at`을 가진 6세션 외인·기관 수급 provider
+- 6세션 first-observed 수급이 찰 때까지의 달력 대기
 - 사전 공지 일정과 사후 수시공시를 분리한 이벤트 provider
 - 구조적 stop, ATR, open/cluster heat를 보존하는 실행 사이징
 - MA 후보 게이트가 아닌 독립 setup-v2 entry generator 전환

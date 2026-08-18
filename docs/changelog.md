@@ -3,6 +3,18 @@
 기능이 코드에 들어온 날짜다. 운영 반영은 항목에 따로 적는다.
 매매 권고 아님.
 
+## 2026-08-18
+
+### KIS 종목별 수급 first-observed PIT
+
+종목별 외인/기관 수급 공식 소스가 없어 setup-v2 BUY가 fail-closed였다.
+한국투자증권 Open API `FHPTJ04160001`로 완료 세션만 저장하고, 첫 관측
+`available_at`은 `INSERT OR IGNORE`로 고정한다.
+
+- 동작: `collect-kis-flow`, pit-collector 18:00 KST 이후 당일 포함
+- 운영: 코드만, 배포 대기. Infisical `KIS_APP_KEY`/`KIS_APP_SECRET` 필요.
+  키 없으면 pit-collector 기동 실패
+
 ## 2026-08-14
 
 ### Agent 성과 리뷰 교차토론 기록

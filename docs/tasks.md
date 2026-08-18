@@ -5,7 +5,7 @@ agents must sync from `main` before claiming or handing off work.
 
 ## TODO
 
-### DATA-002 Resume OpenDART backfill
+### DATA-002 Resume OpenDART financial backfill
 
 - Owner: codex/cursor
 - Status: TODO
@@ -24,6 +24,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### DATA-004 KIS first-observed investor flow
+
+- Owner: codex/cursor
+- Status: DONE
+- Result: added Korea Investment `FHPTJ04160001` collector that stores completed
+  per-symbol foreign/institution net buy with first-seen `available_at`
+- Checks: 257 unit tests; scoped Ruff; fake-transport TR/header parse and
+  immutable first availability; live auth reached KIS and the pre-15:40 call
+  was safely rejected as `OPSQ2001` without a DB write
+- Risks: first full collection awaits the post-15:40 provider window; history
+  cannot be used before its first retrieval timestamp; not deployed yet
+
 ### DATA-003 Prospective PIT event collection
 
 - Owner: codex
@@ -34,9 +46,8 @@ No tasks awaiting review.
   reads covered event state and the reserved official-flow table
 - Checks: 253 unit tests; scoped Ruff; live Infisical-injected OpenDART backfill
   populated 12,711 events with zero missing `available_at` values
-- Risks: per-symbol foreign/institutional flow remains fail-closed because no
-  authorized official API source is configured; KRX Data Marketplace rejected
-  unauthenticated automation with `LOGOUT`
+- Risks: KRX Data Marketplace rejected unauthenticated automation with `LOGOUT`;
+  per-symbol flow later moved to KIS first-observed collection (DATA-004)
 
 ### STRAT-005 Activate strict setup-v2 entry gate
 
