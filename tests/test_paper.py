@@ -1,9 +1,9 @@
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Self
 
-from toss_trader.models import Side, TradeSignal
+from toss_trader.models import Side, TradeSignal, V2PositionPlan
 from toss_trader.paper import DuplicatePaperOrder, PaperLedger, PostgresPaperLedger
 
 
@@ -38,6 +38,52 @@ class PaperLedgerTest(unittest.TestCase):
         )
         with self.assertRaises(DuplicatePaperOrder):
             self.ledger.execute(trade_signal, executed_at=executed_at)
+
+    def test_persists_and_marks_v2_position_plan(self) -> None:
+        opened_at = datetime(2026, 8, 18, 0, 1, tzinfo=UTC)
+        plan = V2PositionPlan(
+            symbol="005930",
+            setup_session=date(2026, 8, 17),
+            setups=("pullback", "flow-reversal"),
+            quantity=Decimal(3),
+            entry_price=Decimal(10005),
+            stop_price=Decimal(9400),
+            planned_heat=Decimal("1980.5"),
+            ma50=Decimal(9700),
+            opened_at=opened_at,
+        )
+
+        self.ledger.upsert_v2_position_plan(plan)
+
+        self.assertEqual(self.ledger.v2_position_plan("005930"), plan)
+        self.assertEqual(self.ledger.v2_position_plans(), {"005930": plan})
+
+        triggered_at = datetime(2026, 8, 18, 1, 5, tzinfo=UTC)
+        self.ledger.mark_v2_exit_pending(
+            "005930", reason="hard-stop", triggered_at=triggered_at
+        )
+        pending = self.ledger.v2_position_plan("005930")
+        assert pending is not None
+        self.assertEqual(pending.exit_pending_reason, "hard-stop")
+        self.assertEqual(pending.exit_triggered_at, triggered_at)
+
+        self.ledger.delete_v2_position_plan("005930")
+        self.assertIsNone(self.ledger.v2_position_plan("005930"))
+
+    def test_v2_position_plan_rejects_inconsistent_pending_exit(self) -> None:
+        with self.assertRaisesRegex(ValueError, "pending exit"):
+            V2PositionPlan(
+                symbol="005930",
+                setup_session=date(2026, 8, 17),
+                setups=("pullback",),
+                quantity=Decimal(1),
+                entry_price=Decimal(10000),
+                stop_price=Decimal(9000),
+                planned_heat=Decimal(1000),
+                ma50=Decimal(9500),
+                opened_at=datetime(2026, 8, 18, tzinfo=UTC),
+                exit_pending_reason="hard-stop",
+            )
 
     def test_sell_reduces_position_notional(self) -> None:
         when = datetime(2026, 8, 12, 9, 0, tzinfo=UTC)

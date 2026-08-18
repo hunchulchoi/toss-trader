@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
-from .models import PaperFill, Side, TradeSignal
+from .models import PaperFill, Side, TradeSignal, V2PositionPlan
 from .risk import RiskContext, RiskDecision
 
 
@@ -165,6 +165,18 @@ class PaperLedgerStore(Protocol):
 
     def seen_signal_ids(self) -> frozenset[str]: ...
 
+    def upsert_v2_position_plan(self, plan: V2PositionPlan) -> None: ...
+
+    def v2_position_plan(self, symbol: str) -> V2PositionPlan | None: ...
+
+    def v2_position_plans(self) -> dict[str, V2PositionPlan]: ...
+
+    def mark_v2_exit_pending(
+        self, symbol: str, *, reason: str, triggered_at: datetime
+    ) -> None: ...
+
+    def delete_v2_position_plan(self, symbol: str) -> None: ...
+
 
 class PaperLedger:
     def __init__(self, database_path: str, *, portfolio_id: str = "legacy") -> None:
@@ -272,6 +284,25 @@ class PaperLedger:
                 trading_day TEXT NOT NULL,
                 equity TEXT NOT NULL,
                 PRIMARY KEY (portfolio_id, trading_day)
+            )
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS paper_v2_position_plans (
+                portfolio_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                setup_session TEXT NOT NULL,
+                setups TEXT NOT NULL,
+                quantity TEXT NOT NULL,
+                entry_price TEXT NOT NULL,
+                stop_price TEXT NOT NULL,
+                planned_heat TEXT NOT NULL,
+                ma50 TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                exit_pending_reason TEXT,
+                exit_triggered_at TEXT,
+                PRIMARY KEY (portfolio_id, symbol)
             )
             """
         )
@@ -665,6 +696,74 @@ class PaperLedger:
         ).fetchall()
         return frozenset(str(row[0]) for row in rows)
 
+    def upsert_v2_position_plan(self, plan: V2PositionPlan) -> None:
+        with self._connection:
+            self._connection.execute(
+                """INSERT INTO paper_v2_position_plans (
+                    portfolio_id, symbol, setup_session, setups, quantity,
+                    entry_price, stop_price, planned_heat, ma50, opened_at,
+                    exit_pending_reason, exit_triggered_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (portfolio_id, symbol) DO UPDATE SET
+                    setup_session=excluded.setup_session,
+                    setups=excluded.setups,
+                    quantity=excluded.quantity,
+                    entry_price=excluded.entry_price,
+                    stop_price=excluded.stop_price,
+                    planned_heat=excluded.planned_heat,
+                    ma50=excluded.ma50,
+                    opened_at=excluded.opened_at,
+                    exit_pending_reason=excluded.exit_pending_reason,
+                    exit_triggered_at=excluded.exit_triggered_at""",
+                _v2_plan_values(self._portfolio_id, plan, serialize=True),
+            )
+
+    def v2_position_plan(self, symbol: str) -> V2PositionPlan | None:
+        row = self._connection.execute(
+            """SELECT symbol, setup_session, setups, quantity, entry_price,
+                      stop_price, planned_heat, ma50, opened_at,
+                      exit_pending_reason, exit_triggered_at
+               FROM paper_v2_position_plans
+               WHERE portfolio_id=? AND symbol=?""",
+            (self._portfolio_id, symbol),
+        ).fetchone()
+        return _v2_plan_from_row(row) if row is not None else None
+
+    def v2_position_plans(self) -> dict[str, V2PositionPlan]:
+        rows = self._connection.execute(
+            """SELECT symbol, setup_session, setups, quantity, entry_price,
+                      stop_price, planned_heat, ma50, opened_at,
+                      exit_pending_reason, exit_triggered_at
+               FROM paper_v2_position_plans WHERE portfolio_id=?""",
+            (self._portfolio_id,),
+        ).fetchall()
+        plans = (_v2_plan_from_row(row) for row in rows)
+        return {plan.symbol: plan for plan in plans}
+
+    def mark_v2_exit_pending(
+        self, symbol: str, *, reason: str, triggered_at: datetime
+    ) -> None:
+        if not reason.strip():
+            raise ValueError("exit pending reason must not be empty")
+        if triggered_at.tzinfo is None or triggered_at.utcoffset() is None:
+            raise ValueError("exit pending time must include a timezone offset")
+        with self._connection:
+            cursor = self._connection.execute(
+                """UPDATE paper_v2_position_plans
+                   SET exit_pending_reason=?, exit_triggered_at=?
+                   WHERE portfolio_id=? AND symbol=?""",
+                (reason, triggered_at.isoformat(), self._portfolio_id, symbol),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(f"v2 position plan not found: {symbol}")
+
+    def delete_v2_position_plan(self, symbol: str) -> None:
+        with self._connection:
+            self._connection.execute(
+                "DELETE FROM paper_v2_position_plans WHERE portfolio_id=? AND symbol=?",
+                (self._portfolio_id, symbol),
+            )
+
 
 POSTGRES_PAPER_SCHEMA = """
 CREATE TABLE IF NOT EXISTS paper_fills (
@@ -768,6 +867,25 @@ CREATE TABLE IF NOT EXISTS paper_portfolio_daily_baselines (
 )
 """
 
+POSTGRES_V2_POSITION_PLAN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS paper_v2_position_plans (
+    portfolio_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    setup_session DATE NOT NULL,
+    setups JSONB NOT NULL,
+    quantity NUMERIC NOT NULL CHECK (quantity > 0),
+    entry_price NUMERIC NOT NULL CHECK (entry_price > 0),
+    stop_price NUMERIC NOT NULL CHECK (stop_price > 0),
+    planned_heat NUMERIC NOT NULL CHECK (planned_heat > 0),
+    ma50 NUMERIC NOT NULL CHECK (ma50 > 0),
+    opened_at TIMESTAMPTZ NOT NULL,
+    exit_pending_reason TEXT,
+    exit_triggered_at TIMESTAMPTZ,
+    PRIMARY KEY (portfolio_id, symbol),
+    CHECK ((exit_pending_reason IS NULL) = (exit_triggered_at IS NULL))
+)
+"""
+
 POSTGRES_AUTOMATION_RUN_INDEX = """
 CREATE INDEX IF NOT EXISTS automation_run_logs_time_idx
 ON automation_run_logs (finished_at DESC)
@@ -831,6 +949,7 @@ class PostgresPaperLedger:
                 cursor.execute(POSTGRES_PORTFOLIO_SCHEMA)
                 cursor.execute(POSTGRES_PORTFOLIO_SNAPSHOT_SCHEMA)
                 cursor.execute(POSTGRES_PORTFOLIO_DAILY_BASELINE_SCHEMA)
+                cursor.execute(POSTGRES_V2_POSITION_PLAN_SCHEMA)
                 if self._portfolio_id in {"rule", "hermes"}:
                     cursor.execute(
                         """
@@ -1230,6 +1349,82 @@ class PostgresPaperLedger:
             rows = cursor.fetchall()
         return frozenset(str(row[0]) for row in rows)
 
+    def upsert_v2_position_plan(self, plan: V2PositionPlan) -> None:
+        values = _v2_plan_values(self._portfolio_id, plan)
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO paper_v2_position_plans (
+                    portfolio_id, symbol, setup_session, setups, quantity,
+                    entry_price, stop_price, planned_heat, ma50, opened_at,
+                    exit_pending_reason, exit_triggered_at
+                ) VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (portfolio_id, symbol) DO UPDATE SET
+                    setup_session=excluded.setup_session,
+                    setups=excluded.setups,
+                    quantity=excluded.quantity,
+                    entry_price=excluded.entry_price,
+                    stop_price=excluded.stop_price,
+                    planned_heat=excluded.planned_heat,
+                    ma50=excluded.ma50,
+                    opened_at=excluded.opened_at,
+                    exit_pending_reason=excluded.exit_pending_reason,
+                    exit_triggered_at=excluded.exit_triggered_at""",
+                values,
+            )
+        self._connection.commit()
+
+    def v2_position_plan(self, symbol: str) -> V2PositionPlan | None:
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT symbol, setup_session, setups, quantity, entry_price,
+                          stop_price, planned_heat, ma50, opened_at,
+                          exit_pending_reason, exit_triggered_at
+                   FROM paper_v2_position_plans
+                   WHERE portfolio_id=%s AND symbol=%s""",
+                (self._portfolio_id, symbol),
+            )
+            row = cursor.fetchone()
+        return _v2_plan_from_row(row) if row is not None else None
+
+    def v2_position_plans(self) -> dict[str, V2PositionPlan]:
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT symbol, setup_session, setups, quantity, entry_price,
+                          stop_price, planned_heat, ma50, opened_at,
+                          exit_pending_reason, exit_triggered_at
+                   FROM paper_v2_position_plans WHERE portfolio_id=%s""",
+                (self._portfolio_id,),
+            )
+            rows = cursor.fetchall()
+        plans = (_v2_plan_from_row(row) for row in rows)
+        return {plan.symbol: plan for plan in plans}
+
+    def mark_v2_exit_pending(
+        self, symbol: str, *, reason: str, triggered_at: datetime
+    ) -> None:
+        if not reason.strip():
+            raise ValueError("exit pending reason must not be empty")
+        triggered = _aware_utc(triggered_at)
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE paper_v2_position_plans
+                   SET exit_pending_reason=%s, exit_triggered_at=%s
+                   WHERE portfolio_id=%s AND symbol=%s""",
+                (reason, triggered, self._portfolio_id, symbol),
+            )
+            if cursor.rowcount != 1:
+                self._connection.rollback()
+                raise KeyError(f"v2 position plan not found: {symbol}")
+        self._connection.commit()
+
+    def delete_v2_position_plan(self, symbol: str) -> None:
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM paper_v2_position_plans WHERE portfolio_id=%s AND symbol=%s",
+                (self._portfolio_id, symbol),
+            )
+        self._connection.commit()
+
 
 def open_paper_ledger(
     *,
@@ -1486,6 +1681,75 @@ def _automation_run_row(row: Sequence[object]) -> dict[str, object]:
         "error": str(values[10]) if values[10] is not None else None,
         "details": details,
     }
+
+
+def _v2_plan_values(
+    portfolio_id: str, plan: V2PositionPlan, *, serialize: bool = False
+) -> tuple[object, ...]:
+    values: tuple[object, ...] = (
+        portfolio_id,
+        plan.symbol,
+        plan.setup_session,
+        json.dumps(plan.setups, ensure_ascii=False),
+        plan.quantity,
+        plan.entry_price,
+        plan.stop_price,
+        plan.planned_heat,
+        plan.ma50,
+        plan.opened_at,
+        plan.exit_pending_reason,
+        plan.exit_triggered_at,
+    )
+    if not serialize:
+        return values
+    return tuple(
+        value.isoformat()
+        if isinstance(value, (date, datetime))
+        else str(value)
+        if isinstance(value, Decimal)
+        else value
+        for value in values
+    )
+
+
+def _v2_plan_from_row(row: Sequence[object]) -> V2PositionPlan:
+    values = tuple(row)
+    raw_setups = values[2]
+    setups = (
+        tuple(json.loads(raw_setups))
+        if isinstance(raw_setups, str)
+        else tuple(raw_setups)
+    )
+    setup_session = (
+        values[1]
+        if isinstance(values[1], date)
+        else date.fromisoformat(str(values[1]))
+    )
+    opened_at = (
+        values[8]
+        if isinstance(values[8], datetime)
+        else datetime.fromisoformat(str(values[8]))
+    )
+    triggered_at = (
+        values[10]
+        if isinstance(values[10], datetime)
+        else datetime.fromisoformat(str(values[10]))
+        if values[10] is not None
+        else None
+    )
+    return V2PositionPlan(
+        symbol=str(values[0]),
+        setup_session=setup_session,
+        setups=tuple(str(value) for value in setups),
+        quantity=Decimal(str(values[3])),
+        entry_price=Decimal(str(values[4])),
+        stop_price=Decimal(str(values[5])),
+        planned_heat=Decimal(str(values[6])),
+        ma50=Decimal(str(values[7])),
+        opened_at=opened_at,
+        exit_pending_reason=(str(values[9]) if values[9] is not None else None),
+        exit_triggered_at=triggered_at,
+    )
 
 
 def _serialized_datetime(value: object) -> str:

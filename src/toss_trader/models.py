@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
@@ -88,3 +88,42 @@ class PaperFill:
     @property
     def total_cost(self) -> Decimal:
         return self.commission + self.tax
+
+
+@dataclass(frozen=True, slots=True)
+class V2PositionPlan:
+    symbol: str
+    setup_session: date
+    setups: tuple[str, ...]
+    quantity: Decimal
+    entry_price: Decimal
+    stop_price: Decimal
+    planned_heat: Decimal
+    ma50: Decimal
+    opened_at: datetime
+    exit_pending_reason: str | None = None
+    exit_triggered_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not SYMBOL_PATTERN.fullmatch(self.symbol):
+            raise ValueError("symbol contains unsupported characters")
+        if not self.setups or any(not value.strip() for value in self.setups):
+            raise ValueError("setups must not be empty")
+        if min(self.quantity, self.entry_price, self.stop_price, self.ma50) <= 0:
+            raise ValueError("plan quantity and prices must be positive")
+        if self.stop_price >= self.entry_price:
+            raise ValueError("plan stop_price must be below entry_price")
+        if self.planned_heat <= 0:
+            raise ValueError("plan planned_heat must be positive")
+        if self.opened_at.tzinfo is None or self.opened_at.utcoffset() is None:
+            raise ValueError("plan opened_at must include a timezone offset")
+        if (self.exit_pending_reason is None) != (self.exit_triggered_at is None):
+            raise ValueError("pending exit reason and time must be set together")
+        if (
+            self.exit_triggered_at is not None
+            and (
+                self.exit_triggered_at.tzinfo is None
+                or self.exit_triggered_at.utcoffset() is None
+            )
+        ):
+            raise ValueError("plan exit_triggered_at must include a timezone offset")
