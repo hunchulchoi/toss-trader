@@ -6,6 +6,8 @@
     {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "*/5 9-14 * * 1-5"}]}}, "id": "schedule-am", "name": "평일 09:00-14:55 5분", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0]},
     {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "0-20/5 15 * * 1-5"}]}}, "id": "schedule-pm", "name": "평일 15:00-15:20 5분", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 160]},
     {"parameters": {}, "id": "manual", "name": "수동 테스트", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 320]},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/market-session", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-intraday-paper\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"market-session\" } } }}", "options": {"timeout": 15000}}, "id": "market-session", "name": "Toss 한국장 일정 확인", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [280, -80], "retryOnFail": true, "maxTries": 3, "waitBetweenTries": 5000},
+    {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "market-business-day-condition", "leftValue": "={{ $('Toss 한국장 일정 확인').item.json.isBusinessDay }}", "rightValue": true, "operator": {"type": "boolean", "operation": "true", "singleValue": true}}], "combinator": "and"}, "options": {}}, "id": "market-business-day", "name": "한국장 영업일?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [520, -80]},
     {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/paper-rule-1m", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-intraday-paper\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"rule-cycle\", \"portfolioId\": \"rule\", \"interval\": \"1m\" } } }}", "options": {"response": {"response": {"neverError": true}}, "timeout": 600000}}, "id": "rule", "name": "시장 Snapshot + Rule 1분봉", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [280, 140]},
     {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "rule-ok-condition", "leftValue": "={{ $json.exitCode ?? 1 }}", "rightValue": 0, "operator": {"type": "number", "operation": "equals"}}], "combinator": "and"}, "options": {}}, "id": "rule-ok", "name": "Rule Cycle 정상?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [520, 140]},
     {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "rule-fill-condition", "leftValue": "={{ $json.cycle?.summary?.fills ?? 0 }}", "rightValue": 0, "operator": {"type": "number", "operation": "gt"}}], "combinator": "and"}, "options": {}}, "id": "rule-fills", "name": "Rule 체결 있음?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [760, 80]},
@@ -21,9 +23,11 @@
     {"parameters": {"jsCode": "return items;"}, "id": "notice-skipped", "name": "특이사항 없음", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2440, 100]}
   ],
   "connections": {
-    "평일 09:00-14:55 5분": {"main": [[{"node": "시장 Snapshot + Rule 1분봉", "type": "main", "index": 0}]]},
-    "평일 15:00-15:20 5분": {"main": [[{"node": "시장 Snapshot + Rule 1분봉", "type": "main", "index": 0}]]},
+    "평일 09:00-14:55 5분": {"main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]},
+    "평일 15:00-15:20 5분": {"main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]},
     "수동 테스트": {"main": [[{"node": "시장 Snapshot + Rule 1분봉", "type": "main", "index": 0}]]},
+    "Toss 한국장 일정 확인": {"main": [[{"node": "한국장 영업일?", "type": "main", "index": 0}]]},
+    "한국장 영업일?": {"main": [[{"node": "시장 Snapshot + Rule 1분봉", "type": "main", "index": 0}], []]},
     "시장 Snapshot + Rule 1분봉": {"main": [[{"node": "Rule Cycle 정상?", "type": "main", "index": 0}]]},
     "Rule Cycle 정상?": {"main": [[{"node": "Rule 체결 있음?", "type": "main", "index": 0}], [{"node": "Rule 실패 Telegram", "type": "main", "index": 0}]]},
     "Rule 체결 있음?": {"main": [[{"node": "공유 Snapshot + Hermes 1분봉", "type": "main", "index": 0}], [{"node": "공유 Snapshot + Hermes 1분봉", "type": "main", "index": 0}]]},

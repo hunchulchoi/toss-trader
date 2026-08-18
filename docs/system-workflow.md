@@ -112,6 +112,11 @@ tool/plugin/MCP/context tool이 없다. Telegram 질의용 MCP는 `paper-mcp`다
 | 평일 09:00~15:20, 5분 간격 | Intraday Paper Cycle | n8n rule→Hermes task | 동적 universe, 1분봉, 전략, RiskManager, paper 체결 |
 | 평일 15:40 | Daily Paper + Hermes | n8n rule→Hermes→분석 task | 일봉 paper cycle, Hermes 마감 분석, Telegram 전송 |
 
+세 schedule trigger는 본 작업 전에 `POST /workflow/market-session`으로 Toss
+한국장 일정을 조회한다. `isBusinessDay=false`면 해당 execution을 정상 종료하고
+cycle·스캔·Hermes·Telegram을 실행하지 않는다. Toss 일정 조회 오류도 fail-closed로
+본 작업을 막으며, 수동 trigger와 인증 webhook은 운영자 재실행을 위해 우회한다.
+
 ## API 구성도
 
 ```mermaid
@@ -285,6 +290,7 @@ Hermes 한도 거부는 webhook 전 로컬 preflight. n8n 없음. Rule·universe
 
 | API | 성공 응답/판단 | 실패 처리·감사 |
 |---|---|---|
+| `POST /workflow/market-session` | Toss 한국장 `businessDate`, `isBusinessDay`, 정규장 시작·종료 시각 | n8n이 최대 3회 재시도; 실패 또는 휴장이면 scheduled 본 작업 미실행 |
 | `POST /workflow/report-failure` | Alertmanager `{accepted: true}` | Telegram에는 workflow·execution·stage·종목 오류 최대 5건만 요약. 원본 n8n 응답은 execution에, compact detail은 audit에 남김 |
 | `GET /healthz` | `200 {"status":"ok"}` | service healthcheck와 n8n 운영 점검에 사용 |
 | `GET /v1/toolsets` | enabled tool 0, resolved tool 0 | Hermes healthcheck가 실패하면 container unhealthy |

@@ -302,6 +302,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn('"authentication": "headerAuth"', encoded)
         self.assertIn('"responseMode": "onReceived"', encoded)
         self.assertIn("toss-trader-manual-trigger-auth", encoded)
+        self._assert_scheduled_runs_use_toss_market_calendar(workflow)
         for branch in (
             "Rule 일봉 정상?",
             "Rule 일봉 체결 있음?",
@@ -328,6 +329,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("/workflow/paper-hermes-1m", encoded)
         self.assertIn("/workflow/report-paper", encoded)
         self.assertIn("비교 결과 병합", encoded)
+        self._assert_scheduled_runs_use_toss_market_calendar(workflow)
         self.assertIn("시장 Snapshot + Rule 1분봉", encoded)
         self.assertIn("공유 Snapshot + Hermes 1분봉", encoded)
         for branch in (
@@ -378,6 +380,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("/workflow/market-scan", encoded)
         self.assertIn("/workflow/hermes-market-result", encoded)
         self.assertIn("/workflow/report-market", encoded)
+        self._assert_scheduled_runs_use_toss_market_calendar(workflow)
         self.assertIn("http://hermes-analysis:8642/v1/chat/completions", encoded)
         self.assertIn("toss-trader-hermes-auth", encoded)
         self.assertNotIn("HERMES_API_KEY", encoded)
@@ -389,6 +392,34 @@ class MonitoringAssetsTest(unittest.TestCase):
         ):
             self.assertIn(branch, encoded)
 
+    def _assert_scheduled_runs_use_toss_market_calendar(
+        self, workflow: dict
+    ) -> None:
+        nodes = {node["name"]: node for node in workflow["nodes"]}
+        schedule_names = {
+            node["name"]
+            for node in workflow["nodes"]
+            if node["type"] == "n8n-nodes-base.scheduleTrigger"
+        }
+        lookup = nodes["Toss 한국장 일정 확인"]
+        gate = nodes["한국장 영업일?"]
+
+        self.assertEqual(
+            lookup["parameters"]["url"],
+            "http://toss-trader-automation:8088/workflow/market-session",
+        )
+        self.assertTrue(lookup["retryOnFail"])
+        self.assertEqual(lookup["maxTries"], 3)
+        self.assertIn("isBusinessDay", json.dumps(gate, ensure_ascii=False))
+        for schedule_name in schedule_names:
+            target = workflow["connections"][schedule_name]["main"][0][0]["node"]
+            self.assertEqual(target, "Toss 한국장 일정 확인")
+        self.assertEqual(
+            workflow["connections"]["Toss 한국장 일정 확인"]["main"][0][0][
+                "node"
+            ],
+            "한국장 영업일?",
+        )
     def test_n8n_http_stages_branch_on_application_failures(self) -> None:
         for filename in (
             "toss-trader-market-scan.json",
@@ -401,6 +432,7 @@ class MonitoringAssetsTest(unittest.TestCase):
                 for node in workflow["nodes"]
                 if node["type"] == "n8n-nodes-base.httpRequest"
                 and "/workflow/report-failure" not in node["parameters"]["url"]
+                and "/workflow/market-session" not in node["parameters"]["url"]
             ]
             self.assertTrue(
                 all(

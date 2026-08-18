@@ -17,6 +17,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
 
+from .calendar import MarketCalendarService, MarketSession
+from .client import TossClient
 from .config import Settings
 from .models import Side, TradeSignal
 from .paper import open_paper_ledger
@@ -909,6 +911,7 @@ class WorkflowTaskService:
         daily_reporter: AlertmanagerReporter,
         failure_reporter: AlertmanagerReporter,
         audit: Callable[[AutomationRunLog], str] | None = None,
+        market_session: Callable[[datetime], MarketSession] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._paper = paper
@@ -920,6 +923,7 @@ class WorkflowTaskService:
         self._daily_reporter = daily_reporter
         self._failure_reporter = failure_reporter
         self._audit = audit
+        self._market_session = market_session
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def run(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -933,6 +937,10 @@ class WorkflowTaskService:
         return result
 
     def _dispatch(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if path == "/workflow/market-session":
+            if self._market_session is None:
+                raise RuntimeError("Toss market calendar is not configured")
+            return _market_session_payload(self._market_session(self._clock()))
         if path == "/workflow/market-scan":
             return self._market_scan.run()
         if path == "/workflow/paper-rule-1m":
@@ -1194,7 +1202,42 @@ def create_workflow_task_service_from_env() -> WorkflowTaskService:
             summary="Toss Trader n8n workflow 실패",
         ),
         audit=_record_automation_run_from_env,
+        market_session=_market_session_lookup_from_env(),
     )
+
+
+def _market_session_lookup_from_env() -> Callable[[datetime], MarketSession]:
+    settings = Settings.from_env()
+    client_id, client_secret = settings.require_credentials()
+    calendar = MarketCalendarService(
+        TossClient(
+            client_id=client_id,
+            client_secret=client_secret,
+            account_seq=settings.account_seq,
+            base_url=settings.base_url,
+            candle_min_interval_seconds=settings.candle_request_interval_seconds,
+        )
+    )
+    return lambda now: calendar.regular_session("KR", now=now)
+
+
+def _market_session_payload(session: MarketSession) -> dict[str, object]:
+    return {
+        "ok": True,
+        "country": session.country,
+        "businessDate": session.business_date.isoformat(),
+        "isBusinessDay": session.is_business_day,
+        "marketOpenAt": (
+            session.market_open_at.isoformat()
+            if session.market_open_at is not None
+            else None
+        ),
+        "marketCloseAt": (
+            session.market_close_at.isoformat()
+            if session.market_close_at is not None
+            else None
+        ),
+    }
 
 
 def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:

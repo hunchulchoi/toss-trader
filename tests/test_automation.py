@@ -20,9 +20,52 @@ from toss_trader.automation import (
     automation_response,
     paper_cycle_notice,
 )
+from toss_trader.calendar import MarketSession
 
 
 class WorkflowTaskServiceTest(unittest.TestCase):
+    def test_market_session_uses_toss_calendar_for_schedule_gate(self) -> None:
+        checked_at: list[datetime] = []
+        now = datetime(2026, 8, 15, 0, 0, tzinfo=UTC)
+
+        def market_session(value: datetime) -> MarketSession:
+            checked_at.append(value)
+            return MarketSession(
+                country="KR",
+                business_date=value.date(),
+                is_business_day=False,
+                market_open_at=None,
+                market_close_at=None,
+            )
+
+        service = WorkflowTaskService(
+            paper=None,  # type: ignore[arg-type]
+            market_scan=None,  # type: ignore[arg-type]
+            market_analyzer=None,  # type: ignore[arg-type]
+            daily_analyzer=None,  # type: ignore[arg-type]
+            market_reporter=None,  # type: ignore[arg-type]
+            paper_reporter=None,  # type: ignore[arg-type]
+            daily_reporter=None,  # type: ignore[arg-type]
+            failure_reporter=None,  # type: ignore[arg-type]
+            market_session=market_session,
+            clock=lambda: now,
+        )
+
+        result = service.run("/workflow/market-session", {})
+
+        self.assertEqual(checked_at, [now])
+        self.assertEqual(
+            result,
+            {
+                "ok": True,
+                "country": "KR",
+                "businessDate": "2026-08-15",
+                "isBusinessDay": False,
+                "marketOpenAt": None,
+                "marketCloseAt": None,
+            },
+        )
+
     def test_completes_direct_market_hermes_response_and_audits_tokens(self) -> None:
         audits: list[AutomationRunLog] = []
 

@@ -24,6 +24,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### OPS-003 Toss holiday schedule gate
+
+- Owner: codex
+- Status: DONE
+- Result: all three n8n schedule paths query the Toss KR market calendar before
+  work and stop before scan, paper cycles, Hermes, and Telegram on holidays;
+  manual and authenticated operator triggers remain available
+- Checks: 245 unit tests; three exported workflow graphs and JSON syntax checked
+- Risks: a Toss calendar outage fails closed and marks the scheduled n8n
+  execution failed after three attempts; updated workflow exports still require
+  import/reload before the running n8n instance uses them
+
 ### OPS-002 Hermes instrument names
 
 - Owner: codex
