@@ -44,6 +44,16 @@
   in-memory variable with shell tracing disabled. Do not write the token to a
   file, terminal, command log, process argument, clipboard, or agent prompt;
   unset the variable immediately after the `infisical run` command finishes.
+- For this project's Universal Auth, never use normal `infisical login` (even
+  with `--silent`): this CLI version prints a machine-identity access token.
+  Run the secret-dependent command inside a subshell, source only the local
+  `.env` there, set `INFISICAL_API_URL="$INFISICAL_DOMAIN"`, and capture
+  `infisical login --method=universal-auth --client-id="$INFISICAL_CLIENT_ID"
+  --client-secret="$INFISICAL_CLIENT_SECRET" --plain --silent` directly into
+  `INFISICAL_TOKEN`. Pass it only as that environment variable to
+  `infisical run --env=prod --path=/ -- ...`; never use `--token`, which puts
+  it in a process argument. Unset `INFISICAL_TOKEN` before leaving the
+  subshell.
 - Treat any token printed to stdout or tool output as compromised. Stop secret
   access and require revocation or rotation before continuing.
 - Do not deploy, restart containers, publish n8n workflows, trade, or mutate a
