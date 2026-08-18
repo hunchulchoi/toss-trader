@@ -218,6 +218,8 @@ class TimelineWebTest(unittest.TestCase):
         self.assertIn(b'data-portfolio="rule"', root[2])
         self.assertIn(b".sparkline", css[2])
         self.assertIn(b"state.data.portfolios", script[2])
+        self.assertIn(b"https://www.tossinvest.com/stocks/A", script[2])
+        self.assertIn(b"stock-order-link", css[2])
         self.assertEqual(json.loads(api[2])["portfolios"]["hermes"]["label"], "Hermes")
         self.assertEqual(timeline_response("GET", "/healthz", payload)[0], 200)
         self.assertEqual(timeline_response("GET", "/missing", payload)[0], 404)

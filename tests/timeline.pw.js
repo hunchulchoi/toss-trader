@@ -10,6 +10,10 @@ test('Rule과 Hermes paper 장부를 독립 탐색한다', async ({ page }) => {
   await expect(page.getByTestId('equity-chart').locator('svg')).toBeVisible();
   await expect(page.locator('#positions-body')).toContainText('삼성전자');
   await expect(page.locator('#positions-body .sparkline')).toHaveCount(1);
+  await expect(page.locator('#positions-body a').first()).toHaveAttribute(
+    'href',
+    'https://www.tossinvest.com/stocks/A005930/order',
+  );
 
   await page.getByRole('tab', { name: 'HERMES' }).click();
   await expect(page.locator('#positions-body')).toContainText('SK하이닉스');
@@ -41,6 +45,10 @@ test('비교·판단·오류·1분봉 체결 마커를 함께 탐색한다', asy
   await expect(page.getByTestId('comparison-view')).toBeVisible();
   await expect(page.getByTestId('equity-chart').locator('polyline')).toHaveCount(2);
   await expect(page.locator('#compare-rule-holdings')).toContainText('삼성전자');
+  await expect(page.locator('#compare-rule-holdings a')).toHaveAttribute(
+    'href',
+    'https://www.tossinvest.com/stocks/A005930/order',
+  );
   await expect(page.locator('#compare-hermes-holdings')).toContainText('SK하이닉스');
   await expect(page.getByTestId('decision-log')).toContainText('변동성 정보가 부족합니다.');
   await expect(page.getByTestId('decision-log')).toContainText('거부');

@@ -64,6 +64,22 @@ function tradingDate(raw) {
     timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit"
   }).format(new Date(raw));
 }
+function stockOrderUrl(symbol) {
+  const code = String(symbol || "").trim();
+  return /^\d{6}$/.test(code)
+    ? `https://www.tossinvest.com/stocks/A${code}/order`
+    : null;
+}
+function stockOrderNode(symbol, className = "") {
+  const url = stockOrderUrl(symbol);
+  const node = document.createElement(url ? "a" : "span");
+  node.className = [className, url ? "stock-order-link" : ""].filter(Boolean).join(" ");
+  if (url) {
+    node.href = url;
+    node.title = `${symbol} 토스증권 주문 화면으로 이동`;
+  }
+  return node;
+}
 
 function renderRail() {
   const list = $("date-list");
@@ -151,9 +167,10 @@ function renderPositions(day) {
   positions.forEach((position) => {
     const row = document.createElement("tr");
     const symbolCell = document.createElement("td");
+    const identity = stockOrderNode(position.symbol, "stock-identity");
     const code = document.createElement("span"); code.className = "symbol-name"; code.textContent = position.symbol;
     const name = document.createElement("span"); name.className = "company-name"; name.textContent = position.name || "회사명 미등록";
-    symbolCell.append(code, name); row.append(symbolCell);
+    identity.append(code, name); symbolCell.append(identity); row.append(symbolCell);
     const trendCell = document.createElement("td"); trendCell.append(sparkline(position.priceTrend || [])); row.append(trendCell);
     [qty.format(number(position.quantity)), money(position.averageCost), money(position.marketPrice), money(position.marketValue), signedMoney(position.unrealizedPnl)].forEach((value, index) => {
       const cell = document.createElement("td"); cell.textContent = value;
@@ -170,7 +187,8 @@ function renderTrades(day) {
   day.trades.forEach((trade) => {
     const item = document.createElement("li"); item.className = `trade-item ${trade.side.toLowerCase()}`;
     const main = document.createElement("div"); main.className = "trade-main";
-    const title = document.createElement("b"); title.textContent = `${trade.side} · ${trade.name || trade.symbol}`;
+    const title = document.createElement("b");
+    const tradeLink = stockOrderNode(trade.symbol); tradeLink.textContent = `${trade.side} · ${trade.name || trade.symbol}`; title.append(tradeLink);
     const price = document.createElement("span"); price.textContent = money(trade.price); main.append(title, price);
     const sub = document.createElement("div"); sub.className = "trade-sub";
     sub.textContent = `${trade.symbol} · ${localTime(trade.executedAt)} · ${qty.format(number(trade.quantity))}주 · ${trade.reason}`;
@@ -197,7 +215,7 @@ function renderSingle() {
 }
 
 function holdingChip(position) {
-  const chip = document.createElement("div"); chip.className = "holding-chip";
+  const chip = stockOrderNode(position.symbol, "holding-chip");
   const name = document.createElement("strong"); name.textContent = position.name || position.symbol;
   const detail = document.createElement("span"); detail.textContent = `${position.symbol} · ${qty.format(number(position.quantity))}주 · ${signedMoney(position.unrealizedPnl)}`;
   chip.append(name, detail); return chip;
@@ -232,6 +250,11 @@ function nearestCandleIndex(candles, executedAt) {
 
 function renderMinute() {
   const symbol = state.minuteSymbol;
+  const orderUrl = stockOrderUrl(symbol);
+  const orderLink = $("minute-stock-link");
+  orderLink.hidden = !orderUrl;
+  if (orderUrl) orderLink.href = orderUrl;
+  else orderLink.removeAttribute("href");
   const candles = state.data.intraday.series[selectedDate()]?.[symbol] || [];
   const executions = state.data.intraday.executions[selectedDate()]?.[symbol] || [];
   const container = $("minute-chart"); container.replaceChildren();
@@ -288,7 +311,9 @@ function renderDecisions() {
   events.forEach((event) => {
     const item = document.createElement("li"); item.className = "decision-item";
     const head = document.createElement("div"); head.className = "decision-item-head";
-    const title = document.createElement("div"); title.className = "decision-title"; title.textContent = `${event.portfolioId.toUpperCase()} · ${event.name || event.symbol} · ${event.side}`;
+    const title = document.createElement("div"); title.className = "decision-title";
+    const eventLink = stockOrderNode(event.symbol); eventLink.textContent = event.name || event.symbol;
+    title.append(`${event.portfolioId.toUpperCase()} · `, eventLink, ` · ${event.side}`);
     const badge = document.createElement("span"); badge.className = `decision-badge ${event.outcome}`;
     badge.textContent = { bought: "매수 체결", sold: "매도 체결", rejected: "거부", "approved-not-filled": "승인·미체결" }[event.outcome];
     head.append(title, badge);
@@ -321,7 +346,13 @@ function renderErrors() {
     const title = document.createElement("div"); title.className = "decision-title"; title.textContent = `${error.portfolioId.toUpperCase()} · ${error.source.toUpperCase()} · ${error.status}`;
     const time = document.createElement("span"); time.className = "decision-time"; time.textContent = localTime(error.occurredAt);
     head.append(title, time);
-    const message = document.createElement("p"); message.className = "decision-reason"; message.textContent = `${error.name || error.symbol || error.interval || "system"}: ${error.message}`;
+    const message = document.createElement("p"); message.className = "decision-reason";
+    if (error.symbol) {
+      const errorLink = stockOrderNode(error.symbol); errorLink.textContent = error.name || error.symbol;
+      message.append(errorLink, `: ${error.message}`);
+    } else {
+      message.textContent = `${error.interval || "system"}: ${error.message}`;
+    }
     item.append(head, message); list.append(item);
   });
   $("error-count").textContent = `${errors.length}건`;

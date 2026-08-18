@@ -157,6 +157,15 @@ button { color: inherit; }
 .line-rule { background: var(--mint); }
 .line-hermes { background: #7fa8ff; }
 
+.stock-order-link { color: inherit; text-decoration: none; cursor: pointer; }
+.stock-order-link:hover, .stock-order-link:focus-visible { color: var(--mint); text-decoration: underline; text-underline-offset: 3px; }
+.stock-identity { display: inline-block; }
+.holding-chip.stock-order-link:hover { border-color: rgba(115,242,180,.5); text-decoration: none; }
+.trade-main b .stock-order-link { color: inherit; }
+.symbol-actions { display: flex; align-items: center; gap: 10px; }
+.minute-stock-link { color: var(--mint); font: 600 10px var(--mono); white-space: nowrap; }
+.minute-stock-link[hidden] { display: none; }
+
 .minute-view { margin-bottom: 18px; }
 .minute-panel { padding-bottom: 16px; }
 .symbol-select { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }

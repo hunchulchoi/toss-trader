@@ -61,7 +61,10 @@
         <section class="panel minute-panel">
           <div class="section-head">
             <div><p class="eyebrow">COLLECTED 1M CANDLES</p><h2>1분봉 · 체결 시점</h2></div>
-            <label class="symbol-select"><span>종목</span><select id="minute-symbol"></select></label>
+            <div class="symbol-actions">
+              <label class="symbol-select"><span>종목</span><select id="minute-symbol"></select></label>
+              <a id="minute-stock-link" class="stock-order-link minute-stock-link" hidden>토스에서 보기 ↗</a>
+            </div>
           </div>
           <div class="minute-legend"><span><i class="candle-up"></i>상승봉</span><span><i class="candle-down"></i>하락봉</span><span><i class="marker-rule"></i>Rule 체결</span><span><i class="marker-hermes"></i>Hermes 체결</span></div>
           <div id="minute-chart" class="minute-chart" role="img" aria-label="수집된 1분봉과 체결 시점"></div>

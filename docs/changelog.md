@@ -5,6 +5,12 @@
 
 ## 2026-08-18
 
+### 타임라인 종목 Toss 링크
+
+보유·체결·비교·판단·오류·1분봉 화면의 국내 6자리 종목을 클릭하면
+`https://www.tossinvest.com/stocks/A{종목코드}/order`로 이동한다. 해외 코드와
+비종목 값은 링크로 만들지 않는다.
+
 ### KIS 종목별 수급 first-observed PIT
 
 종목별 외인/기관 수급 공식 소스가 없어 setup-v2 BUY가 fail-closed였다.
