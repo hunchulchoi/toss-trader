@@ -19,12 +19,22 @@ from .market_data import (
     MarketCollector,
     StoredMaStrategy,
 )
-from .models import PaperFill, Side, TradeSignal
+from .models import PaperFill, Side, TradeSignal, V2PositionPlan
+from .paper import toss_trade_costs
 from .portfolio import DailyPortfolioPerformance, PortfolioPerformance
 from .risk import RiskDecision
 from .screening import MarketRegime, analyze_market
-from .setup_screening import EntryGateDecision
+from .setup_screening import EntryGateDecision, SetupType
 from .strategy import MaCrossoverEvaluation, ma_trend_continuation_signal
+from .v2_engine import (
+    ADVERSE_SLIPPAGE,
+    ArmedTradePlan,
+    DailySetupCandidate,
+    arm_candidate,
+    pullback_invalidated,
+    stop_touched,
+)
+from .v2_runtime import OfficialV2CycleStrategy
 
 HANDLED_CYCLE_ERRORS = (OSError, RuntimeError, TossApiError, TypeError, ValueError)
 
@@ -58,6 +68,7 @@ class PaperCycleSnapshot:
     api_failed: bool
     new_buys_allowed: bool
     ma_states: tuple[MaCrossoverEvaluation | None, ...] = ()
+    v2_candidates: tuple[DailySetupCandidate | None, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +123,7 @@ class PaperCycleRunner:
         performance: PortfolioPerformance,
         state: CycleStateStore,
         entry_gate: Callable[[TradeSignal, datetime], EntryGateDecision] | None = None,
+        v2_strategy: OfficialV2CycleStrategy | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._collector = collector
@@ -121,6 +133,7 @@ class PaperCycleRunner:
         self._performance = performance
         self._state = state
         self._entry_gate = entry_gate
+        self._v2_strategy = v2_strategy
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def prepare(
@@ -144,6 +157,7 @@ class PaperCycleRunner:
         skips: list[str | None] = [None] * size
         errors: list[str | None] = [None] * size
         ma_states: list[MaCrossoverEvaluation | None] = [None] * size
+        v2_candidates: list[DailySetupCandidate | None] = [None] * size
         api_failed = False
 
         for index, symbol in enumerate(symbols):
@@ -153,7 +167,10 @@ class PaperCycleRunner:
                     interval=interval,
                     count=(
                         max(long_window + 1, 200)
-                        if self._entry_gate is not None and interval == "1d"
+                        if (
+                            (self._entry_gate is not None or self._v2_strategy is not None)
+                            and interval == "1d"
+                        )
                         else long_window + 1
                     ),
                 )
@@ -164,6 +181,8 @@ class PaperCycleRunner:
         trend_entries = frozenset(trend_entry_symbols)
         for index, symbol in enumerate(symbols):
             if errors[index] is not None:
+                continue
+            if self._v2_strategy is not None:
                 continue
             try:
                 evaluation = self._strategy.evaluate_state(
@@ -176,13 +195,15 @@ class PaperCycleRunner:
                     entry_key=trend_entry_key,
                 )
                 ma_states[index] = evaluation
-                signals[index] = evaluation.signal
+                signals[index] = (
+                    None if self._v2_strategy is not None else evaluation.signal
+                )
             except InsufficientCandleHistory as error:
                 skips[index] = str(error)
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
 
-        if interval == "1m":
+        if interval == "1m" and self._v2_strategy is None:
             entry_key = now.astimezone(ZoneInfo("Asia/Seoul")).date().isoformat()
             for index, symbol in enumerate(symbols):
                 if errors[index] is not None or signals[index] is not None:
@@ -201,7 +222,7 @@ class PaperCycleRunner:
                     entry_key=entry_key,
                 )
 
-        if self._entry_gate is not None:
+        if self._entry_gate is not None and self._v2_strategy is None:
             for index, signal in enumerate(signals):
                 if signal is None or signal.side is not Side.BUY:
                     continue
@@ -221,6 +242,24 @@ class PaperCycleRunner:
                     signals[index] = None
                     api_failed = True
 
+        if self._v2_strategy is not None and interval == "1m":
+            for index, symbol in enumerate(symbols):
+                if errors[index] is not None:
+                    continue
+                try:
+                    candidate = self._v2_strategy.build_candidate(symbol, now=now)
+                    v2_candidates[index] = candidate
+                    if not candidate.decision.approved:
+                        skips[index] = _v2_rejection_reason(candidate)
+                except ValueError as error:
+                    if str(error).startswith("setup-v2:missing:"):
+                        skips[index] = str(error)
+                        continue
+                    errors[index] = f"setup-v2: {error}"
+                except HANDLED_CYCLE_ERRORS as error:
+                    errors[index] = f"setup-v2: {error}"
+                    api_failed = True
+
         return PaperCycleSnapshot(
             evaluated_at=now,
             symbols=symbols,
@@ -232,6 +271,7 @@ class PaperCycleRunner:
             api_failed=api_failed,
             new_buys_allowed=new_buys_allowed,
             ma_states=tuple(ma_states),
+            v2_candidates=tuple(v2_candidates),
         )
 
     def run(
@@ -330,8 +370,13 @@ class PaperCycleRunner:
         sell_dropped = [False] * size
         already_held = [False] * size
         ma_states = list(snapshot.ma_states)
+        v2_candidates = list(snapshot.v2_candidates)
+        rebuild_v2_candidates = len(v2_candidates) != size
+        v2_plans_to_store: list[ArmedTradePlan | None] = [None] * size
         if len(ma_states) != size:
             ma_states = [None] * size
+        if len(v2_candidates) != size:
+            v2_candidates = [None] * size
 
         performance, performance_error, mark_api_failed = self._performance_for_cycle(
             symbols=symbols,
@@ -344,6 +389,64 @@ class PaperCycleRunner:
             for index in range(size):
                 if errors[index] is None:
                     errors[index] = f"portfolio-risk: {performance_error}"
+
+        sessions: dict[str, MarketSession] = {}
+        if self._v2_strategy is not None and interval == "1m":
+            reserved_open_heat = Decimal(0)
+            reserved_cluster_heat: dict[str, Decimal] = {}
+            reserved_cash = Decimal(0)
+            for country in sorted({country_for_symbol(symbol) for symbol in symbols}):
+                try:
+                    sessions[country] = self._calendar.regular_session(country, now=now)
+                except HANDLED_CYCLE_ERRORS as error:
+                    api_failed = True
+                    for index, symbol in enumerate(symbols):
+                        if country_for_symbol(symbol) == country and errors[index] is None:
+                            errors[index] = str(error)
+            for index, symbol in enumerate(symbols):
+                if errors[index] is not None:
+                    continue
+                session = sessions.get(country_for_symbol(symbol))
+                if session is None:
+                    continue
+                try:
+                    if rebuild_v2_candidates and v2_candidates[index] is None:
+                        v2_candidates[index] = self._v2_strategy.build_candidate(
+                            symbol, now=now
+                        )
+                    signal, reason, plan = self._v2_runtime_signal(
+                        symbol=symbol,
+                        candidate=v2_candidates[index],
+                        session=session,
+                        performance=performance,
+                        now=now,
+                        reserved_open_heat=reserved_open_heat,
+                        reserved_cluster_heat=reserved_cluster_heat.get(
+                            self._v2_strategy.cluster_id(symbol), Decimal(0)
+                        ),
+                        reserved_cash=reserved_cash,
+                    )
+                    signals[index] = signal
+                    v2_plans_to_store[index] = plan
+                    if signal is None and reason is not None:
+                        if reason in {
+                            "setup-v2:missing:position-plan",
+                            "setup-v2:missing:portfolio-position-plans",
+                        }:
+                            errors[index] = reason
+                            skips[index] = None
+                        else:
+                            skips[index] = reason
+                    if signal is not None and plan is not None:
+                        cluster_id = self._v2_strategy.cluster_id(symbol)
+                        reserved_open_heat += plan.planned_heat
+                        reserved_cluster_heat[cluster_id] = (
+                            reserved_cluster_heat.get(cluster_id, Decimal(0))
+                            + plan.planned_heat
+                        )
+                        reserved_cash += signal.notional + toss_trade_costs(signal).total
+                except HANDLED_CYCLE_ERRORS as error:
+                    errors[index] = f"setup-v2: {error}"
 
         for index, symbol in enumerate(symbols):
             if errors[index] is not None:
@@ -368,13 +471,32 @@ class PaperCycleRunner:
                     signal_id=f"{signal_namespace}:{signals[index].signal_id}",
                 )
 
-        sessions: dict[str, MarketSession] = {}
+        prepared_v2_plans: set[int] = set()
+        if self._v2_strategy is not None:
+            for index, plan in enumerate(v2_plans_to_store):
+                if plan is None or signals[index] is None or errors[index] is not None:
+                    continue
+                try:
+                    self._trading.store_v2_position_plan(
+                        _persisted_v2_plan(
+                            plan,
+                            cluster_id=self._v2_strategy.cluster_id(plan.symbol),
+                            opened_at=now,
+                        )
+                    )
+                    prepared_v2_plans.add(index)
+                except HANDLED_CYCLE_ERRORS as error:
+                    errors[index] = f"setup-v2: plan persistence failed: {error}"
+                    signals[index] = None
+
         countries = {
             country_for_symbol(symbols[index])
             for index, signal in enumerate(signals)
             if signal is not None and errors[index] is None
         }
         for country in sorted(countries):
+            if country in sessions:
+                continue
             try:
                 sessions[country] = self._calendar.regular_session(country, now=now)
             except HANDLED_CYCLE_ERRORS as error:
@@ -403,6 +525,17 @@ class PaperCycleRunner:
                 )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
+
+        for index, execution in enumerate(executions):
+            fill = execution.fill if execution is not None else None
+            if index in prepared_v2_plans and fill is None:
+                self._trading.clear_v2_position_plan(symbols[index])
+            elif (
+                fill is not None
+                and fill.side is Side.SELL
+                and self._v2_strategy is not None
+            ):
+                self._trading.clear_v2_position_plan(fill.symbol)
 
         if any(execution and execution.fill for execution in executions):
             performance = self._performance.daily(now=now)
@@ -505,6 +638,147 @@ class PaperCycleRunner:
         except (TypeError, ValueError):
             return None
 
+    def _v2_runtime_signal(
+        self,
+        *,
+        symbol: str,
+        candidate: DailySetupCandidate | None,
+        session: MarketSession,
+        performance: DailyPortfolioPerformance,
+        now: datetime,
+        reserved_open_heat: Decimal,
+        reserved_cluster_heat: Decimal,
+        reserved_cash: Decimal,
+    ) -> tuple[TradeSignal | None, str | None, ArmedTradePlan | None]:
+        assert self._v2_strategy is not None
+        if not session.is_business_day or session.market_open_at is None:
+            return None, "setup-v2:market-closed", None
+        bars = tuple(
+            bar
+            for bar in self._v2_strategy.completed_one_minute_bars(symbol, now=now)
+            if bar.timestamp >= session.market_open_at
+        )
+        stored = self._trading.v2_position_plan(symbol)
+        if stored is not None:
+            if not self._trading.has_position(symbol):
+                self._trading.clear_v2_position_plan(symbol)
+                return None, "setup-v2:stale-position-plan", None
+            armed = _armed_v2_plan(stored)
+            if stored.exit_pending_reason is not None:
+                exit_bar = next(
+                    (
+                        bar
+                        for bar in bars
+                        if stored.exit_triggered_at is not None
+                        and bar.timestamp > stored.exit_triggered_at
+                    ),
+                    None,
+                )
+                if exit_bar is None:
+                    return None, "setup-v2:waiting:exit-bar", None
+                return (
+                    _v2_sell_signal(
+                        stored,
+                        exit_bar.open_price,
+                        reason=stored.exit_pending_reason,
+                        trigger_key=stored.exit_triggered_at.isoformat(),
+                    ),
+                    None,
+                    None,
+                )
+
+            latest_daily = self._v2_strategy.latest_completed_daily_bar(
+                symbol, now=now
+            )
+            if (
+                latest_daily is not None
+                and latest_daily.timestamp.astimezone(ZoneInfo("Asia/Seoul")).date()
+                > stored.setup_session
+                and pullback_invalidated(
+                    armed, close_price=latest_daily.close_price
+                )
+            ):
+                if not bars:
+                    return None, "setup-v2:waiting:structure-exit-bar", None
+                return (
+                    _v2_sell_signal(
+                        stored,
+                        bars[0].open_price,
+                        reason="structure-invalidated",
+                        trigger_key=latest_daily.timestamp.isoformat(),
+                    ),
+                    None,
+                    None,
+                )
+
+            touched = next(
+                (bar for bar in bars if stop_touched(
+                    bar_low=bar.low_price, stop_price=stored.stop_price
+                )),
+                None,
+            )
+            if touched is None:
+                return None, None, None
+            exit_bar = next((bar for bar in bars if bar.timestamp > touched.timestamp), None)
+            if exit_bar is None:
+                self._trading.mark_v2_exit_pending(
+                    symbol, reason="hard-stop", triggered_at=touched.timestamp
+                )
+                return None, "setup-v2:waiting:exit-bar", None
+            return (
+                _v2_sell_signal(
+                    stored,
+                    exit_bar.open_price,
+                    reason="hard-stop",
+                    trigger_key=touched.timestamp.isoformat(),
+                ),
+                None,
+                None,
+            )
+
+        if self._trading.has_position(symbol):
+            return None, "setup-v2:missing:position-plan", None
+        if self._trading.unplanned_position_symbols():
+            return None, "setup-v2:missing:portfolio-position-plans", None
+        if candidate is None:
+            return None, "setup-v2:missing:daily-candidate", None
+        first_bar = next(
+            (bar for bar in bars if bar.timestamp == session.market_open_at), None
+        )
+        if first_bar is None:
+            return None, "setup-v2:waiting:first-session-bar", None
+        cluster_id = self._v2_strategy.cluster_id(symbol)
+        decision = arm_candidate(
+            candidate,
+            first_completed_bar=first_bar,
+            session_open_at=session.market_open_at,
+            equity=performance.equity,
+            available_cash=max(
+                Decimal(0), self._trading.available_cash() - reserved_cash
+            ),
+            current_open_heat=self._trading.open_v2_heat() + reserved_open_heat,
+            current_cluster_heat=(
+                self._trading.cluster_v2_heat(cluster_id) + reserved_cluster_heat
+            ),
+        )
+        if not decision.armed or decision.plan is None:
+            return None, decision.reason, None
+        plan = decision.plan
+        return (
+            TradeSignal(
+                signal_id=(
+                    f"setup-v2.2:{symbol}:{plan.setup_session.isoformat()}:entry"
+                ),
+                symbol=symbol,
+                side=Side.BUY,
+                reference_price=plan.entry_price,
+                quantity=plan.quantity,
+                reason="setup-v2.2 daily candidate",
+            ),
+            None,
+            plan,
+        )
+
     def _finished_at(self, started_at: datetime) -> datetime:
         finished_at = self._clock()
         return max(started_at, finished_at)
@@ -544,6 +818,67 @@ def _validate_snapshot(
         raise ValueError("paper snapshot item counts do not match symbols")
     if snapshot.ma_states and len(snapshot.ma_states) != size:
         raise ValueError("paper snapshot item counts do not match symbols")
+    if snapshot.v2_candidates and len(snapshot.v2_candidates) != size:
+        raise ValueError("paper snapshot item counts do not match symbols")
+
+
+def _v2_rejection_reason(candidate: DailySetupCandidate) -> str:
+    parts = (
+        *(f"missing:{value}" for value in candidate.decision.missing_checks),
+        *(f"violation:{value}" for value in candidate.decision.violations),
+    )
+    return "setup-v2:" + (",".join(parts) if parts else "rejected")
+
+
+def _persisted_v2_plan(
+    plan: ArmedTradePlan, *, cluster_id: str, opened_at: datetime
+) -> V2PositionPlan:
+    return V2PositionPlan(
+        symbol=plan.symbol,
+        cluster_id=cluster_id,
+        setup_session=plan.setup_session,
+        setups=tuple(value.value for value in plan.setups),
+        quantity=plan.quantity,
+        entry_price=plan.entry_price,
+        stop_price=plan.stop_price,
+        planned_heat=plan.planned_heat,
+        ma50=plan.ma50,
+        signal_close=plan.signal_close,
+        opened_at=opened_at,
+    )
+
+
+def _armed_v2_plan(plan: V2PositionPlan) -> ArmedTradePlan:
+    return ArmedTradePlan(
+        symbol=plan.symbol,
+        quantity=plan.quantity,
+        execution_open=plan.entry_price / (Decimal(1) + ADVERSE_SLIPPAGE.entry_rate),
+        entry_price=plan.entry_price,
+        stop_price=plan.stop_price,
+        planned_heat=plan.planned_heat,
+        setups=tuple(SetupType(value) for value in plan.setups),
+        setup_session=plan.setup_session,
+        ma50=plan.ma50,
+        signal_close=plan.signal_close,
+    )
+
+
+def _v2_sell_signal(
+    plan: V2PositionPlan,
+    raw_open: Decimal,
+    *,
+    reason: str,
+    trigger_key: str,
+) -> TradeSignal:
+    price = raw_open * (Decimal(1) - ADVERSE_SLIPPAGE.exit_rate)
+    return TradeSignal(
+        signal_id=f"setup-v2.2:{plan.symbol}:{trigger_key}:exit",
+        symbol=plan.symbol,
+        side=Side.SELL,
+        reference_price=price,
+        quantity=plan.quantity,
+        reason=f"setup-v2.2 {reason}",
+    )
 
 
 def _error_message(items: tuple[SymbolCycleResult, ...]) -> str | None:

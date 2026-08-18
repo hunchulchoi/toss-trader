@@ -59,6 +59,14 @@ class PaperTradingService:
     def v2_position_plans(self) -> dict[str, V2PositionPlan]:
         return self._ledger.v2_position_plans()
 
+    def unplanned_position_symbols(self) -> tuple[str, ...]:
+        held = {
+            symbol
+            for symbol, quantity in self._ledger.position_quantities().items()
+            if quantity > 0
+        }
+        return tuple(sorted(held - self.v2_position_plans().keys()))
+
     def open_v2_heat(self) -> Decimal:
         return sum(
             (plan.planned_heat for plan in self.v2_position_plans().values()),

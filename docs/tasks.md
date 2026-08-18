@@ -24,6 +24,24 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-006 Independent setup-v2.2 lifecycle
+
+- Owner: codex/cursor
+- Status: DONE
+- Result: replaced the CLI paper path's MA-generated BUY/SELL lifecycle with a
+  completed-daily setup candidate, next-session gap recheck, integer risk
+  sizing, persisted stop/open/cluster heat, and next-completed-minute hard-stop
+  exit; unknown sectors share one conservative cluster
+- Checks: 281 unit tests including shared rule/Hermes snapshot rebuild, 1m MA
+  suppression, D+1 session-open validation, zero-lot rejection, persisted plan
+  recovery, provisional same-cycle reservations, and stop-touch next-bar exit;
+  Cursor final review blockers fixed
+- Risks: KIS flow is still 0 rows locally and needs 6 observed sessions;
+  `scheduled_for` remains unavailable unless OpenDART first announces it, so an
+  observed undated preannouncement blocks until the realized filing; old MA
+  positions have no v2 plan and intentionally fail the cycle until manually
+  closed; code is not deployed and `TRADING_ENABLED=false` remains required
+
 ### DATA-004 KIS first-observed investor flow
 
 - Owner: codex/cursor

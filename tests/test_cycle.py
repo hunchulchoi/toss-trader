@@ -1,6 +1,7 @@
 import io
 import json
 import unittest
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
@@ -15,7 +16,13 @@ from toss_trader.paper import PaperLedger
 from toss_trader.portfolio import PortfolioPerformance
 from toss_trader.repository import SqliteMarketRepository
 from toss_trader.risk import RiskLimits, RiskManager
-from toss_trader.setup_screening import EntryGateDecision
+from toss_trader.setup_screening import (
+    EntryGateDecision,
+    SetupDecision,
+    SetupType,
+    ValuationTier,
+)
+from toss_trader.v2_engine import DailySetupCandidate
 
 
 class WatchlistCandleClient:
@@ -100,6 +107,73 @@ class WatchlistCandleClient:
         }
 
 
+class FakeV2CycleStrategy:
+    def __init__(self, candidate: DailySetupCandidate, bars: list[Candle]) -> None:
+        self.candidate = candidate
+        self.bars = bars
+
+    def build_candidate(self, symbol: str, *, now: datetime) -> DailySetupCandidate:
+        del symbol, now
+        return self.candidate
+
+    def completed_one_minute_bars(
+        self, symbol: str, *, now: datetime
+    ) -> tuple[Candle, ...]:
+        del symbol, now
+        return tuple(self.bars)
+
+    def latest_completed_daily_bar(self, symbol: str, *, now: datetime):
+        del symbol, now
+
+    def cluster_id(self, symbol: str) -> str:
+        del symbol
+        return "UNKNOWN"
+
+
+def _v2_candidate() -> DailySetupCandidate:
+    decision = SetupDecision(
+        symbol="005930",
+        approved=True,
+        setups=(SetupType.PULLBACK, SetupType.FLOW_REVERSAL),
+        violations=(),
+        missing_checks=(),
+        rsi14=Decimal(50),
+        ma50=Decimal(9),
+        ma200=Decimal(8),
+        ma50_distance=Decimal("0.01"),
+        flow_stars=1,
+        flow_summary=None,
+        valuation_tier=ValuationTier.B,
+        confidence_multiplier=Decimal(1),
+        proposed_confidence_multiplier=Decimal(1),
+    )
+    return DailySetupCandidate(
+        symbol="005930",
+        signal_session=datetime(2026, 8, 11, tzinfo=UTC).date(),
+        close_price=Decimal(10),
+        setup_low=Decimal(9),
+        ma50=Decimal(9),
+        atr14=Decimal("0.5"),
+        decision=decision,
+    )
+
+
+def _minute_bar(timestamp: datetime, *, open_price: str, low_price: str) -> Candle:
+    open_value = Decimal(open_price)
+    low_value = Decimal(low_price)
+    return Candle(
+        symbol="005930",
+        interval="1m",
+        timestamp=timestamp,
+        open_price=open_value,
+        high_price=open_value + 1,
+        low_price=low_value,
+        close_price=open_value,
+        volume=Decimal(1000),
+        currency="KRW",
+    )
+
+
 def _daily_trend(symbol: str, *, rising: bool) -> list[Candle]:
     start = datetime(2026, 5, 1, tzinfo=UTC)
     candles: list[Candle] = []
@@ -137,6 +211,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
         client: WatchlistCandleClient,
         *,
         entry_gate=None,
+        v2_strategy=None,
     ) -> PaperCycleRunner:
         return PaperCycleRunner(
             collector=MarketCollector(client=client, repository=self.market_repository),
@@ -152,6 +227,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
             ),
             state=self.cycle_state,
             entry_gate=entry_gate,
+            v2_strategy=v2_strategy,
             clock=lambda: datetime(2026, 8, 12, 7, 0, 2, tzinfo=UTC),
         )
 
@@ -272,6 +348,154 @@ class PaperCycleRunnerTest(unittest.TestCase):
         assert result.items[0].signal is not None
         self.assertEqual(result.items[0].signal.reason, "MA2/MA3 trend continuation")
         self.assertTrue(result.items[0].signal.signal_id.endswith("cont-2026-08-12"))
+
+    def test_v2_cycle_arms_daily_candidate_and_persists_sized_plan(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.fill_count, 1)
+        assert result.items[0].fill is not None
+        self.assertEqual(result.items[0].fill.side, Side.BUY)
+        self.assertGreater(result.items[0].fill.quantity, Decimal(1))
+        plan = self.paper_ledger.v2_position_plan("005930")
+        assert plan is not None
+        self.assertEqual(plan.quantity, result.items[0].fill.quantity)
+        self.assertEqual(plan.cluster_id, "UNKNOWN")
+
+    def test_v2_cycle_ignores_ma_sell_and_exits_after_stop_touch(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(12), Decimal(13), Decimal(10)]}
+        )
+        runner = self._runner(client, v2_strategy=strategy)
+        runner.run(
+            symbols=("005930",), interval="1m", short_window=2, long_window=3,
+            quantity=Decimal(1), now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+        strategy.bars = [
+            _minute_bar(market_open, open_price="10", low_price="9.5"),
+            _minute_bar(
+                market_open + timedelta(minutes=1),
+                open_price="9.4",
+                low_price="8.9",
+            ),
+            _minute_bar(
+                market_open + timedelta(minutes=2),
+                open_price="8.8",
+                low_price="8.7",
+            ),
+        ]
+
+        result = runner.run(
+            symbols=("005930",), interval="1m", short_window=2, long_window=3,
+            quantity=Decimal(1), now=datetime(2026, 8, 12, 7, 5, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.fill_count, 1)
+        assert result.items[0].fill is not None
+        self.assertEqual(result.items[0].fill.side, Side.SELL)
+        self.assertEqual(
+            result.items[0].fill.price,
+            Decimal("8.8") * Decimal("0.9995"),
+        )
+        self.assertIsNone(self.paper_ledger.v2_position_plan("005930"))
+
+    def test_v2_rebuilds_candidate_for_shared_snapshot_portfolio(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+        rule_runner = self._runner(client, v2_strategy=strategy)
+        now = datetime(2026, 8, 12, 7, 0, tzinfo=UTC)
+        snapshot = rule_runner.prepare(
+            symbols=("005930",), interval="1m", short_window=2, long_window=3,
+            quantity=Decimal(1), now=now,
+        )
+        serialized_snapshot = replace(snapshot, v2_candidates=())
+        hermes_ledger = PaperLedger(":memory:", portfolio_id="hermes")
+        hermes_state = SqliteCycleStateStore(":memory:", portfolio_id="hermes")
+        try:
+            hermes_runner = PaperCycleRunner(
+                collector=MarketCollector(
+                    client=client, repository=self.market_repository
+                ),
+                strategy=StoredMaStrategy(self.market_repository),
+                trading=PaperTradingService(
+                    ledger=hermes_ledger,
+                    risk_manager=RiskManager(RiskLimits()),
+                ),
+                calendar=MarketCalendarService(client),
+                performance=PortfolioPerformance(
+                    ledger=hermes_ledger,
+                    market_repository=self.market_repository,
+                ),
+                state=hermes_state,
+                v2_strategy=strategy,
+                clock=lambda: now + timedelta(seconds=2),
+            )
+
+            result = hermes_runner.run(
+                symbols=("005930",), interval="1m", short_window=2, long_window=3,
+                quantity=Decimal(1), now=now, snapshot=serialized_snapshot,
+            )
+
+            self.assertEqual(result.fill_count, 1)
+            self.assertIsNotNone(hermes_ledger.v2_position_plan("005930"))
+        finally:
+            hermes_ledger.close()
+            hermes_state.close()
+
+    def test_v2_marks_held_position_without_plan_as_failure(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+        )
+        self.paper_ledger.execute(
+            TradeSignal(
+                signal_id="legacy-position",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(10),
+                quantity=Decimal(1),
+                reason="legacy MA",
+            ),
+            executed_at=market_open,
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(12), Decimal(13), Decimal(10)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",), interval="1m", short_window=2, long_window=3,
+            quantity=Decimal(1), now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.failed_count, 1)
+        self.assertEqual(result.items[0].error, "setup-v2:missing:position-plan")
 
     def test_1m_continuation_skips_when_daily_trend_is_not_risk_on(self) -> None:
         self.market_repository.upsert_candles(_daily_trend("005930", rising=False))

@@ -184,6 +184,23 @@ class OfficialSetupContextFactory:
                     ORDER BY available_at DESC LIMIT 1""",
                     (symbol, decision_at.isoformat(), decision_at.isoformat()),
                 ).fetchone() is not None
+                if not event_imminent:
+                    event_imminent = connection.execute(
+                        """SELECT 1 FROM market_events_pit_v2 AS announced
+                        WHERE announced.symbol=?
+                          AND announced.available_at<=?
+                          AND announced.is_preannounced=1
+                          AND announced.scheduled_for IS NULL
+                          AND NOT EXISTS (
+                              SELECT 1 FROM market_events_pit_v2 AS realized
+                              WHERE realized.symbol=announced.symbol
+                                AND realized.available_at>announced.available_at
+                                AND realized.available_at<=?
+                                AND realized.is_entry_blocking=1
+                          )
+                        ORDER BY announced.available_at DESC LIMIT 1""",
+                        (symbol, decision_at.isoformat(), decision_at.isoformat()),
+                    ).fetchone() is not None
             rows = connection.execute(
                 """SELECT session_index, session_date, available_at,
                           foreign_net_buy, institutional_net_buy, trading_value

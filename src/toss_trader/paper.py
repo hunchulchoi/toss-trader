@@ -300,6 +300,7 @@ class PaperLedger:
                 stop_price TEXT NOT NULL,
                 planned_heat TEXT NOT NULL,
                 ma50 TEXT NOT NULL,
+                signal_close TEXT NOT NULL,
                 opened_at TEXT NOT NULL,
                 exit_pending_reason TEXT,
                 exit_triggered_at TEXT,
@@ -312,6 +313,12 @@ class PaperLedger:
             "paper_v2_position_plans",
             "cluster_id",
             "TEXT NOT NULL DEFAULT 'UNKNOWN'",
+        )
+        _sqlite_add_column(
+            self._connection,
+            "paper_v2_position_plans",
+            "signal_close",
+            "TEXT NOT NULL DEFAULT '1'",
         )
         self._connection.execute(
             """
@@ -708,9 +715,9 @@ class PaperLedger:
             self._connection.execute(
                 """INSERT INTO paper_v2_position_plans (
                     portfolio_id, symbol, cluster_id, setup_session, setups, quantity,
-                    entry_price, stop_price, planned_heat, ma50, opened_at,
-                    exit_pending_reason, exit_triggered_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    entry_price, stop_price, planned_heat, ma50, signal_close,
+                    opened_at, exit_pending_reason, exit_triggered_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (portfolio_id, symbol) DO UPDATE SET
                     cluster_id=excluded.cluster_id,
                     setup_session=excluded.setup_session,
@@ -720,6 +727,7 @@ class PaperLedger:
                     stop_price=excluded.stop_price,
                     planned_heat=excluded.planned_heat,
                     ma50=excluded.ma50,
+                    signal_close=excluded.signal_close,
                     opened_at=excluded.opened_at,
                     exit_pending_reason=excluded.exit_pending_reason,
                     exit_triggered_at=excluded.exit_triggered_at""",
@@ -729,7 +737,7 @@ class PaperLedger:
     def v2_position_plan(self, symbol: str) -> V2PositionPlan | None:
         row = self._connection.execute(
             """SELECT symbol, cluster_id, setup_session, setups, quantity, entry_price,
-                      stop_price, planned_heat, ma50, opened_at,
+                      stop_price, planned_heat, ma50, signal_close, opened_at,
                       exit_pending_reason, exit_triggered_at
                FROM paper_v2_position_plans
                WHERE portfolio_id=? AND symbol=?""",
@@ -740,7 +748,7 @@ class PaperLedger:
     def v2_position_plans(self) -> dict[str, V2PositionPlan]:
         rows = self._connection.execute(
             """SELECT symbol, cluster_id, setup_session, setups, quantity, entry_price,
-                      stop_price, planned_heat, ma50, opened_at,
+                      stop_price, planned_heat, ma50, signal_close, opened_at,
                       exit_pending_reason, exit_triggered_at
                FROM paper_v2_position_plans WHERE portfolio_id=?""",
             (self._portfolio_id,),
@@ -887,6 +895,7 @@ CREATE TABLE IF NOT EXISTS paper_v2_position_plans (
     stop_price NUMERIC NOT NULL CHECK (stop_price > 0),
     planned_heat NUMERIC NOT NULL CHECK (planned_heat > 0),
     ma50 NUMERIC NOT NULL CHECK (ma50 > 0),
+    signal_close NUMERIC NOT NULL CHECK (signal_close > 0),
     opened_at TIMESTAMPTZ NOT NULL,
     exit_pending_reason TEXT,
     exit_triggered_at TIMESTAMPTZ,
@@ -962,6 +971,10 @@ class PostgresPaperLedger:
                 cursor.execute(
                     "ALTER TABLE paper_v2_position_plans "
                     "ADD COLUMN IF NOT EXISTS cluster_id TEXT NOT NULL DEFAULT 'UNKNOWN'"
+                )
+                cursor.execute(
+                    "ALTER TABLE paper_v2_position_plans "
+                    "ADD COLUMN IF NOT EXISTS signal_close NUMERIC NOT NULL DEFAULT 1"
                 )
                 if self._portfolio_id in {"rule", "hermes"}:
                     cursor.execute(
@@ -1368,9 +1381,9 @@ class PostgresPaperLedger:
             cursor.execute(
                 """INSERT INTO paper_v2_position_plans (
                     portfolio_id, symbol, cluster_id, setup_session, setups, quantity,
-                    entry_price, stop_price, planned_heat, ma50, opened_at,
-                    exit_pending_reason, exit_triggered_at
-                ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s)
+                    entry_price, stop_price, planned_heat, ma50, signal_close,
+                    opened_at, exit_pending_reason, exit_triggered_at
+                ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (portfolio_id, symbol) DO UPDATE SET
                     cluster_id=excluded.cluster_id,
                     setup_session=excluded.setup_session,
@@ -1380,6 +1393,7 @@ class PostgresPaperLedger:
                     stop_price=excluded.stop_price,
                     planned_heat=excluded.planned_heat,
                     ma50=excluded.ma50,
+                    signal_close=excluded.signal_close,
                     opened_at=excluded.opened_at,
                     exit_pending_reason=excluded.exit_pending_reason,
                     exit_triggered_at=excluded.exit_triggered_at""",
@@ -1391,7 +1405,7 @@ class PostgresPaperLedger:
         with self._connection.cursor() as cursor:
             cursor.execute(
                 """SELECT symbol, cluster_id, setup_session, setups, quantity, entry_price,
-                          stop_price, planned_heat, ma50, opened_at,
+                          stop_price, planned_heat, ma50, signal_close, opened_at,
                           exit_pending_reason, exit_triggered_at
                    FROM paper_v2_position_plans
                    WHERE portfolio_id=%s AND symbol=%s""",
@@ -1404,7 +1418,7 @@ class PostgresPaperLedger:
         with self._connection.cursor() as cursor:
             cursor.execute(
                 """SELECT symbol, cluster_id, setup_session, setups, quantity, entry_price,
-                          stop_price, planned_heat, ma50, opened_at,
+                          stop_price, planned_heat, ma50, signal_close, opened_at,
                           exit_pending_reason, exit_triggered_at
                    FROM paper_v2_position_plans WHERE portfolio_id=%s""",
                 (self._portfolio_id,),
@@ -1711,6 +1725,7 @@ def _v2_plan_values(
         plan.stop_price,
         plan.planned_heat,
         plan.ma50,
+        plan.signal_close,
         plan.opened_at,
         plan.exit_pending_reason,
         plan.exit_triggered_at,
@@ -1741,15 +1756,15 @@ def _v2_plan_from_row(row: Sequence[object]) -> V2PositionPlan:
         else date.fromisoformat(str(values[2]))
     )
     opened_at = (
-        values[9]
-        if isinstance(values[9], datetime)
-        else datetime.fromisoformat(str(values[9]))
+        values[10]
+        if isinstance(values[10], datetime)
+        else datetime.fromisoformat(str(values[10]))
     )
     triggered_at = (
-        values[11]
-        if isinstance(values[11], datetime)
-        else datetime.fromisoformat(str(values[11]))
-        if values[11] is not None
+        values[12]
+        if isinstance(values[12], datetime)
+        else datetime.fromisoformat(str(values[12]))
+        if values[12] is not None
         else None
     )
     return V2PositionPlan(
@@ -1762,8 +1777,9 @@ def _v2_plan_from_row(row: Sequence[object]) -> V2PositionPlan:
         stop_price=Decimal(str(values[6])),
         planned_heat=Decimal(str(values[7])),
         ma50=Decimal(str(values[8])),
+        signal_close=Decimal(str(values[9])),
         opened_at=opened_at,
-        exit_pending_reason=(str(values[10]) if values[10] is not None else None),
+        exit_pending_reason=(str(values[11]) if values[11] is not None else None),
         exit_triggered_at=triggered_at,
     )
 

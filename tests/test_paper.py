@@ -51,6 +51,7 @@ class PaperLedgerTest(unittest.TestCase):
             stop_price=Decimal(9400),
             planned_heat=Decimal("1980.5"),
             ma50=Decimal(9700),
+            signal_close=Decimal(10000),
             opened_at=opened_at,
         )
 
@@ -83,6 +84,7 @@ class PaperLedgerTest(unittest.TestCase):
                 stop_price=Decimal(9000),
                 planned_heat=Decimal(1000),
                 ma50=Decimal(9500),
+                signal_close=Decimal(10000),
                 opened_at=datetime(2026, 8, 18, tzinfo=UTC),
                 exit_pending_reason="hard-stop",
             )

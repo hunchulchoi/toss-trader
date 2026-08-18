@@ -47,10 +47,11 @@ from .portfolio_backtest import PortfolioBacktestResult, run_ma_portfolio_backte
 from .repository import open_market_repository
 from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
 from .screening import MarketScanner, market_scan_to_dict
-from .setup_screening import OfficialSetupContextFactory, StrictSetupV2EntryGate
+from .setup_screening import OfficialSetupContextFactory
 from .strategy import MaCrossoverEvaluation, ma_crossover_signal
 from .timeline_web import serve_timeline
 from .universe import DynamicUniverseSelector, open_universe_store
+from .v2_runtime import OfficialV2CycleStrategy
 from .walk_forward import WalkForwardResult, run_ma_walk_forward
 
 
@@ -1048,10 +1049,10 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             calendar=MarketCalendarService(client),
             performance=performance,
             state=cycle_state,
-            entry_gate=StrictSetupV2EntryGate(
+            v2_strategy=OfficialV2CycleStrategy(
                 market_repository,
                 context_factory=OfficialSetupContextFactory(settings.market_db_path),
-            ).evaluate,
+            ),
         ).run(
             symbols=symbols,
             interval=interval,
@@ -1088,7 +1089,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             "startedAt": result.started_at,
             "finishedAt": result.finished_at,
             "interval": result.interval,
-            "entryStrategy": "setup-v2-strict-gate",
+            "entryStrategy": "setup-v2.2-independent-daily",
             "dailyReturnRate": result.daily_return_rate,
             "currencyReturns": result.currency_returns,
             "equity": result.equity,

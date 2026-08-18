@@ -486,6 +486,40 @@ class SetupScreeningTest(unittest.TestCase):
             self.assertTrue(context.event_imminent)
             self.assertEqual(len(context.flow_observations), 6)
 
+    def test_unknown_preannounced_schedule_blocks_until_realized_event(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = f"{directory}/market.db"
+            repository = OfficialDataRepository(path)
+            repository.record_coverage(
+                dataset="events",
+                start=date(2026, 8, 1),
+                end=date(2026, 8, 18),
+                completed_at="2026-08-18T01:00:00+00:00",
+                source="opendart:list",
+                row_count=1,
+            )
+            repository.upsert_events(
+                [{
+                    "symbol": "005930", "corp_code": "00126380",
+                    "receipt_no": "20260810000001", "receipt_date": "2026-08-10",
+                    "report_name": "결산실적공시예고",
+                    "available_at": "2026-08-10T08:00:00+09:00",
+                    "blocked_through": None,
+                    "is_entry_blocking": 0, "is_preannounced": 1,
+                    "scheduled_for": None, "source": "opendart:list",
+                    "retrieved_at": "2026-08-10T01:00:00+00:00",
+                    "payload_hash": "preannounce",
+                }]
+            )
+            repository.close()
+
+            context = OfficialSetupContextFactory(path)(
+                "005930", date(2026, 8, 18),
+                datetime(2026, 8, 18, 15, 0, tzinfo=SEOUL), False,
+            )
+
+            self.assertTrue(context.event_imminent)
+
     def test_fails_closed_when_manual_safety_checks_are_missing(self) -> None:
         history = pullback_candles()
         context = approved_context(history[-1])

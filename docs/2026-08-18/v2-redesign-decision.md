@@ -59,3 +59,18 @@ time-exit은 shadow counterfactual로만 기록하며 주문에 사용하지 않
 - open/cluster heat와 현금/주문 상한 중 최솟값이 실제 수량이 된다.
 - 모든 변경은 paper에서만 검증하고 성과 개선 주장을 하지 않는다.
 
+## 구현·재검토 결과
+
+Codex가 cycle·영속·사이징 연결을 구현하고 Cursor가 순수 엔진과 테스트를
+작성한 뒤 통합 diff를 재검토했다. Cursor가 발견한 Hermes shared snapshot의
+후보 손실과 기존 보유분의 plan 누락 무시를 모두 수정했다.
+
+- shared snapshot이 후보 객체를 직렬화하지 않아도 각 포트폴리오가 동일 DB
+  일봉/PIT 상태에서 후보를 재구성한다.
+- plan 없는 기존 보유분은 skip 성공이 아니라 명시적 cycle failure다.
+- 같은 cycle의 후보는 provisional heat·cash를 예약한다.
+- SQLite/Postgres plan 컬럼과 복원 인덱스를 교차검증했다.
+- 전체 281개 단위·회귀테스트를 통과했다.
+
+운영 배포는 별도 승인 전까지 하지 않는다. KIS 수급은 현재 로컬 기준 0행이며
+6개 first-observed 연속 세션 전까지 신규 BUY 0이 정상이다.

@@ -101,6 +101,7 @@ class V2PositionPlan:
     stop_price: Decimal
     planned_heat: Decimal
     ma50: Decimal
+    signal_close: Decimal
     opened_at: datetime
     exit_pending_reason: str | None = None
     exit_triggered_at: datetime | None = None
@@ -112,7 +113,13 @@ class V2PositionPlan:
             raise ValueError("cluster_id must not be empty")
         if not self.setups or any(not value.strip() for value in self.setups):
             raise ValueError("setups must not be empty")
-        if min(self.quantity, self.entry_price, self.stop_price, self.ma50) <= 0:
+        if min(
+            self.quantity,
+            self.entry_price,
+            self.stop_price,
+            self.ma50,
+            self.signal_close,
+        ) <= 0:
             raise ValueError("plan quantity and prices must be positive")
         if self.stop_price >= self.entry_price:
             raise ValueError("plan stop_price must be below entry_price")

@@ -59,6 +59,7 @@ class PaperTradingServiceTest(unittest.TestCase):
                     stop_price=Decimal(9000),
                     planned_heat=Decimal(heat),
                     ma50=Decimal(9500),
+                    signal_close=Decimal(10000),
                     opened_at=self.now,
                 )
             )
@@ -67,6 +68,21 @@ class PaperTradingServiceTest(unittest.TestCase):
         self.assertEqual(
             self.service.cluster_v2_heat("semiconductor"), Decimal(5000)
         )
+
+    def test_reports_held_symbols_without_v2_plans(self) -> None:
+        self.ledger.execute(
+            TradeSignal(
+                signal_id="legacy-buy",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(10000),
+                quantity=Decimal(1),
+                reason="legacy MA position",
+            ),
+            executed_at=self.now,
+        )
+
+        self.assertEqual(self.service.unplanned_position_symbols(), ("005930",))
 
     def test_rejected_signal_is_not_recorded(self) -> None:
         result = self.service.submit(
