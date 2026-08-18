@@ -93,6 +93,7 @@ class PaperFill:
 @dataclass(frozen=True, slots=True)
 class V2PositionPlan:
     symbol: str
+    cluster_id: str
     setup_session: date
     setups: tuple[str, ...]
     quantity: Decimal
@@ -107,6 +108,8 @@ class V2PositionPlan:
     def __post_init__(self) -> None:
         if not SYMBOL_PATTERN.fullmatch(self.symbol):
             raise ValueError("symbol contains unsupported characters")
+        if not self.cluster_id.strip():
+            raise ValueError("cluster_id must not be empty")
         if not self.setups or any(not value.strip() for value in self.setups):
             raise ValueError("setups must not be empty")
         if min(self.quantity, self.entry_price, self.stop_price, self.ma50) <= 0:

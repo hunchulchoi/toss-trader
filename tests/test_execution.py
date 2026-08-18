@@ -1,10 +1,10 @@
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
 from toss_trader.execution import PaperTradingService, TradeAdvice
-from toss_trader.models import Side, TradeSignal
+from toss_trader.models import Side, TradeSignal, V2PositionPlan
 from toss_trader.paper import PaperLedger
 from toss_trader.risk import RiskLimits, RiskManager
 
@@ -41,6 +41,32 @@ class PaperTradingServiceTest(unittest.TestCase):
         self.assertEqual(len(decisions), 1)
         self.assertTrue(decisions[0]["approved"])
         self.assertEqual(decisions[0]["availableCash"], "999990")
+
+    def test_reports_open_and_cluster_v2_heat(self) -> None:
+        for symbol, cluster, heat in (
+            ("005930", "semiconductor", "3000"),
+            ("000660", "semiconductor", "2000"),
+            ("005380", "automotive", "1000"),
+        ):
+            self.service.store_v2_position_plan(
+                V2PositionPlan(
+                    symbol=symbol,
+                    cluster_id=cluster,
+                    setup_session=date(2026, 8, 17),
+                    setups=("pullback",),
+                    quantity=Decimal(1),
+                    entry_price=Decimal(10000),
+                    stop_price=Decimal(9000),
+                    planned_heat=Decimal(heat),
+                    ma50=Decimal(9500),
+                    opened_at=self.now,
+                )
+            )
+
+        self.assertEqual(self.service.open_v2_heat(), Decimal(6000))
+        self.assertEqual(
+            self.service.cluster_v2_heat("semiconductor"), Decimal(5000)
+        )
 
     def test_rejected_signal_is_not_recorded(self) -> None:
         result = self.service.submit(

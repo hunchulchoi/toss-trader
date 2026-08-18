@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 
-from .models import PaperFill, Side, TradeSignal
+from .models import PaperFill, Side, TradeSignal, V2PositionPlan
 from .paper import PaperLedgerStore
 from .risk import RiskContext, RiskDecision, RiskLimits, RiskManager
 
@@ -46,6 +46,49 @@ class PaperTradingService:
 
     def has_position(self, symbol: str) -> bool:
         return self._ledger.position_quantity(symbol) > 0
+
+    def position_quantity(self, symbol: str) -> Decimal:
+        return self._ledger.position_quantity(symbol)
+
+    def available_cash(self) -> Decimal:
+        return self._ledger.cash_balance(self._initial_cash)
+
+    def v2_position_plan(self, symbol: str) -> V2PositionPlan | None:
+        return self._ledger.v2_position_plan(symbol)
+
+    def v2_position_plans(self) -> dict[str, V2PositionPlan]:
+        return self._ledger.v2_position_plans()
+
+    def open_v2_heat(self) -> Decimal:
+        return sum(
+            (plan.planned_heat for plan in self.v2_position_plans().values()),
+            start=Decimal(0),
+        )
+
+    def cluster_v2_heat(self, cluster_id: str) -> Decimal:
+        if not cluster_id.strip():
+            raise ValueError("cluster_id must not be empty")
+        return sum(
+            (
+                plan.planned_heat
+                for plan in self.v2_position_plans().values()
+                if plan.cluster_id == cluster_id
+            ),
+            start=Decimal(0),
+        )
+
+    def store_v2_position_plan(self, plan: V2PositionPlan) -> None:
+        self._ledger.upsert_v2_position_plan(plan)
+
+    def mark_v2_exit_pending(
+        self, symbol: str, *, reason: str, triggered_at: datetime
+    ) -> None:
+        self._ledger.mark_v2_exit_pending(
+            symbol, reason=reason, triggered_at=triggered_at
+        )
+
+    def clear_v2_position_plan(self, symbol: str) -> None:
+        self._ledger.delete_v2_position_plan(symbol)
 
     def submit(
         self,

@@ -43,6 +43,7 @@ class PaperLedgerTest(unittest.TestCase):
         opened_at = datetime(2026, 8, 18, 0, 1, tzinfo=UTC)
         plan = V2PositionPlan(
             symbol="005930",
+            cluster_id="semiconductor",
             setup_session=date(2026, 8, 17),
             setups=("pullback", "flow-reversal"),
             quantity=Decimal(3),
@@ -74,6 +75,7 @@ class PaperLedgerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "pending exit"):
             V2PositionPlan(
                 symbol="005930",
+                cluster_id="semiconductor",
                 setup_session=date(2026, 8, 17),
                 setups=("pullback",),
                 quantity=Decimal(1),

@@ -292,6 +292,7 @@ class PaperLedger:
             CREATE TABLE IF NOT EXISTS paper_v2_position_plans (
                 portfolio_id TEXT NOT NULL,
                 symbol TEXT NOT NULL,
+                cluster_id TEXT NOT NULL,
                 setup_session TEXT NOT NULL,
                 setups TEXT NOT NULL,
                 quantity TEXT NOT NULL,
@@ -305,6 +306,12 @@ class PaperLedger:
                 PRIMARY KEY (portfolio_id, symbol)
             )
             """
+        )
+        _sqlite_add_column(
+            self._connection,
+            "paper_v2_position_plans",
+            "cluster_id",
+            "TEXT NOT NULL DEFAULT 'UNKNOWN'",
         )
         self._connection.execute(
             """
@@ -700,11 +707,12 @@ class PaperLedger:
         with self._connection:
             self._connection.execute(
                 """INSERT INTO paper_v2_position_plans (
-                    portfolio_id, symbol, setup_session, setups, quantity,
+                    portfolio_id, symbol, cluster_id, setup_session, setups, quantity,
                     entry_price, stop_price, planned_heat, ma50, opened_at,
                     exit_pending_reason, exit_triggered_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (portfolio_id, symbol) DO UPDATE SET
+                    cluster_id=excluded.cluster_id,
                     setup_session=excluded.setup_session,
                     setups=excluded.setups,
                     quantity=excluded.quantity,
@@ -720,7 +728,7 @@ class PaperLedger:
 
     def v2_position_plan(self, symbol: str) -> V2PositionPlan | None:
         row = self._connection.execute(
-            """SELECT symbol, setup_session, setups, quantity, entry_price,
+            """SELECT symbol, cluster_id, setup_session, setups, quantity, entry_price,
                       stop_price, planned_heat, ma50, opened_at,
                       exit_pending_reason, exit_triggered_at
                FROM paper_v2_position_plans
@@ -731,7 +739,7 @@ class PaperLedger:
 
     def v2_position_plans(self) -> dict[str, V2PositionPlan]:
         rows = self._connection.execute(
-            """SELECT symbol, setup_session, setups, quantity, entry_price,
+            """SELECT symbol, cluster_id, setup_session, setups, quantity, entry_price,
                       stop_price, planned_heat, ma50, opened_at,
                       exit_pending_reason, exit_triggered_at
                FROM paper_v2_position_plans WHERE portfolio_id=?""",
@@ -871,6 +879,7 @@ POSTGRES_V2_POSITION_PLAN_SCHEMA = """
 CREATE TABLE IF NOT EXISTS paper_v2_position_plans (
     portfolio_id TEXT NOT NULL,
     symbol TEXT NOT NULL,
+    cluster_id TEXT NOT NULL,
     setup_session DATE NOT NULL,
     setups JSONB NOT NULL,
     quantity NUMERIC NOT NULL CHECK (quantity > 0),
@@ -950,6 +959,10 @@ class PostgresPaperLedger:
                 cursor.execute(POSTGRES_PORTFOLIO_SNAPSHOT_SCHEMA)
                 cursor.execute(POSTGRES_PORTFOLIO_DAILY_BASELINE_SCHEMA)
                 cursor.execute(POSTGRES_V2_POSITION_PLAN_SCHEMA)
+                cursor.execute(
+                    "ALTER TABLE paper_v2_position_plans "
+                    "ADD COLUMN IF NOT EXISTS cluster_id TEXT NOT NULL DEFAULT 'UNKNOWN'"
+                )
                 if self._portfolio_id in {"rule", "hermes"}:
                     cursor.execute(
                         """
@@ -1354,11 +1367,12 @@ class PostgresPaperLedger:
         with self._connection.cursor() as cursor:
             cursor.execute(
                 """INSERT INTO paper_v2_position_plans (
-                    portfolio_id, symbol, setup_session, setups, quantity,
+                    portfolio_id, symbol, cluster_id, setup_session, setups, quantity,
                     entry_price, stop_price, planned_heat, ma50, opened_at,
                     exit_pending_reason, exit_triggered_at
-                ) VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (portfolio_id, symbol) DO UPDATE SET
+                    cluster_id=excluded.cluster_id,
                     setup_session=excluded.setup_session,
                     setups=excluded.setups,
                     quantity=excluded.quantity,
@@ -1376,7 +1390,7 @@ class PostgresPaperLedger:
     def v2_position_plan(self, symbol: str) -> V2PositionPlan | None:
         with self._connection.cursor() as cursor:
             cursor.execute(
-                """SELECT symbol, setup_session, setups, quantity, entry_price,
+                """SELECT symbol, cluster_id, setup_session, setups, quantity, entry_price,
                           stop_price, planned_heat, ma50, opened_at,
                           exit_pending_reason, exit_triggered_at
                    FROM paper_v2_position_plans
@@ -1389,7 +1403,7 @@ class PostgresPaperLedger:
     def v2_position_plans(self) -> dict[str, V2PositionPlan]:
         with self._connection.cursor() as cursor:
             cursor.execute(
-                """SELECT symbol, setup_session, setups, quantity, entry_price,
+                """SELECT symbol, cluster_id, setup_session, setups, quantity, entry_price,
                           stop_price, planned_heat, ma50, opened_at,
                           exit_pending_reason, exit_triggered_at
                    FROM paper_v2_position_plans WHERE portfolio_id=%s""",
@@ -1689,6 +1703,7 @@ def _v2_plan_values(
     values: tuple[object, ...] = (
         portfolio_id,
         plan.symbol,
+        plan.cluster_id,
         plan.setup_session,
         json.dumps(plan.setups, ensure_ascii=False),
         plan.quantity,
@@ -1714,40 +1729,41 @@ def _v2_plan_values(
 
 def _v2_plan_from_row(row: Sequence[object]) -> V2PositionPlan:
     values = tuple(row)
-    raw_setups = values[2]
+    raw_setups = values[3]
     setups = (
         tuple(json.loads(raw_setups))
         if isinstance(raw_setups, str)
         else tuple(raw_setups)
     )
     setup_session = (
-        values[1]
-        if isinstance(values[1], date)
-        else date.fromisoformat(str(values[1]))
+        values[2]
+        if isinstance(values[2], date)
+        else date.fromisoformat(str(values[2]))
     )
     opened_at = (
-        values[8]
-        if isinstance(values[8], datetime)
-        else datetime.fromisoformat(str(values[8]))
+        values[9]
+        if isinstance(values[9], datetime)
+        else datetime.fromisoformat(str(values[9]))
     )
     triggered_at = (
-        values[10]
-        if isinstance(values[10], datetime)
-        else datetime.fromisoformat(str(values[10]))
-        if values[10] is not None
+        values[11]
+        if isinstance(values[11], datetime)
+        else datetime.fromisoformat(str(values[11]))
+        if values[11] is not None
         else None
     )
     return V2PositionPlan(
         symbol=str(values[0]),
+        cluster_id=str(values[1]),
         setup_session=setup_session,
         setups=tuple(str(value) for value in setups),
-        quantity=Decimal(str(values[3])),
-        entry_price=Decimal(str(values[4])),
-        stop_price=Decimal(str(values[5])),
-        planned_heat=Decimal(str(values[6])),
-        ma50=Decimal(str(values[7])),
+        quantity=Decimal(str(values[4])),
+        entry_price=Decimal(str(values[5])),
+        stop_price=Decimal(str(values[6])),
+        planned_heat=Decimal(str(values[7])),
+        ma50=Decimal(str(values[8])),
         opened_at=opened_at,
-        exit_pending_reason=(str(values[9]) if values[9] is not None else None),
+        exit_pending_reason=(str(values[10]) if values[10] is not None else None),
         exit_triggered_at=triggered_at,
     )
 
