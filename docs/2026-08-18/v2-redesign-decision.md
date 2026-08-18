@@ -67,7 +67,9 @@ Codex가 cycle·영속·사이징 연결을 구현하고 Cursor가 순수 엔진
 
 - shared snapshot이 후보 객체를 직렬화하지 않아도 각 포트폴리오가 동일 DB
   일봉/PIT 상태에서 후보를 재구성한다.
-- plan 없는 기존 보유분은 skip 성공이 아니라 명시적 cycle failure다.
+- plan 없는 기존 보유분은 가짜 stop을 만들지 않고 legacy-unmanaged로 격리한다.
+- legacy 보유분이 남은 포트폴리오는 신규 BUY를 fail-closed하되 cycle은 정상
+  blocked로 기록해 n8n 실패 경보를 만들지 않는다.
 - 같은 cycle의 후보는 provisional heat·cash를 예약한다.
 - SQLite/Postgres plan 컬럼과 복원 인덱스를 교차검증했다.
 - 전체 281개 단위·회귀테스트를 통과했다.

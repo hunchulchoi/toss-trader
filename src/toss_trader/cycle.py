@@ -429,14 +429,7 @@ class PaperCycleRunner:
                     signals[index] = signal
                     v2_plans_to_store[index] = plan
                     if signal is None and reason is not None:
-                        if reason in {
-                            "setup-v2:missing:position-plan",
-                            "setup-v2:missing:portfolio-position-plans",
-                        }:
-                            errors[index] = reason
-                            skips[index] = None
-                        else:
-                            skips[index] = reason
+                        skips[index] = reason
                     if signal is not None and plan is not None:
                         cluster_id = self._v2_strategy.cluster_id(symbol)
                         reserved_open_heat += plan.planned_heat
@@ -737,9 +730,9 @@ class PaperCycleRunner:
             )
 
         if self._trading.has_position(symbol):
-            return None, "setup-v2:missing:position-plan", None
+            return None, "setup-v2:blocked:legacy-position-unmanaged", None
         if self._trading.unplanned_position_symbols():
-            return None, "setup-v2:missing:portfolio-position-plans", None
+            return None, "setup-v2:blocked:legacy-portfolio", None
         if candidate is None:
             return None, "setup-v2:missing:daily-candidate", None
         first_bar = next(

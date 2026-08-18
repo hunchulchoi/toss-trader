@@ -18,7 +18,7 @@ equity·cash·open/cluster heat로 정수 수량을 계산한다. 0주는 1주�
 - 영속: 포트폴리오별 setup, stop, planned heat, cluster, pending exit
 - 동시 후보: fill 전에도 heat·cash를 예약해 같은 cycle 중복 사용 차단
 - 이벤트: 날짜 없는 사전예고는 실제 blocking 공시 전까지 신규진입 차단
-- 기존 MA 포지션: 가짜 stop을 소급 생성하지 않고 명시적 cycle 실패
+- 기존 MA 포지션: 가짜 stop을 소급 생성하지 않고 legacy-unmanaged로 격리
 
 Cursor 1차안의 RSI70·10일 청산은 근거 없는 휴리스틱이라 철회했다. 1분 MA
 BUY/SELL과 time exit은 v2.2 실행 경로에 없다. 281개 회귀테스트와 Cursor
@@ -27,6 +27,10 @@ BUY/SELL과 time exit은 v2.2 실행 경로에 없다. 281개 회귀테스트와
 운영: 13:22 KST `4bdf516`까지 푸시하고 `automation`을 재빌드·재기동했다.
 health `healthy`, restart count 0, v2.2 모듈 로드를 확인했다. KIS 수급
 6세션 전에는 BUY 0이 정상이며, `TRADING_ENABLED=false` 유지.
+
+배포 직후 기존 MA 보유분에 v2 plan이 없어 n8n cycle이 20/20 실패했다.
+구형 포지션은 자동청산하지 않고, 보유 중에는 포트폴리오 신규 BUY를 차단한다.
+이 상태는 데이터 오류가 아닌 정상 `setupV2Blocked`로 기록한다.
 
 ### 타임라인 종목 Toss 링크
 
