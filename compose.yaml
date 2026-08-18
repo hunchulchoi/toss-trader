@@ -157,6 +157,7 @@ services:
       KIS_APP_KEY: ${KIS_APP_KEY:-}
       KIS_APP_SECRET: ${KIS_APP_SECRET:-}
       KIS_API_BASE_URL: ${KIS_API_BASE_URL:-https://openapi.koreainvestment.com:9443}
+      ALERTMANAGER_API_URL: http://alertmanager:9093/api/v2/alerts
       TRADING_ENABLED: "false"
       MARKET_DB_PATH: /app/data/market.db
       CANDLE_REQUEST_INTERVAL_SECONDS: ${CANDLE_REQUEST_INTERVAL_SECONDS:-0.25}

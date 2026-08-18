@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from .advisor import create_hermes_trade_advisor
 from .automation import (
+    AlertmanagerReporter,
     create_daily_automation_from_env,
     create_intraday_paper_automation_from_env,
     create_market_scan_automation_from_env,
@@ -476,6 +477,13 @@ def _serve_pit_collector(settings: Settings, args: argparse.Namespace) -> int:
             ),
             repository,
         )
+        failure_reporter = AlertmanagerReporter(
+            url=os.environ.get(
+                "ALERTMANAGER_API_URL", "http://alertmanager:9093/api/v2/alerts"
+            ),
+            alert_name="TossTraderKisFlowFailure",
+            summary="Toss Trader KIS 수급 수집 실패",
+        )
         serve_pit_collector(
             lambda now: run_pit_collection(
                 collector,
@@ -486,6 +494,15 @@ def _serve_pit_collector(settings: Settings, args: argparse.Namespace) -> int:
                 flow_symbols=repository.symbols(),
             ),
             once=args.once,
+            report_failure=lambda result: failure_reporter.report(
+                {
+                    "ok": False,
+                    "severity": "critical",
+                    "stage": "kis-flow",
+                    "analysis": "KIS 수급 수집 실패\n"
+                    + "\n".join(result.flow_failures[:5]),
+                }
+            ),
         )
     finally:
         repository.close()

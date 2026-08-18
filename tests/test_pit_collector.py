@@ -5,9 +5,11 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from toss_trader.pit_collector import (
+    PitCollectionResult,
     future_kr_sessions,
     run_pit_collection,
     seconds_until_next_run,
+    serve_pit_collector,
 )
 
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -46,6 +48,12 @@ class FakeFlowCollector:
     def collect(self, **kwargs) -> int:
         self.call = kwargs
         return 12
+
+
+class FailedFlowCollector(FakeFlowCollector):
+    @property
+    def failures(self) -> tuple[str, ...]:
+        return ("KIS token request failed: EGW00133",)
 
 
 class PitCollectorTest(unittest.TestCase):
@@ -130,6 +138,35 @@ class PitCollectorTest(unittest.TestCase):
         self.assertEqual(flow.call["completed_through"], date(2026, 8, 18))
         self.assertEqual(result.flow_rows, 12)
         self.assertEqual(result.flow_status, "AVAILABLE_FIRST_OBSERVED")
+
+    def test_kis_flow_failure_is_exposed_for_alerting(self) -> None:
+        flow = FailedFlowCollector()
+        result = run_pit_collection(
+            FakeCollector(),
+            FakeCalendar(
+                {date(2026, 8, 19), date(2026, 8, 20), date(2026, 8, 21)}
+            ),
+            now=datetime(2026, 8, 18, 18, 30, tzinfo=SEOUL),
+            flow_collector=flow,
+            flow_symbols=["005930"],
+        )
+
+        self.assertEqual(result.flow_status, "PARTIAL_FAILURE")
+        self.assertEqual(result.flow_failures, ("KIS token request failed: EGW00133",))
+
+    def test_daemon_reports_kis_flow_failure_once(self) -> None:
+        result = PitCollectionResult(
+            started_at="2026-08-18T09:30:00+00:00",
+            universe_rows=1,
+            event_rows=1,
+            future_sessions=(),
+            flow_failures=("KIS token request failed: EGW00133",),
+        )
+        reports: list[PitCollectionResult] = []
+
+        serve_pit_collector(lambda _: result, once=True, report_failure=reports.append)
+
+        self.assertEqual(reports, [result])
 
 
 if __name__ == "__main__":

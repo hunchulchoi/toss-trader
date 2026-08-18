@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -14,6 +15,8 @@ from .official_data import OfficialDataCollector
 SEOUL = ZoneInfo("Asia/Seoul")
 KIS_FLOW_AVAILABLE_AT = time(15, 40)
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class PitCollectionResult:
@@ -23,6 +26,7 @@ class PitCollectionResult:
     future_sessions: tuple[str, ...]
     flow_rows: int = 0
     flow_status: str = "UNKNOWN_NO_AUTHORIZED_SOURCE"
+    flow_failures: tuple[str, ...] = ()
 
 
 def future_kr_sessions(
@@ -74,6 +78,7 @@ def run_pit_collection(
     )
     flow_rows = 0
     flow_status = "UNKNOWN_NO_AUTHORIZED_SOURCE"
+    flow_failures: tuple[str, ...] = ()
     if flow_collector is not None:
         if not flow_symbols:
             raise ValueError("configured KIS flow collector needs symbols")
@@ -86,7 +91,10 @@ def run_pit_collection(
                 completed_through=local_day,
                 retrieved_at=now.astimezone(UTC),
             )
-            flow_status = "AVAILABLE_FIRST_OBSERVED"
+            flow_failures = tuple(getattr(flow_collector, "failures", ()))
+            flow_status = (
+                "PARTIAL_FAILURE" if flow_failures else "AVAILABLE_FIRST_OBSERVED"
+            )
     return PitCollectionResult(
         started_at=now.astimezone(UTC).isoformat(),
         universe_rows=universe_rows,
@@ -94,6 +102,7 @@ def run_pit_collection(
         future_sessions=tuple(session.isoformat() for session in sessions),
         flow_rows=flow_rows,
         flow_status=flow_status,
+        flow_failures=flow_failures,
     )
 
 
@@ -115,10 +124,16 @@ def serve_pit_collector(
     run_once: Callable[[datetime], PitCollectionResult],
     *,
     once: bool = False,
+    report_failure: Callable[[PitCollectionResult], None] | None = None,
 ) -> None:
     while True:
         result = run_once(datetime.now(UTC))
         print(json.dumps(asdict(result), ensure_ascii=False), flush=True)
+        if result.flow_failures and report_failure is not None:
+            try:
+                report_failure(result)
+            except RuntimeError:
+                logger.exception("KIS flow failure alert could not be sent")
         if once:
             return
         sleep(seconds_until_next_run(datetime.now(UTC)))

@@ -214,7 +214,8 @@ class OfficialDataTest(unittest.TestCase):
                 ]
             )
             client = FakeClient()
-            stored = KisInvestorFlowCollector(client, repository).collect(
+            collector = KisInvestorFlowCollector(client, repository)
+            stored = collector.collect(
                 symbols=["000001", "AAPL", "005930"],
                 as_of=date(2026, 8, 18),
                 completed_through=date(2026, 8, 17),
@@ -224,6 +225,10 @@ class OfficialDataTest(unittest.TestCase):
 
         self.assertEqual(client.symbols, ["000001", "005930"])
         self.assertEqual(stored, 1)
+        self.assertEqual(
+            collector.failures,
+            ("000001: KIS API error temporary", "invalid symbol: 'AAPL'"),
+        )
 
     def test_kis_collector_stops_after_token_failure(self) -> None:
         class FakeClient:
@@ -238,7 +243,8 @@ class OfficialDataTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             repository = OfficialDataRepository(str(Path(directory) / "market.db"))
             client = FakeClient()
-            stored = KisInvestorFlowCollector(client, repository).collect(
+            collector = KisInvestorFlowCollector(client, repository)
+            stored = collector.collect(
                 symbols=["005930", "000660"],
                 as_of=date(2026, 8, 18),
                 completed_through=date(2026, 8, 17),
@@ -248,6 +254,7 @@ class OfficialDataTest(unittest.TestCase):
 
         self.assertEqual(client.symbols, ["005930"])
         self.assertEqual(stored, 0)
+        self.assertEqual(collector.failures, ("KIS token request failed: EGW00133",))
 
     def test_event_collection_checkpoints_each_date_and_resumes(self) -> None:
         class FakeClient:

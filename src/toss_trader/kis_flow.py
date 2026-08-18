@@ -163,6 +163,11 @@ class KisInvestorFlowCollector:
     ) -> None:
         self._client = client
         self._repository = repository
+        self._failures: list[str] = []
+
+    @property
+    def failures(self) -> tuple[str, ...]:
+        return tuple(self._failures)
 
     def collect(
         self,
@@ -177,17 +182,21 @@ class KisInvestorFlowCollector:
         session_indexes = self._repository.session_indexes()
         retrieved_text = retrieved_at.isoformat()
         stored = 0
+        self._failures = []
         for symbol in symbols:
             if not _SYMBOL.fullmatch(symbol):
+                self._failures.append(f"invalid symbol: {symbol!r}")
                 logger.warning("KIS flow skipped invalid symbol=%r", symbol)
                 continue
             rows: list[dict[str, object]] = []
             try:
                 payload_rows = self._client.daily_investor_flow(symbol, as_of=as_of)
             except KisTokenRequestError as error:
+                self._failures.append(str(error))
                 logger.warning("KIS flow stopped because token issuance failed: %s", error)
                 break
             except (RuntimeError, TypeError, ValueError) as error:
+                self._failures.append(f"{symbol}: {error}")
                 logger.warning("KIS flow skipped symbol=%s: %s", symbol, error)
                 continue
             for payload in payload_rows:
