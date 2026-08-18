@@ -11,7 +11,7 @@
 한국투자증권 Open API `FHPTJ04160001`로 완료 세션만 저장하고, 첫 관측
 `available_at`은 `INSERT OR IGNORE`로 고정한다.
 
-- 동작: `collect-kis-flow`, pit-collector 18:00 KST 이후 당일 포함
+- 동작: `collect-kis-flow`, pit-collector 15:40 KST 이후 당일 포함
 - 운영: 코드만, 배포 대기. Infisical `KIS_APP_KEY`/`KIS_APP_SECRET` 필요.
   키 없으면 pit-collector 기동 실패
 

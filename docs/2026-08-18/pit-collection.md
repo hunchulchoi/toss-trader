@@ -20,12 +20,23 @@
   investor net buy. First retrieval time is `available_at`; later polls cannot
   overwrite it.
 
-## Flow source
+## Flow source and PIT contract
 
 Toss Open API still has market-index investor trading only. Per-symbol flow
 comes from KIS `investor-trade-by-stock-daily`. Rows after `completed_through`
 are dropped so an incomplete session is not stored as if it were final.
 Naver values are not promoted.
+
+- `KIS_APP_KEY` and `KIS_APP_SECRET` are injected and never logged or stored.
+- KIS opens this TR after 15:40 KST. The 18:30 daemon run is inside that
+  window; an earlier service start reports `WAITING_FOR_KIS_1540` without an
+  API call.
+- Net-buy amounts use `frgn_ntby_tr_pbmn` and `orgn_ntby_tr_pbmn`, with
+  `acml_tr_pbmn` as the ratio denominator.
+- History returned by the first call is usable only after its actual retrieval
+  timestamp. It is never backdated for a historical decision.
+- Each symbol commits independently and first observations are immutable, so a
+  later failure can resume without losing earlier progress.
 
 Six completed PIT sessions are still required by setup-v2. First-observed
 collection starting 2026-08-18 makes the first strict window available at the
@@ -38,5 +49,5 @@ On 2026-08-18 an Infisical-injected local run collected:
 - 12,711 unique OpenDART event receipts covering 2026-08-04 through 2026-08-18
 - 611 entry-blocking reports
 - zero rows missing `available_at`
-- KIS per-symbol flow collector added after this snapshot; live row counts
-  depend on a later `collect-kis-flow` or pit-collector run with Infisical keys
+- KIS credentials authenticated at 11:45 KST; the flow TR returned `OPSQ2001`
+  before its 15:40 availability boundary, so no row was written
