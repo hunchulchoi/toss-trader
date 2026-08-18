@@ -111,9 +111,12 @@ class FakeV2CycleStrategy:
     def __init__(self, candidate: DailySetupCandidate, bars: list[Candle]) -> None:
         self.candidate = candidate
         self.bars = bars
+        self.build_error: ValueError | None = None
 
     def build_candidate(self, symbol: str, *, now: datetime) -> DailySetupCandidate:
         del symbol, now
+        if self.build_error is not None:
+            raise self.build_error
         return self.candidate
 
     def completed_one_minute_bars(
@@ -508,6 +511,71 @@ class PaperCycleRunnerTest(unittest.TestCase):
             "setup-v2:blocked:legacy-portfolio",
         )
         self.assertEqual(result.insight["funnel"]["setupV2Blocked"], 2)
+
+    def test_v2_shared_snapshot_does_not_rebuild_candidate_for_legacy(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(12), Decimal(13), Decimal(10)]}
+        )
+        now = datetime(2026, 8, 12, 7, 0, tzinfo=UTC)
+        snapshot = self._runner(client, v2_strategy=strategy).prepare(
+            symbols=("005930",), interval="1m", short_window=2, long_window=3,
+            quantity=Decimal(1), now=now,
+        )
+        hermes_ledger = PaperLedger(":memory:", portfolio_id="hermes")
+        hermes_state = SqliteCycleStateStore(":memory:", portfolio_id="hermes")
+        try:
+            hermes_ledger.execute(
+                TradeSignal(
+                    signal_id="legacy-hermes-position",
+                    symbol="005930",
+                    side=Side.BUY,
+                    reference_price=Decimal(10),
+                    quantity=Decimal(1),
+                    reason="legacy MA",
+                ),
+                executed_at=market_open,
+            )
+            strategy.build_error = ValueError(
+                "setup-v2:missing:completed-daily-candles(63/200)"
+            )
+            runner = PaperCycleRunner(
+                collector=MarketCollector(
+                    client=client, repository=self.market_repository
+                ),
+                strategy=StoredMaStrategy(self.market_repository),
+                trading=PaperTradingService(
+                    ledger=hermes_ledger,
+                    risk_manager=RiskManager(RiskLimits()),
+                ),
+                calendar=MarketCalendarService(client),
+                performance=PortfolioPerformance(
+                    ledger=hermes_ledger,
+                    market_repository=self.market_repository,
+                ),
+                state=hermes_state,
+                v2_strategy=strategy,
+                clock=lambda: now + timedelta(seconds=2),
+            )
+
+            result = runner.run(
+                symbols=("005930",), interval="1m", short_window=2, long_window=3,
+                quantity=Decimal(1), now=now,
+                snapshot=replace(snapshot, v2_candidates=()),
+            )
+
+            self.assertEqual(result.failed_count, 0)
+            self.assertEqual(
+                result.items[0].skip_reason,
+                "setup-v2:blocked:legacy-position-unmanaged",
+            )
+        finally:
+            hermes_ledger.close()
+            hermes_state.close()
 
     def test_1m_continuation_skips_when_daily_trend_is_not_risk_on(self) -> None:
         self.market_repository.upsert_candles(_daily_trend("005930", rising=False))

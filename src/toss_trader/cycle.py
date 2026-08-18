@@ -395,6 +395,7 @@ class PaperCycleRunner:
             reserved_open_heat = Decimal(0)
             reserved_cluster_heat: dict[str, Decimal] = {}
             reserved_cash = Decimal(0)
+            unplanned_positions = set(self._trading.unplanned_position_symbols())
             for country in sorted({country_for_symbol(symbol) for symbol in symbols}):
                 try:
                     sessions[country] = self._calendar.regular_session(country, now=now)
@@ -410,7 +411,16 @@ class PaperCycleRunner:
                 if session is None:
                     continue
                 try:
-                    if rebuild_v2_candidates and v2_candidates[index] is None:
+                    stored_plan = self._trading.v2_position_plan(symbol)
+                    entry_blocked_by_legacy = (
+                        stored_plan is None and bool(unplanned_positions)
+                    )
+                    if (
+                        rebuild_v2_candidates
+                        and v2_candidates[index] is None
+                        and stored_plan is None
+                        and not entry_blocked_by_legacy
+                    ):
                         v2_candidates[index] = self._v2_strategy.build_candidate(
                             symbol, now=now
                         )

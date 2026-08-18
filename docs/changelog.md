@@ -31,6 +31,7 @@ health `healthy`, restart count 0, v2.2 모듈 로드를 확인했다. KIS 수�
 배포 직후 기존 MA 보유분에 v2 plan이 없어 n8n cycle이 20/20 실패했다.
 구형 포지션은 자동청산하지 않고, 보유 중에는 포트폴리오 신규 BUY를 차단한다.
 이 상태는 데이터 오류가 아닌 정상 `setupV2Blocked`로 기록한다.
+Hermes shared snapshot 재생도 legacy 차단을 후보 재생성보다 먼저 적용한다.
 
 ### 타임라인 종목 Toss 링크
 
