@@ -33,7 +33,8 @@
 - 기록 시각: 2026-08-19 14:56 KST
 - 동작: 종목/신호/체결/실패를 한 줄. 신호 mint·체결 amber·실패 red는 0 초과만.
   idle 사유와 퍼널 건수를 details summary 한 줄에 합침
-- 운영: 코드만, 배포 대기
+- 운영: 반영함. 2026-08-19 16:22 KST `timeline` recreate. `/healthz` 200,
+  restart 0, healthy. 라이브 `/assets/cycles.js`에 `cycle-funnel-n` 확인
 
 ### Cycle/장부 타임라인 compact UI
 
