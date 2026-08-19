@@ -14,6 +14,8 @@ _ASSETS = {
     "/": ("timeline.html", "text/html; charset=utf-8"),
     "/cycles": ("cycles.html", "text/html; charset=utf-8"),
     "/cycles/": ("cycles.html", "text/html; charset=utf-8"),
+    "/hermes": ("hermes.html", "text/html; charset=utf-8"),
+    "/hermes/": ("hermes.html", "text/html; charset=utf-8"),
     "/assets/timeline.css": ("timeline.css", "text/css; charset=utf-8"),
     "/assets/timeline.js": (
         "timeline.js",
@@ -21,6 +23,8 @@ _ASSETS = {
     ),
     "/assets/cycles.css": ("cycles.css", "text/css; charset=utf-8"),
     "/assets/cycles.js": ("cycles.js", "text/javascript; charset=utf-8"),
+    "/assets/hermes.css": ("hermes.css", "text/css; charset=utf-8"),
+    "/assets/hermes.js": ("hermes.js", "text/javascript; charset=utf-8"),
 }
 
 TimelinePayload = Mapping[str, Any] | Callable[[], Mapping[str, Any]]

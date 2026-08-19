@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
@@ -24,7 +25,12 @@ class TradeAdvice:
 
 
 class TradeAdvisor(Protocol):
-    def advise(self, signal: TradeSignal, context: RiskContext) -> TradeAdvice: ...
+    def advise(
+        self,
+        signal: TradeSignal,
+        context: RiskContext,
+        review: Mapping[str, object] | None = None,
+    ) -> TradeAdvice: ...
 
 
 class PaperTradingService:
@@ -108,6 +114,7 @@ class PaperTradingService:
         daily_return_rate: Decimal = Decimal(0),
         consecutive_api_errors: int = 0,
         new_buys_allowed: bool = True,
+        market_review: Mapping[str, object] | None = None,
     ) -> PaperExecutionResult:
         costs = self._ledger.estimate_costs(signal)
         cash = self._ledger.cash_balance(self._initial_cash)
@@ -136,7 +143,9 @@ class PaperTradingService:
                 decision = preflight
         if self._advisor is not None and decision is None:
             try:
-                advice = self._advisor.advise(signal, context)
+                advice = self._advisor.advise(
+                    signal, context, review=market_review
+                )
                 context = replace(
                     context,
                     advisor_status="approved" if advice.approved else "rejected",

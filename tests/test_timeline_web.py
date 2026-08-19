@@ -216,6 +216,39 @@ def _payload():
             ("005930", datetime(2026, 8, 13, 6, tzinfo=UTC), "71000"),
             ("005930", datetime(2026, 8, 14, 6, tzinfo=UTC), "72000"),
         ),
+        hermes_log_rows=(
+            (
+                "trade-1",
+                "hermes_trade",
+                "succeeded",
+                "decision",
+                datetime(2026, 8, 13, 2, tzinfo=UTC),
+                datetime(2026, 8, 13, 2, 0, 1, tzinfo=UTC),
+                30,
+                10,
+                40,
+                None,
+                {
+                    "symbol": "000660",
+                    "side": "BUY",
+                    "approved": True,
+                    "rationale": "위험 한도 안입니다.",
+                },
+            ),
+            (
+                "daily-1",
+                "daily",
+                "succeeded",
+                "completed",
+                datetime(2026, 8, 13, 6, 40, tzinfo=UTC),
+                datetime(2026, 8, 13, 6, 41, tzinfo=UTC),
+                8000,
+                200,
+                8200,
+                None,
+                {"ok": True, "orchestrator": "n8n"},
+            ),
+        ),
         default_initial_cash=Decimal(1000000),
     )
 
@@ -258,6 +291,12 @@ class TimelineWebTest(unittest.TestCase):
             payload["cycleTimeline"]["trends"]["005930"][-1]["close"],
             "72000",
         )
+        conversations = {item["runId"]: item for item in payload["hermesConversations"]}
+        self.assertEqual(conversations["trade-1"]["assistant"], "위험 한도 안입니다.")
+        self.assertFalse(conversations["trade-1"]["bodyMissing"])
+        self.assertEqual(conversations["trade-1"]["kind"], "종목 판단")
+        self.assertTrue(conversations["daily-1"]["bodyMissing"])
+        self.assertIsNone(conversations["daily-1"]["assistant"])
 
     def test_empty_active_ledgers_keep_initial_cash_days(self) -> None:
         payload = build_paper_timeline(
@@ -276,25 +315,32 @@ class TimelineWebTest(unittest.TestCase):
         self.assertEqual(hermes["trades"], [])
         self.assertEqual(payload["comparison"][-1]["equityDelta"], "0")
         self.assertEqual(payload["decisions"], [])
+        self.assertEqual(payload["hermesConversations"], [])
 
     def test_serves_read_only_page_assets_api_and_health(self) -> None:
         payload = _payload()
 
         root = timeline_response("GET", "/", payload)
         cycles = timeline_response("GET", "/cycles", payload)
+        hermes = timeline_response("GET", "/hermes", payload)
         css = timeline_response("GET", "/assets/timeline.css", payload)
         cycle_css = timeline_response("GET", "/assets/cycles.css", payload)
+        hermes_css = timeline_response("GET", "/assets/hermes.css", payload)
         script = timeline_response("GET", "/assets/timeline.js", payload)
         cycle_script = timeline_response("GET", "/assets/cycles.js", payload)
+        hermes_script = timeline_response("GET", "/assets/hermes.js", payload)
         api = timeline_response("GET", "/api/timeline?ignored=1", payload)
 
         self.assertEqual(root[0], 200)
         self.assertIn(b'data-portfolio="rule"', root[2])
         self.assertIn(b'data-testid="cycle-timeline"', cycles[2])
+        self.assertIn(b'data-testid="hermes-log"', hermes[2])
         self.assertIn(b".sparkline", css[2])
         self.assertIn(b".cycle-row", cycle_css[2])
+        self.assertIn(b".hermes-body", hermes_css[2])
         self.assertIn(b"state.data.portfolios", script[2])
         self.assertIn(b"cycleTimeline", cycle_script[2])
+        self.assertIn(b"hermesConversations", hermes_script[2])
         self.assertIn(b"https://www.tossinvest.com/stocks/A", script[2])
         self.assertIn(b"stock-order-link", css[2])
         self.assertEqual(json.loads(api[2])["portfolios"]["hermes"]["label"], "Hermes")
@@ -336,6 +382,9 @@ class TimelineWebTest(unittest.TestCase):
         self.assertIn("default_transaction_read_only=on", connection.connect_options)
         self.assertTrue(
             all(query.lstrip().upper().startswith("SELECT") for query in cursor.queries)
+        )
+        self.assertTrue(
+            any("market_scan" in query and "daily" in query for query in cursor.queries)
         )
 
     def test_cli_starts_rule_and_hermes_server(self) -> None:

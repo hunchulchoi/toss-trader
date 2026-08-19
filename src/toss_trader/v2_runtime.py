@@ -52,6 +52,22 @@ class OfficialV2CycleStrategy:
             if candle.timestamp + timedelta(minutes=1) <= now
         )
 
+    def completed_daily_bars(
+        self, symbol: str, *, now: datetime, limit: int = 30
+    ) -> tuple[Candle, ...]:
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("v2 cycle time must include a timezone offset")
+        if limit <= 0:
+            raise ValueError("daily bar limit must be positive")
+        today = now.astimezone(SEOUL).date()
+        candles = self._repository.latest_candles(symbol, "1d", limit=max(limit, 200))
+        completed = [
+            candle
+            for candle in candles
+            if candle.timestamp.astimezone(SEOUL).date() < today
+        ]
+        return tuple(completed[-limit:])
+
     def latest_completed_daily_bar(
         self, symbol: str, *, now: datetime
     ) -> Candle | None:

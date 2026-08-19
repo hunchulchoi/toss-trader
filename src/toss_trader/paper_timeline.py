@@ -171,6 +171,18 @@ class PostgresPaperTimelineStore:
                         trend_rows = cursor.fetchall()
                     else:
                         trend_rows = ()
+                    cursor.execute(
+                        """
+                        SELECT run_id, run_type, status, stage, started_at,
+                               finished_at, prompt_tokens, completion_tokens,
+                               total_tokens, error, details
+                        FROM automation_run_logs
+                        WHERE run_type IN ('hermes_trade', 'market_scan', 'daily')
+                        ORDER BY finished_at DESC, run_id DESC
+                        LIMIT 200
+                        """
+                    )
+                    hermes_log_rows = cursor.fetchall()
             finally:
                 connection.close()
         except self._database_error as error:
@@ -185,6 +197,7 @@ class PostgresPaperTimelineStore:
             name_rows=name_rows,
             minute_rows=minute_rows,
             trend_rows=trend_rows,
+            hermes_log_rows=hermes_log_rows,
             default_initial_cash=self._initial_cash,
         )
 
@@ -200,6 +213,7 @@ def build_paper_timeline(
     name_rows: Sequence[Sequence[Any]] = (),
     minute_rows: Sequence[Sequence[Any]] = (),
     trend_rows: Sequence[Sequence[Any]] = (),
+    hermes_log_rows: Sequence[Sequence[Any]] = (),
     default_initial_cash: Decimal,
 ) -> dict[str, Any]:
     initial_cash = {
@@ -329,6 +343,7 @@ def build_paper_timeline(
             names=names,
             trend_rows=trend_rows,
         ),
+        "hermesConversations": _hermes_conversations(hermes_log_rows, names),
         "errors": _error_events(
             cycle_rows=cycle_rows,
             advice_rows=advice_rows,
@@ -647,6 +662,57 @@ def _decision_events(
             }
         )
     return events
+
+
+HERMES_KIND_LABELS = {
+    "hermes_trade": "종목 판단",
+    "market_scan": "장전 분석",
+    "daily": "마감 분석",
+}
+
+
+def _hermes_conversations(
+    rows: Sequence[Sequence[Any]],
+    names: Mapping[str, str],
+) -> list[dict[str, Any]]:
+    conversations = []
+    for row in rows:
+        details = _json_mapping(row[10])
+        run_type = str(row[1])
+        symbol = details.get("symbol")
+        symbol_text = str(symbol) if symbol is not None else None
+        assistant = None
+        for key in ("assistant", "rationale", "analysis", "opinion"):
+            value = details.get(key)
+            if isinstance(value, str) and value.strip():
+                assistant = value.strip()
+                break
+        conversations.append(
+            {
+                "runId": str(row[0]),
+                "runType": run_type,
+                "kind": HERMES_KIND_LABELS.get(run_type, run_type),
+                "status": str(row[2]),
+                "stage": str(row[3]),
+                "startedAt": _datetime(row[4]).isoformat(),
+                "finishedAt": _datetime(row[5]).isoformat(),
+                "promptTokens": int(row[6] or 0),
+                "completionTokens": int(row[7] or 0),
+                "totalTokens": int(row[8] or 0),
+                "error": None if row[9] is None else str(row[9]),
+                "symbol": symbol_text,
+                "name": names.get(symbol_text) if symbol_text else None,
+                "side": (
+                    str(details["side"]) if details.get("side") is not None else None
+                ),
+                "approved": details.get("approved")
+                if isinstance(details.get("approved"), bool)
+                else None,
+                "assistant": assistant,
+                "bodyMissing": assistant is None,
+            }
+        )
+    return conversations
 
 
 def _json_mapping(value: Any) -> Mapping[str, Any]:

@@ -2,6 +2,7 @@
 
 paper cycle의 신호·진입·청산 상태기계는
 [`paper-cycle-flow.md`](paper-cycle-flow.md)를 기준으로 한다.
+프로젝트 핵심 용어 정의는 [`glossary.md`](glossary.md)를 참고한다.
 
 ## 현재 범위
 
@@ -15,44 +16,44 @@ paper cycle의 신호·진입·청산 상태기계는
 
 ## 전체 흐름
 
-```text
-평일 08:30 KST n8n
-        │
-        ▼
-시장분석 + 종목발굴
-        │
-        ▼
-Telegram 장전 리포트
+```mermaid
+flowchart TB
+    subgraph PRE["1. 장전 시장분석 · 종목발굴 (평일 08:30 KST)"]
+        direction TB
+        N_PRE["n8n 스케줄 Trigger (08:30)"] --> SCAN["Toss 시장분석 + 종목발굴 (/workflow/market-scan)"]
+        SCAN --> H_PRE["Hermes 브리핑 생성 (/v1/chat/completions)"]
+        H_PRE --> TG_PRE["Alertmanager → Telegram 장전 리포트"]
+    end
 
-평일 09:00~15:20 KST n8n (5분 간격)
-  -> 규칙 기반 1분봉 task
-  -> 동일 universe·entry signal로 Hermes 개입 1분봉 task
-  -> 각 포트폴리오 1,000,000원, 장부·현금·포지션 완전 분리
-  -> Hermes: 신호+한도 통과 때만 LLM. 한도 거부는 skip
-  -> RiskManager 최종 판단 감사 + paper 체결 + cycle 상태 저장
-  -> 체결·거부·오류만 Telegram
+    subgraph INTRA["2. 장중 Paper Trading 사이클 (평일 09:00~15:20 KST, 5분 간격)"]
+        direction TB
+        N_INTRA["n8n 5분 스케줄 Trigger"] --> CAL_CHK{"Toss 한국장 영업일 · 개장 상태?"}
+        CAL_CHK -->|아니오| STOP_INTRA["사이클 중단"]
+        CAL_CHK -->|예| UNIV["당일 Universe 확정 (최대 15종목 동결)"]
+        UNIV --> RULE_1M["Rule 포트폴리오 (1분봉 + 200일봉 수집/평가)"]
+        RULE_1M --> SNAP["Shared Snapshot 생성"]
+        SNAP --> HERMES_1M["Hermes 포트폴리오 (동일 스냅샷 기반 평가)"]
+        HERMES_1M --> PREFLIGHT{"Hard Preflight (신호 + 한도 통과?)"}
+        PREFLIGHT -->|미달/위반| SKIP_LLM["LLM 호출 생략 (Token 0)"]
+        PREFLIGHT -->|통과| ADV_LLM["Hermes LLM Advisor 심층 분석"]
+        ADV_LLM --> RISK_CHK["RiskManager 최종 한도/리스크 승인"]
+        RULE_1M --> RISK_CHK
+        SKIP_LLM --> RISK_CHK
+        RISK_CHK --> EXEC_DB["가상 체결(paper_fills) + 상태/원장 저장"]
+        EXEC_DB --> NOTICE_CHK{"체결 · 거부 · 오류 발생?"}
+        NOTICE_CHK -->|예| TG_INTRA["Alertmanager → Telegram"]
+        NOTICE_CHK -->|아니오| QUIET_INTRA["무알림 정상 종료"]
+    end
 
-평일 15:40 KST n8n
-        │
-        ▼
-규칙 기반 일봉 → Hermes 개입 일봉 → 결과 병합 → Hermes 마감 분석
-        │  openclaw-net 내부 전용
-        ▼
-Toss paper cycle
-  ├─ 캔들 수집
-  ├─ 전일 setup-v2.2 후보 + D+1 첫 봉 검사
-  ├─ 시장 일정·포트폴리오 조회
-  ├─ RiskManager 승인/거부
-  └─ paper 체결·사이클 상태 저장
-        │
-        ▼
-Hermes 결과 분석
-        │
-        ▼
-Alertmanager
-        │
-        ▼
-Telegram 지정 topic
+    subgraph POST["3. 장 마감 일봉 리뷰 (평일 15:40 KST)"]
+        direction TB
+        N_POST["n8n 스케줄 Trigger (15:40)"] --> RULE_1D["Rule 일봉 사이클 (/workflow/paper-rule-1d)"]
+        RULE_1D --> HERMES_1D["Hermes 일봉 사이클 (/workflow/paper-hermes-1d)"]
+        HERMES_1D --> COMBINE["일일 비교 결과 병합"]
+        COMBINE --> H_POST["Hermes 마감 분석 (/v1/chat/completions)"]
+        H_POST --> REPORT_POST["마감 결과 검증 및 감사 원장 기록"]
+        REPORT_POST --> TG_POST["Alertmanager → Telegram 마감 리포트"]
+    end
 ```
 
 n8n이 전체 자동화의 단계 순서와 실패 전파를 담당한다. workflow는
@@ -141,7 +142,9 @@ n8n의 각 task 호출마다 automation service가 별도 프로세스로
 `paper_risk_decisions`, `paper_cycle_runs`는 `portfolio_id`로 격리한다.
 
 Hermes: 로컬 hard preflight 통과 후에만 advisor. 한도 거부 → 판단 1행, token 0.
-Rule: preflight 없이 n8n 1회. payload는 신호+RiskContext. 뉴스·호가 없음.
+Rule: preflight 없이 n8n 1회. advisor payload는 신호+RiskContext에 cycle이 이미
+수집한 최근 완결 일봉 30개·분봉 60개·setup-v2·PIT 수급 요약을 붙인다. Hermes가
+Toss API를 직접 조회하지 않는다. 뉴스·호가 없음.
 장애는 `Hermes 분석 실패: 응답을 받지 못해 체결 차단`. token은 `hermes_trade`.
 
 종목별 처리:

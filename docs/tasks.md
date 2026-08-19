@@ -24,6 +24,36 @@ No tasks awaiting review.
 
 ## DONE
 
+### AI-001 Pass cycle candles and setup summary to Hermes trade advisor
+
+- Owner: codex/cursor
+- Status: DONE
+- Result: included recent 30 completed daily candles, 60 1m candles, setup-v2 price
+  condition, and 6-session PIT flow summary in the Hermes trade advisor user payload;
+  strengthened system prompt against approving solely on risk limits without strategy rationale
+- Checks: 332 unit tests; scoped Ruff and Git whitespace checks
+- Risks: increased prompt payload size; advisor remains restricted to provided snapshot
+
+### WEB-003 Hermes audit replies page
+
+- Owner: codex
+- Status: DONE
+- Result: added `/hermes` web page that reads `automation_run_logs` for `market_scan`,
+  `daily`, and `hermes_trade`, displaying assistant response text (up to 4000 chars)
+  and run metadata without exposing secrets or raw request payloads
+- Checks: unit tests; live deployment check (`/hermes` 200, 58 conversations loaded)
+- Risks: legacy runs before this change recorded token counts only without assistant text
+
+### DOCS-001 Official terminology glossary
+
+- Owner: agy/codex
+- Status: DONE
+- Result: created canonical `docs/glossary.md` covering system safety, PIT integrity,
+  setup-v2.2 strategy rules, ledger/PnL engine, automation, and multi-agent roles;
+  linked from `README.md` and `docs/automatic-trading-scenario.md`
+- Checks: cross-document link validation and unit test suite
+- Risks: none (documentation artifact)
+
 ### DATA-009 Finalize OpenDART coverage after the receipt date
 
 - Owner: codex
@@ -32,8 +62,10 @@ No tasks awaiting review.
   on or before their coverage date, and add a 00:10 KST finalization run before
   the next market open while retaining the 18:30 KIS/event refresh
 - Checks: 332 unit tests; scoped Ruff and Git whitespace; live comparison found
-  329 OpenDART receipts versus 4 prematurely checkpointed database rows
-- Risks: production rollout and the 2026-08-19 event refresh remain pending
+  329 OpenDART receipts versus 4 prematurely checkpointed database rows;
+  production refresh raised the stored date to 345 rows with zero collector errors
+- Risks: same-day DB count may trail filings added after the latest refresh until
+  the 18:30 refresh; final coverage is intentionally written at 00:10 next day
 
 ### DATA-008 Extend KIS sessions past the lagging price ledger
 
@@ -46,7 +78,8 @@ No tasks awaiting review.
 - Checks: 330 unit tests; scoped Ruff and Git whitespace; live KIS/Toss smoke
   stored 2026-08-14, 2026-08-18, and 2026-08-19 as consecutive temporary rows
   with zero failures; live `0004V0` returned 30 rows through 2026-08-19
-- Risks: production rollout and an idempotent operational backfill remain pending
+- Risks: KIS first-observed history remains unavailable before its actual
+  retrieval time; no backdating is permitted
 
 ### STRAT-009 Harden setup-v2 universe membership
 

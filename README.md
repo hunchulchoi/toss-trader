@@ -7,6 +7,7 @@
 정리되어 있습니다.
 Hermes Telegram의 paper 장부 조회는
 [`docs/paper-mcp.md`](docs/paper-mcp.md)를 참고합니다.
+프로젝트 공식 용어집은 [`docs/glossary.md`](docs/glossary.md).
 날짜별 기능 추가는 [`docs/changelog.md`](docs/changelog.md).
 
 - OAuth 2.0 Client Credentials 토큰 캐시
@@ -133,6 +134,7 @@ PYTHONPATH=src python3 -m toss_trader serve-paper-timeline \
 
 실계좌를 조회하지 않는다. PostgreSQL의 Rule/Hermes paper 체결과 저장 시세를
 읽기 전용으로 재생하며, 회사명과 종목별 최근 63개 시세 추세선을 함께 표시한다.
+`/cycles`는 cycle 실행 흐름, `/hermes`는 Hermes 판단·분석 응답이다.
 활성 세대에 체결이 없어도 초기현금 날짜로 페이지를 연다.
 
 날짜를 선택하면 해당일 총자산·현금·보유 평가액·손익·종목별 장부·체결을

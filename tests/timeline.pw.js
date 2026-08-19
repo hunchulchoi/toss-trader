@@ -6,6 +6,7 @@ test('Rule과 Hermes paper 장부를 독립 탐색한다', async ({ page }) => {
 
   await expect(page.getByTestId('timeline-app')).toBeVisible();
   await expect(page.getByRole('link', { name: 'CYCLES' })).toHaveAttribute('href', '/cycles');
+  await expect(page.locator('a.topbar-link[href="/hermes"]')).toHaveCount(1);
   await expect(page.locator('.date-item')).toHaveCount(2);
   await expect(page.getByTestId('selected-date')).toContainText('8월 14일');
   await expect(page.getByTestId('equity-chart').locator('svg')).toBeVisible();
@@ -91,4 +92,12 @@ test('cycle 실행 결과와 종목별 차단 사유를 조회한다', async ({ 
   await expect(page.locator('.cycle-card.rule .funnel')).toContainText('v2 차단 14');
   await expect(page.locator('.cycle-card.rule .symbol-state-list')).toContainText('삼성전자');
   await expect(page.locator('.cycle-card.rule .symbol-state-list')).toContainText('수급 반전 미확인');
+});
+
+test('Hermes 판단 rationale을 조회한다', async ({ page }) => {
+  const response = await page.goto('/hermes');
+  expect(response.status()).toBe(200);
+  await expect(page.getByTestId('hermes-log')).toBeVisible();
+  await expect(page.locator('.hermes-kind')).toContainText('종목 판단');
+  await expect(page.locator('.hermes-body')).toContainText('위험 한도 안입니다.');
 });

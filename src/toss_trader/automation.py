@@ -1149,7 +1149,11 @@ class WorkflowTaskService:
                 prompt_tokens=usage.prompt_tokens,
                 completion_tokens=usage.completion_tokens,
                 total_tokens=usage.total_tokens,
-                details={"orchestrator": "n8n", "ok": bool(result.get("ok"))},
+                details={
+                    "orchestrator": "n8n",
+                    "ok": bool(result.get("ok")),
+                    "assistant": usage.content,
+                },
             )
         )
 

@@ -114,6 +114,7 @@ class WorkflowTaskServiceTest(unittest.TestCase):
         self.assertEqual(result["hermesUsage"]["totalTokens"], 120)
         self.assertEqual(audits[0].run_type, "market_scan")
         self.assertEqual(audits[0].total_tokens, 120)
+        self.assertEqual(audits[0].details["assistant"], "시장 의견")
         self.assertEqual(audits[1].run_type, "n8n_flow")
         self.assertEqual(audits[1].stage, "hermes-market-result")
         self.assertEqual(audits[1].total_tokens, 120)

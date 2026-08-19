@@ -7,6 +7,14 @@
 
 ## 2026-08-19
 
+### Hermes 종목 판단에 cycle 시세·수급 스냅샷
+
+- 기록 시각: 2026-08-19 17:25 KST
+- 동작: advisor user JSON에 최근 완결 일봉 30·분봉 60·setup-v2·PIT 수급 요약.
+  sidecar tool/Toss 직접 조회 없음. 한도 숫자만으로 승인하지 말라고 prompt 보강
+- 운영: 반영함. 2026-08-19 17:34 KST `automation` recreate. health `healthy`,
+  restart 0, `TRADING_ENABLED=false`. 라이브 이미지에 market prompt 확인
+
 ### OpenDART 당일 coverage 조기 고정 방지
 
 - 기록 시각: 2026-08-19 17:20 KST
@@ -17,7 +25,35 @@
   checkpoint는 무시. 이벤트의 다음 세션 계산에는 실행 당일도 포함
 - 검증: 조기 checkpoint 재조회, 당일 반복 갱신, 00:10/18:30 이중 스케줄
   회귀 테스트 포함 전체 332 테스트와 Ruff 통과
-- 운영: 코드만, 배포 및 8월 19일 공시 재수집 대기
+- 배포 시각: 2026-08-19 17:28 KST
+- 운영: `main` `977f928`로 pit-collector만 재빌드·재생성. restart 0,
+  `event_rows=742`, KIS 실패 0. 8월 19일 DB 공시는 4건에서 345건으로
+  복구했고, 이후 추가된 당일 공시는 18:30 갱신·00:10 최종화 대상으로 유지
+
+### 공식 프로젝트 용어집(Glossary) 구축
+
+- 기록 시각: 2026-08-19 17:15 KST
+- 동작: 시스템 아키텍처·안전, PIT 무결성, setup-v2.2 전략 규칙, 원장/손익 엔진,
+  자동화·연동, 멀티에이전트 체계 용어를 총망라한 [`docs/glossary.md`](glossary.md)
+  작성 및 주요 문서 연결
+- 운영: 문서만, 배포 없음
+
+### 1d 마감 일봉 cycle의 intraday review DB 연결 타이밍 수정
+
+- 기록 시각: 2026-08-19 16:08 KST
+- 동작: `_run_paper_cycle`에서 `interval=1d` 시 수행하는 `_intraday_review_for_day` 호출을
+  `cycle_state` 저장소 close 이전(`ExitStack` 내부)으로 이동하여 `OperationalError: the connection is closed` 해결
+- 운영: 반영함. 2026-08-19 16:05 KST `automation` 컨테이너 재빌드·재기동 완료
+
+### Hermes 대화 조회 페이지
+
+- 기록 시각: 2026-08-19 16:45 KST
+- 동작: `/hermes`가 `automation_run_logs`의 `hermes_trade`·`market_scan`·`daily`를
+  읽는다. 종목 판단은 기존 `rationale`. 장전/마감은 이제 `details.assistant`에
+  응답 본문(최대 4000자). 요청 JSON·secret은 계속 안 넣음. 과거 장전/마감은
+  token만 있어 본문 없음으로 표시
+- 운영: 반영함. 2026-08-19 17:05 KST `timeline` recreate. `/healthz` 200,
+  restart 0, healthy. `/hermes` 200. API `hermesConversations` 58건
 
 ### KIS 최신 세션 원장 지연 보완
 
@@ -32,7 +68,10 @@
 - 추가 기록: 2026-08-19 16:36 KST. 신규 상장 보통주의 영숫자 6자리
   단축코드를 허용하고, 금액이 빈 과거 행은 제외하며 비정상 숫자는 종목 단위로
   격리. KIS 실조회에서 엔비알모션 `0004V0` 30행·최신 8월 19일 확인
-- 운영: 코드만, 배포 및 운영 DB 재수집 대기
+- 배포 시각: 2026-08-19 16:40 KST
+- 운영: `main` `72cece4`까지 푸시하고 pit-collector만 재빌드·재생성.
+  restart 0, `flow_rows=253`, `AVAILABLE_FIRST_OBSERVED`, 실패 0. PostgreSQL에
+  KIS 8월 18일 328종·19일 329종을 확인했고 `0004V0`도 두 세션 모두 저장
 
 ### setup-v2 universe membership 강화
 
@@ -60,7 +99,8 @@
 - 기록 시각: 2026-08-19 14:56 KST
 - 동작: 종목/신호/체결/실패를 한 줄. 신호 mint·체결 amber·실패 red는 0 초과만.
   idle 사유와 퍼널 건수를 details summary 한 줄에 합침
-- 운영: 코드만, 배포 대기
+- 운영: 반영함. 2026-08-19 16:22 KST `timeline` recreate. `/healthz` 200,
+  restart 0, healthy. 라이브 `/assets/cycles.js`에 `cycle-funnel-n` 확인
 
 ### Cycle/장부 타임라인 compact UI
 
