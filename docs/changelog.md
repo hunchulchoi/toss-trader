@@ -7,6 +7,13 @@
 
 ## 2026-08-19
 
+### 동적 universe vs setup-v2 교차토론
+
+- 기록 시각: 2026-08-19 13:55 KST
+- 동작: agy 수정채택. 08:30 freeze·눌림-only 철회. 합의는
+  [`docs/2026-08-19/universe-strategy-debate.md`](2026-08-19/universe-strategy-debate.md)
+- 운영: 문서만. 장중 코드·배포 없음
+
 ### setup-v2 가격 후보 기반 장중 universe
 
 - 기록 시각: 2026-08-19 13:48 KST
