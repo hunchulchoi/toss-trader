@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-007 Align Toss opening-minute timestamps
+
+- Owner: codex
+- Status: DONE
+- Result: treated Toss's 09:01 completion timestamp as the 09:00-09:01
+  opening minute and paged bounded older minute data for intraday symbols whose
+  initial window does not include the opening bar
+- Checks: 309 tests; deployed automation healthy with restart 0; 12:40 Rule and
+  Hermes cycles succeeded with zero failures/API errors and zero
+  `waiting:first-session-bar` skips
+- Risks: no current symbol passed the strict price/flow/event gates, so the
+  verified cycle correctly produced zero signals and fills
+
 ### DATA-007 Align flow coverage with dynamic universe
 
 - Owner: codex
