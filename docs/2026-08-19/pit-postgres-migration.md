@@ -28,3 +28,13 @@ toss-trader migrate-official-sqlite --source /app/data/market.db
 전환 절차는 SQLite/PG 테이블별 행 수 대조, PostgreSQL 최근 KRX 행 확인,
 collector와 automation 재생성, setup-v2 read 검증 순서다. 대조 실패 시 서비스는
 기존 버전으로 유지한다.
+
+## 2026-08-19 production result
+
+- events: 12,716
+- universe: 25,844
+- flow: 235 (2026-08-18 KRX 190)
+- coverage: 16
+- partitions: universe/flow `2026-08`
+- deployed runtime: PostgreSQL, `TRADING_ENABLED=false`
+- legacy SQLite: preserved

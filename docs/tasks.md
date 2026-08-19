@@ -16,20 +16,26 @@ agents must sync from `main` before claiming or handing off work.
 
 ## IN PROGRESS
 
-### DATA-006 Move official PIT storage to PostgreSQL partitions
-
-- Owner: codex
-- Status: IN PROGRESS
-- Goal: move official PIT collection and setup-v2 reads from the shared SQLite
-  file to `common-postgres`, with monthly partitions for session-heavy tables
-- Acceptance: idempotent legacy copy, row-count parity, PostgreSQL runtime reads,
-  healthy collector/automation deployment, and no automatic partition deletion
+No active tasks.
 
 ## REVIEW
 
 No tasks awaiting review.
 
 ## DONE
+
+### DATA-006 Move official PIT storage to PostgreSQL partitions
+
+- Owner: codex
+- Status: DONE
+- Result: moved collector and setup-v2 PIT access to `common-postgres`, added
+  monthly session partitions plus idempotent SQLite migration, and retained
+  SQLite fallback for local development and rollback
+- Checks: 305 unit tests; scoped Ruff; exact migration parity for 12,716 events,
+  25,844 universe rows, 235 flow rows, and 16 coverage rows; deployed setup-v2
+  read returned the expected PostgreSQL flow observation; both services restart 0
+- Risks: old SQLite remains intentionally preserved; partition archive/retention
+  period is not yet set, and no automatic drop is permitted
 
 ### DATA-005 Official KRX flow CSV import
 
