@@ -2,9 +2,11 @@
 
 The n8n workflow runs at 11:50 and 15:40 KST on Korean market days, then queues
 the Rule and Hermes shared comparison snapshot in `daily_analysis_panels`. Both
-schedules pass the Toss market-calendar gate first. The 11:50 context is marked
-`midday` and non-final; 15:40 is marked `close`. The workflow no longer calls the
-single Hermes analysis sidecar or sends the report itself.
+schedules pass the Toss market-calendar gate first. Manual and authenticated
+webhook runs use the same gate, so no briefing runs on a closed market day. The
+11:50 context is marked `midday` and non-final; 15:40 is marked `close`. The
+workflow no longer calls the single Hermes analysis sidecar or sends the report
+itself.
 
 The main Hermes container polls that queue with
 `automation/hermes-panel-runner.py`. The script is intentionally fixed-purpose:

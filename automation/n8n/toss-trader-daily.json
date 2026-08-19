@@ -24,8 +24,8 @@
   ],
   "connections": {
     "평일 11:50·15:40 KST": {"main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]},
-    "수동 테스트": {"main": [[{"node": "시장 Snapshot + Rule 일봉", "type": "main", "index": 0}]]},
-    "인증된 마감 리뷰 요청": {"main": [[{"node": "시장 Snapshot + Rule 일봉", "type": "main", "index": 0}]]},
+    "수동 테스트": {"main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]},
+    "인증된 마감 리뷰 요청": {"main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]},
     "Toss 한국장 일정 확인": {"main": [[{"node": "한국장 영업일?", "type": "main", "index": 0}]]},
     "한국장 영업일?": {"main": [[{"node": "시장 Snapshot + Rule 일봉", "type": "main", "index": 0}], []]},
     "시장 Snapshot + Rule 일봉": {"main": [[{"node": "Rule 일봉 정상?", "type": "main", "index": 0}]]},

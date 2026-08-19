@@ -322,6 +322,9 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("midday", encoded)
         self.assertIn("close", encoded)
         self._assert_scheduled_runs_use_toss_market_calendar(workflow)
+        for trigger_name in ("수동 테스트", "인증된 마감 리뷰 요청"):
+            target = workflow["connections"][trigger_name]["main"][0][0]["node"]
+            self.assertEqual(target, "Toss 한국장 일정 확인")
         for branch in (
             "Rule 일봉 정상?",
             "Rule 일봉 체결 있음?",

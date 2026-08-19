@@ -28,10 +28,10 @@ No tasks awaiting review.
 
 - Owner: codex
 - Status: DONE
-- Result: the shared daily panel now runs at 11:50 and 15:40 KST after the
-  Toss Korean-market calendar gate. The 11:50 snapshot is labeled non-final in
-  DB context, model prompts, and Telegram output so no analyst can describe it
-  as a closing result.
+- Result: the shared daily panel now runs at 11:50 and 15:40 KST. Scheduled,
+  manual, and authenticated webhook entry points all pass the Toss Korean-market
+  calendar gate. The 11:50 snapshot is labeled non-final in DB context, model
+  prompts, and Telegram output so no analyst can describe it as a closing result.
 - Checks: targeted automation and monitoring asset tests; JSON and Git
   whitespace validation
 - Risks: each briefing invokes the full seven-opinion panel, so weekday model

@@ -116,7 +116,8 @@ tool/plugin/MCP/context tool이 없다. Telegram 질의용 MCP는 `paper-mcp`다
 세 workflow의 schedule trigger는 본 작업 전에 `POST /workflow/market-session`으로 Toss
 한국장 일정을 조회한다. `isBusinessDay=false`면 해당 execution을 정상 종료하고
 cycle·스캔·Hermes·Telegram을 실행하지 않는다. Toss 일정 조회 오류도 fail-closed로
-본 작업을 막으며, 수동 trigger와 인증 webhook은 운영자 재실행을 위해 우회한다.
+본 작업을 막는다. 중간·마감 workflow는 수동 trigger와 인증 webhook도 같은
+calendar gate를 통과한다.
 
 ## API 구성도
 
