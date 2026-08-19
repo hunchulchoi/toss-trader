@@ -88,11 +88,13 @@ function setFilters() {
   if (current) select.value = current;
 }
 
-function metric(label, value) {
-  const node = document.createElement("div");
+function metric(label, value, kind) {
+  const node = document.createElement("span");
+  node.className = "cycle-metric";
+  if (kind && Number(value) > 0) node.classList.add(kind);
   const name = document.createElement("span"); name.textContent = label;
-  const count = document.createElement("strong"); count.textContent = value;
-  node.append(name, count);
+  const count = document.createElement("b"); count.textContent = String(value ?? 0);
+  node.append(name, " ", count);
   return node;
 }
 
@@ -209,15 +211,23 @@ function renderCard(run, portfolioId) {
   head.append(identity, elapsed); card.append(head);
 
   const metrics = document.createElement("div"); metrics.className = "cycle-metrics";
-  metrics.append(metric("종목", run.symbolCount), metric("신호", run.signalCount), metric("체결", run.fillCount), metric("실패", run.failedCount));
+  metrics.append(
+    metric("종목", run.symbolCount),
+    metric("신호", run.signalCount, "signal"),
+    metric("체결", run.fillCount, "fill"),
+    metric("실패", run.failedCount, "fail"),
+  );
   card.append(metrics);
 
-  const summary = document.createElement("div"); summary.className = `cycle-summary${run.error ? " error" : ""}`;
-  summary.textContent = run.error || translateReason(run.idleReason);
-  card.append(summary);
-
   const details = document.createElement("details"); details.className = "cycle-details";
-  const detailSummary = document.createElement("summary"); detailSummary.textContent = `퍼널 · 종목별 사유 ${run.symbolStates?.length || 0}건`;
+  const detailSummary = document.createElement("summary");
+  const reason = document.createElement("span");
+  reason.className = `cycle-summary${run.error ? " error" : ""}`;
+  reason.textContent = run.error || translateReason(run.idleReason);
+  const funnelN = document.createElement("span");
+  funnelN.className = "cycle-funnel-n";
+  funnelN.textContent = `퍼널 · ${run.symbolStates?.length || 0}건`;
+  detailSummary.append(reason, funnelN);
   details.append(detailSummary);
   const funnel = document.createElement("div"); funnel.className = "funnel";
   Object.entries(run.funnel || {}).forEach(([key, value]) => {
