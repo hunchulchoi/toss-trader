@@ -1175,6 +1175,11 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             snapshot=snapshot,
         )
         cash_balance = paper_ledger.cash_balance(settings.paper_initial_cash)
+        intraday_review = (
+            _intraday_review_for_day(cycle_state, now)
+            if interval == "1d"
+            else None
+        )
     _emit(
         {
             "portfolioId": args.portfolio,
@@ -1217,11 +1222,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 "failed": result.failed_count,
                 "idleReason": result.insight["idleReason"],
             },
-            "intradayReview": (
-                _intraday_review_for_day(cycle_state, now)
-                if interval == "1d"
-                else None
-            ),
+            "intradayReview": intraday_review,
             "items": [
                 {**asdict(item), "name": symbol_names[item.symbol]}
                 for item in result.items

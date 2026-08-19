@@ -2,6 +2,7 @@
 
 paper cycle의 신호·진입·청산 상태기계는
 [`paper-cycle-flow.md`](paper-cycle-flow.md)를 기준으로 한다.
+프로젝트 핵심 용어 정의는 [`glossary.md`](glossary.md)를 참고한다.
 
 ## 현재 범위
 

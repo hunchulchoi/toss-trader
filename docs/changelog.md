@@ -7,6 +7,21 @@
 
 ## 2026-08-19
 
+### 공식 프로젝트 용어집(Glossary) 구축
+
+- 기록 시각: 2026-08-19 17:15 KST
+- 동작: 시스템 아키텍처·안전, PIT 무결성, setup-v2.2 전략 규칙, 원장/손익 엔진,
+  자동화·연동, 멀티에이전트 체계 용어를 총망라한 [`docs/glossary.md`](glossary.md)
+  작성 및 주요 문서 연결
+- 운영: 문서만, 배포 없음
+
+### 1d 마감 일봉 cycle의 intraday review DB 연결 타이밍 수정
+
+- 기록 시각: 2026-08-19 16:08 KST
+- 동작: `_run_paper_cycle`에서 `interval=1d` 시 수행하는 `_intraday_review_for_day` 호출을
+  `cycle_state` 저장소 close 이전(`ExitStack` 내부)으로 이동하여 `OperationalError: the connection is closed` 해결
+- 운영: 반영함. 2026-08-19 16:05 KST `automation` 컨테이너 재빌드·재기동 완료
+
 ### Hermes 대화 조회 페이지
 
 - 기록 시각: 2026-08-19 16:45 KST

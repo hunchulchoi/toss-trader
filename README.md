@@ -7,6 +7,7 @@
 정리되어 있습니다.
 Hermes Telegram의 paper 장부 조회는
 [`docs/paper-mcp.md`](docs/paper-mcp.md)를 참고합니다.
+프로젝트 공식 용어집은 [`docs/glossary.md`](docs/glossary.md).
 날짜별 기능 추가는 [`docs/changelog.md`](docs/changelog.md).
 
 - OAuth 2.0 Client Credentials 토큰 캐시
