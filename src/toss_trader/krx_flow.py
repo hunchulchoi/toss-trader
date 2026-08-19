@@ -20,7 +20,11 @@ _SYMBOL = re.compile(r"^[0-9]{6}$")
 class KrxFlowImportResult:
     session_date: str
     target_symbols: int
+    imported_symbols: int
     inserted_rows: int
+    complete: bool
+    missing_foreign: tuple[str, ...]
+    missing_institutional: tuple[str, ...]
     foreign_file_hash: str
     institutional_file_hash: str
     available_at: str
@@ -50,18 +54,14 @@ class KrxInvestorFlowCsvImporter:
         institutional_bytes = Path(institutional_csv).read_bytes()
         foreign = _parse_net_purchase_csv(foreign_bytes)
         institutional = _parse_net_purchase_csv(institutional_bytes)
-        missing_foreign = sorted(set(targets) - foreign.keys())
-        missing_institutional = sorted(set(targets) - institutional.keys())
-        if missing_foreign or missing_institutional:
-            parts = []
-            if missing_foreign:
-                parts.append(f"foreign missing {len(missing_foreign)}: {missing_foreign[:5]}")
-            if missing_institutional:
-                parts.append(
-                    "institutional missing "
-                    f"{len(missing_institutional)}: {missing_institutional[:5]}"
-                )
-            raise ValueError("KRX CSV coverage mismatch; " + "; ".join(parts))
+        target_set = set(targets)
+        missing_foreign = tuple(sorted(target_set - foreign.keys()))
+        missing_institutional = tuple(sorted(target_set - institutional.keys()))
+        imported_symbols = tuple(
+            sorted(target_set & foreign.keys() & institutional.keys())
+        )
+        if not imported_symbols:
+            raise ValueError("KRX CSV files have no common target symbols")
 
         session_indexes = self._repository.session_indexes()
         if session_date not in session_indexes:
@@ -69,7 +69,7 @@ class KrxInvestorFlowCsvImporter:
         trading_values = self._repository.trading_values(session_date)
         missing_trading = sorted(
             symbol
-            for symbol in targets
+            for symbol in imported_symbols
             if symbol not in trading_values or trading_values[symbol] <= 0
         )
         if missing_trading:
@@ -82,18 +82,13 @@ class KrxInvestorFlowCsvImporter:
             session=session_date,
             source=KRX_FLOW_SOURCE,
         )
-        missing_existing = set(targets) - existing
-        if existing and missing_existing:
-            raise RuntimeError(
-                "existing KRX flow import is incomplete; refusing mixed retry: "
-                f"{sorted(missing_existing)[:5]}"
-            )
+        new_symbols = tuple(symbol for symbol in imported_symbols if symbol not in existing)
 
         foreign_hash = hashlib.sha256(foreign_bytes).hexdigest()
         institutional_hash = hashlib.sha256(institutional_bytes).hexdigest()
         observed_text = observed_at.astimezone(UTC).isoformat()
         rows = []
-        for symbol in targets:
+        for symbol in new_symbols:
             canonical = json.dumps(
                 {
                     "foreign_file_hash": foreign_hash,
@@ -122,8 +117,9 @@ class KrxInvestorFlowCsvImporter:
                     "payload_hash": hashlib.sha256(canonical).hexdigest(),
                 }
             )
-        inserted = 0 if existing else self._repository.insert_flow_rows(rows)
-        if inserted:
+        inserted = self._repository.insert_flow_rows(rows)
+        complete = not missing_foreign and not missing_institutional
+        if complete and inserted and set(targets) <= existing | set(new_symbols):
             self._repository.record_coverage(
                 dataset="flow_krx",
                 start=session_date,
@@ -135,7 +131,11 @@ class KrxInvestorFlowCsvImporter:
         return KrxFlowImportResult(
             session_date=session_date.isoformat(),
             target_symbols=len(targets),
+            imported_symbols=len(imported_symbols),
             inserted_rows=inserted,
+            complete=complete,
+            missing_foreign=missing_foreign,
+            missing_institutional=missing_institutional,
             foreign_file_hash=foreign_hash,
             institutional_file_hash=institutional_hash,
             available_at=observed_text,

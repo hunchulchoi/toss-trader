@@ -155,9 +155,10 @@ infisical run --env=prod --path=/ -- toss-trader import-krx-flow-csv \
   --institutional-csv /path/to/institutional.csv
 ```
 
-두 파일의 현재 유니버스 종목이 모두 일치하고 해당 세션의 공식 거래대금이
-있을 때만 원자적으로 저장한다. `available_at`은 실제 import 시각이며 과거로
-소급하지 않는다. 동일 세션에 KIS와 KRX가 모두 있으면 setup-v2는 KRX를 우선한다.
+두 파일에 모두 있는 현재 유니버스 종목 중 해당 세션의 공식 거래대금이 있는
+행만 저장한다. 한쪽 파일에서 빠진 종목은 setup-v2에서 계속 fail-closed한다.
+`available_at`은 실제 import 시각이며 과거로 소급하지 않는다. 동일 세션에
+KIS와 KRX가 모두 있으면 setup-v2는 KRX를 우선한다.
 
 paper 주문:
 

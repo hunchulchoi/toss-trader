@@ -78,6 +78,8 @@ class KrxFlowImportTest(unittest.TestCase):
 
         self.assertEqual(result.inserted_rows, 2)
         self.assertEqual(result.target_symbols, 2)
+        self.assertEqual(result.imported_symbols, 2)
+        self.assertTrue(result.complete)
         self.assertEqual(second.inserted_rows, 0)
         self.assertEqual(
             coverage,
@@ -91,22 +93,57 @@ class KrxFlowImportTest(unittest.TestCase):
             ],
         )
 
-    def test_rejects_missing_target_symbol_without_partial_insert(self) -> None:
+    def test_imports_common_symbols_and_keeps_missing_symbols_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repository = OfficialDataRepository(str(root / "market.db"))
+            repository.upsert_universe_rows(
+                [
+                    {
+                        "session_date": "2026-08-18",
+                        "symbol": symbol,
+                        "isin_code": f"KR7{symbol}003",
+                        "display_name": symbol,
+                        "market_category": "KOSPI",
+                        "close_price": "100",
+                        "market_cap": "1",
+                        "trading_value": "1000",
+                        "listed_share_count": "1",
+                        "security_type": "COMMON",
+                        "source": "datago",
+                        "source_record_id": symbol,
+                        "published_at": None,
+                        "available_at": None,
+                        "retrieved_at": "2026-08-18T09:00:00+00:00",
+                        "payload_hash": symbol,
+                    }
+                    for symbol in ("005930", "000660", "035420")
+                ]
+            )
             foreign = root / "foreign.csv"
             institutional = root / "institutional.csv"
-            foreign.write_text("종목코드,순매수거래대금\n005930,100\n", encoding="utf-8")
+            foreign.write_text(
+                "종목코드,순매수거래대금\n005930,100\n000660,20\n",
+                encoding="utf-8",
+            )
             institutional.write_text(
-                "종목코드,순매수거래대금\n000660,100\n", encoding="utf-8"
+                "종목코드,순매수거래대금\n005930,-10\n035420,30\n",
+                encoding="utf-8",
             )
 
-            with self.assertRaisesRegex(ValueError, "coverage mismatch"):
-                KrxInvestorFlowCsvImporter(repository).import_files(
-                    session_date=date(2026, 8, 18),
-                    foreign_csv=foreign,
-                    institutional_csv=institutional,
-                    target_symbols=["005930", "000660"],
-                )
+            result = KrxInvestorFlowCsvImporter(repository).import_files(
+                session_date=date(2026, 8, 18),
+                foreign_csv=foreign,
+                institutional_csv=institutional,
+                target_symbols=["005930", "000660", "035420"],
+            )
+            rows = repository.flow_symbols(
+                session=date(2026, 8, 18), source="krx:manual-csv"
+            )
             repository.close()
+
+        self.assertEqual(rows, {"005930"})
+        self.assertEqual(result.imported_symbols, 1)
+        self.assertFalse(result.complete)
+        self.assertEqual(result.missing_foreign, ("035420",))
+        self.assertEqual(result.missing_institutional, ("000660",))
