@@ -20,25 +20,24 @@ No tasks in progress.
 
 ## REVIEW
 
+No tasks awaiting review.
+
+## DONE
+
 ### STRAT-009 Harden setup-v2 universe membership
 
 - Owner: codex/cursor/agy
-- Status: REVIEW
-- Goal: separate acquisition errors from valid empty selections, keep mutable
-  account/system Risk out of membership, and derive the authoritative universe
-  from overfetched trading-amount ranks after static eligibility filtering
+- Status: DONE
 - Result: amount-only overfetch, static eligible reranking, setup filtering, valid
   empty caching, acquisition failure retry, mutable Risk execution-only, and
-  local membership and n8n execution Risk separation implemented. The optional
-  n8n universe contract remains policy v2-compatible for parity tests. Raw/
-  eligible ranks are audit provenance, not exact replay inputs.
+  local membership/n8n execution Risk separation. Raw/eligible ranks are audit
+  provenance, not exact replay inputs.
 - Checks: 327 unit tests; scoped Ruff; JSON and n8n Code syntax; Git whitespace;
-  isolated real Toss smoke; Cursor and agy reviews with zero MUST FIX findings
-- Risks: production DB migration and service rollout remain pending. Optional
-  n8n universe compatibility path is policy v2, while live trade stays backward-
-  compatible with policy v1 and production membership makes no n8n call
-
-## DONE
+  isolated real Toss smoke; Cursor and agy reviews with zero MUST FIX findings;
+  production health/restart/safety switch and PostgreSQL migration verified
+- Risks: today's pre-deployment successful universe remains cached by contract;
+  the first live selection under the new rules occurs next Seoul trading day.
+  Exact replay and full-market recall remain unsupported.
 
 ### STRAT-008 Align universe with setup-v2 price candidates
 

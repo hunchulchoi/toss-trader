@@ -22,7 +22,11 @@
 - 추가 기록: 2026-08-19 15:44 KST. 최대 100회의 순차 n8n 호출을 피하도록
   universe 정적 membership은 로컬 검증으로 고정. 실제 BUY·SELL만 n8n Risk를
   사용하며 trade는 기존 policy v1, 선택적 universe 호환 계약은 v2로 분리
-- 운영: 코드·workflow export만 변경. DB migration·n8n publish·서비스 배포 대기
+- 배포 시각: 2026-08-19 16:04 KST
+- 운영: `main` `bea6203`까지 푸시하고 automation을 재빌드·재생성. health
+  `healthy`, restart 0, `TRADING_ENABLED=false`; 실행 이미지에서 로컬 universe
+  Risk와 원격 trade Risk 경계를 확인. PostgreSQL `eligible_rank` migration 및
+  컬럼 확인 완료. 당일 기존 성공 cache는 유지해 새 선정은 다음 서울 거래일 적용
 
 ### Cycle 카드 메트릭·사유 한 줄
 
