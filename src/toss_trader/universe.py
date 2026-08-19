@@ -4,7 +4,7 @@ import json
 import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol
@@ -23,6 +23,15 @@ from .risk import (
 from .setup_screening import evaluate_price_setups
 
 SEOUL = ZoneInfo("Asia/Seoul")
+STATIC_UNIVERSE_VIOLATIONS = frozenset(
+    {
+        "unsupported-security-type",
+        "not-common-share",
+        "stock-not-active",
+        "trading-suspended",
+        "invalid-reference-price",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +40,7 @@ class UniverseDecision:
     score: Decimal
     amount_rank: int | None
     gainer_rank: int | None
+    eligible_rank: int | None
     change_rate: Decimal
     trading_amount: Decimal
     reference_price: Decimal
@@ -62,7 +72,9 @@ class RankingClient(Protocol):
 
 
 class UniverseStore(Protocol):
-    def latest_selected_since(self, since: datetime) -> tuple[str, ...] | None: ...
+    def latest_selected_between(
+        self, since: datetime, until: datetime
+    ) -> tuple[str, ...] | None: ...
 
     def record_success(
         self,
@@ -99,6 +111,7 @@ CREATE TABLE IF NOT EXISTS dynamic_universe_decisions (
     score TEXT NOT NULL,
     amount_rank INTEGER,
     gainer_rank INTEGER,
+    eligible_rank INTEGER,
     change_rate TEXT NOT NULL,
     trading_amount TEXT NOT NULL,
     reference_price TEXT NOT NULL,
@@ -131,6 +144,7 @@ CREATE TABLE IF NOT EXISTS dynamic_universe_decisions (
     score NUMERIC NOT NULL,
     amount_rank INTEGER,
     gainer_rank INTEGER,
+    eligible_rank INTEGER,
     change_rate NUMERIC NOT NULL,
     trading_amount NUMERIC NOT NULL,
     reference_price NUMERIC NOT NULL,
@@ -142,6 +156,9 @@ CREATE INDEX IF NOT EXISTS dynamic_universe_runs_time_idx
 ON dynamic_universe_runs (evaluated_at DESC);
 CREATE INDEX IF NOT EXISTS dynamic_universe_decisions_run_idx
 ON dynamic_universe_decisions (run_id, selected, score DESC)
+;
+ALTER TABLE dynamic_universe_decisions
+ADD COLUMN IF NOT EXISTS eligible_rank INTEGER
 """
 
 
@@ -155,6 +172,7 @@ class DynamicUniverseSelector:
         store: UniverseStore,
         risk_manager: RiskManager,
         candidate_count: int,
+        ranking_fetch_count: int,
         universe_size: int,
     ) -> None:
         self._client = client
@@ -163,7 +181,12 @@ class DynamicUniverseSelector:
         self._store = store
         self._risk_manager = risk_manager
         self._candidate_count = candidate_count
+        self._ranking_fetch_count = ranking_fetch_count
         self._universe_size = universe_size
+        if ranking_fetch_count < candidate_count:
+            raise ValueError("ranking fetch count must be at least candidate count")
+        if universe_size > candidate_count:
+            raise ValueError("universe size must not exceed candidate count")
 
     def resolve(
         self,
@@ -174,7 +197,7 @@ class DynamicUniverseSelector:
     ) -> UniverseRefreshResult:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("universe decision time must include a timezone offset")
-        cached = self._store.latest_selected_since(_seoul_day_start(now))
+        cached = self._store.latest_selected_between(_seoul_day_start(now), now)
         if cached is not None:
             return UniverseRefreshResult(
                 run_id=None,
@@ -222,43 +245,66 @@ class DynamicUniverseSelector:
             market_country="KR",
             duration="realtime",
             exclude_investment_caution=True,
-            count=self._candidate_count,
-        )
-        gainers = self._client.rankings(
-            ranking_type="TOP_GAINERS",
-            market_country="KR",
-            duration="1d",
-            exclude_investment_caution=True,
-            count=self._candidate_count,
+            count=self._ranking_fetch_count,
         )
         amount_rows, amount_ranked_at = _ranking_rows(amount)
-        gainer_rows, gainer_ranked_at = _ranking_rows(gainers)
-        combined = _combine_rankings(amount_rows, gainer_rows, self._candidate_count)
-        if not combined:
+        ranked = _amount_rankings(amount_rows)
+        if not ranked:
             raise RuntimeError("dynamic universe rankings are empty")
-        symbols = tuple(item["symbol"] for item in combined)
+        symbols = tuple(item["symbol"] for item in ranked)
         stocks = self._client.stocks(symbols)
         stock_by_symbol = _stock_info(stocks, symbols)
         self._repository.upsert_symbol_names(
             {symbol: str(stock_by_symbol[symbol]["name"]) for symbol in symbols}
         )
         provisional: list[tuple[dict[str, Any], RiskDecision]] = []
-        for item in combined:
+        eligible_rank = 0
+        for item in ranked:
             symbol = item["symbol"]
             stock = stock_by_symbol[symbol]
-            try:
-                completed = self._completed_daily(symbol, now=now)
-            except (OSError, RuntimeError, TypeError, ValueError):
+            security_type, is_common_share, status, trading_suspended = (
+                _stock_risk_fields(stock, symbol)
+            )
+            static_risk = self._risk_manager.evaluate_universe_candidate(
+                UniverseCandidateRisk(
+                    symbol=symbol,
+                    reference_price=item["reference_price"],
+                    security_type=security_type,
+                    is_common_share=is_common_share,
+                    status=status,
+                    trading_suspended=trading_suspended,
+                ),
+                risk_context,
+            )
+            unexpected_risk = set(static_risk.violations) - STATIC_UNIVERSE_VIOLATIONS
+            if unexpected_risk:
+                raise RuntimeError(
+                    f"universe risk policy unavailable for {symbol}: "
+                    f"{','.join(sorted(unexpected_risk))}"
+                )
+            if not static_risk.approved:
+                provisional.append((item, static_risk))
+                continue
+            eligible_rank += 1
+            item["eligible_rank"] = eligible_rank
+            if eligible_rank > self._candidate_count:
                 provisional.append(
                     (
                         item,
                         RiskDecision(
                             approved=False,
-                            violations=("price-setup-unavailable",),
+                            violations=("outside-eligible-candidate-limit",),
                         ),
                     )
                 )
                 continue
+            try:
+                completed = self._completed_daily(symbol, now=now)
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                raise RuntimeError(
+                    f"universe price data unavailable for {symbol}: "
+                    f"{type(error).__name__}"
+                ) from error
             if len(completed) < 200:
                 provisional.append(
                     (
@@ -274,17 +320,11 @@ class DynamicUniverseSelector:
                 continue
             try:
                 price = evaluate_price_setups(completed[-200:])
-            except (TypeError, ValueError):
-                provisional.append(
-                    (
-                        item,
-                        RiskDecision(
-                            approved=False,
-                            violations=("price-setup-unavailable",),
-                        ),
-                    )
-                )
-                continue
+            except (TypeError, ValueError) as error:
+                raise RuntimeError(
+                    f"universe price setup invalid for {symbol}: "
+                    f"{type(error).__name__}"
+                ) from error
             if not price.setups:
                 provisional.append(
                     (
@@ -296,23 +336,7 @@ class DynamicUniverseSelector:
                     )
                 )
                 continue
-            kr_detail = stock.get("koreanMarketDetail")
-            kr_detail = kr_detail if isinstance(kr_detail, Mapping) else {}
-            risk = self._risk_manager.evaluate_universe_candidate(
-                UniverseCandidateRisk(
-                    symbol=symbol,
-                    reference_price=item["reference_price"],
-                    security_type=str(stock.get("securityType", "")),
-                    is_common_share=stock.get("isCommonShare") is True,
-                    status=str(stock.get("status", "")),
-                    trading_suspended=(
-                        kr_detail.get("krxTradingSuspended") is True
-                        or kr_detail.get("nxtTradingSuspended") is True
-                    ),
-                ),
-                risk_context,
-            )
-            provisional.append((item, risk))
+            provisional.append((item, static_risk))
         selected_symbols = set(
             [
                 item["symbol"]
@@ -326,6 +350,7 @@ class DynamicUniverseSelector:
                 score=item["score"],
                 amount_rank=item["amount_rank"],
                 gainer_rank=item["gainer_rank"],
+                eligible_rank=item["eligible_rank"],
                 change_rate=item["change_rate"],
                 trading_amount=item["trading_amount"],
                 reference_price=item["reference_price"],
@@ -334,30 +359,48 @@ class DynamicUniverseSelector:
             )
             for item, risk in provisional
         )
-        ranked_at = max(
-            (value for value in (amount_ranked_at, gainer_ranked_at) if value),
-            default=now,
-        )
-        return decisions, ranked_at
+        return decisions, amount_ranked_at
 
     def _completed_daily(self, symbol: str, *, now: datetime) -> list[Candle]:
         today = now.astimezone(SEOUL).date()
-        candles = self._repository.latest_candles(symbol, "1d", limit=400)
-        completed = [
-            candle
-            for candle in candles
-            if candle.timestamp.astimezone(SEOUL).date() < today
-        ]
+        completed = self._stored_completed_daily(symbol, today=today)
         if len(completed) >= 200:
             return completed
-        collection = self._collector.collect(symbol=symbol, interval="1d", count=200)
-        if collection.next_before is not None:
-            self._collector.collect(
-                symbol=symbol,
-                interval="1d",
-                count=1,
-                before=collection.next_before,
-            )
+        before: str | None = None
+        seen_cursors: set[str] = set()
+        for _ in range(5):
+            completed_before = len(completed)
+            kwargs: dict[str, object] = {
+                "symbol": symbol,
+                "interval": "1d",
+                "count": max(1, 200 - len(completed)),
+            }
+            if before is not None:
+                kwargs["before"] = before
+            collection = self._collector.collect(**kwargs)
+            if (
+                not isinstance(collection.received, int)
+                or isinstance(collection.received, bool)
+                or collection.received < 0
+                or collection.received > kwargs["count"]
+            ):
+                raise RuntimeError(f"invalid daily collection count for {symbol}")
+            completed = self._stored_completed_daily(symbol, today=today)
+            if len(completed) >= 200:
+                return completed
+            if collection.next_before is None:
+                if completed and len(completed) == completed_before:
+                    raise RuntimeError(
+                        f"daily history made no progress before exhaustion for {symbol}"
+                    )
+                return completed
+            if collection.next_before in seen_cursors:
+                raise RuntimeError(f"daily cursor made no progress for {symbol}")
+            seen_cursors.add(collection.next_before)
+            before = collection.next_before
+        raise RuntimeError(f"daily pagination limit reached for {symbol}")
+
+    def _stored_completed_daily(self, symbol: str, *, today: date) -> list[Candle]:
         candles = self._repository.latest_candles(symbol, "1d", limit=400)
         return [
             candle
@@ -372,26 +415,44 @@ class SqliteUniverseStore:
             Path(database_path).parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(database_path)
         self._connection.executescript(SQLITE_SCHEMA)
+        columns = {
+            str(row[1])
+            for row in self._connection.execute(
+                "PRAGMA table_info(dynamic_universe_decisions)"
+            )
+        }
+        if "eligible_rank" not in columns:
+            self._connection.execute(
+                "ALTER TABLE dynamic_universe_decisions "
+                "ADD COLUMN eligible_rank INTEGER"
+            )
         self._connection.commit()
 
     def close(self) -> None:
         self._connection.close()
 
-    def latest_selected_since(self, since: datetime) -> tuple[str, ...] | None:
+    def latest_selected_between(
+        self, since: datetime, until: datetime
+    ) -> tuple[str, ...] | None:
         row = self._connection.execute(
             """
             SELECT run_id FROM dynamic_universe_runs
-            WHERE status = 'succeeded' AND evaluated_at >= ?
+            WHERE status = 'succeeded' AND evaluated_at >= ? AND evaluated_at <= ?
             ORDER BY evaluated_at DESC LIMIT 1
             """,
-            (since.isoformat(),),
+            (since.isoformat(), until.isoformat()),
         ).fetchone()
         if row is None:
             return None
         rows = self._connection.execute(
             """
             SELECT symbol FROM dynamic_universe_decisions
-            WHERE run_id = ? AND selected = 1 ORDER BY score DESC, symbol
+            WHERE run_id = ? AND selected = 1
+            ORDER BY
+                CASE WHEN eligible_rank IS NULL THEN score END DESC,
+                eligible_rank,
+                amount_rank,
+                symbol
             """,
             (row[0],),
         ).fetchall()
@@ -408,7 +469,10 @@ class SqliteUniverseStore:
         with self._connection:
             self._connection.execute(
                 """
-                INSERT INTO dynamic_universe_runs VALUES (?, ?, ?, 'succeeded', ?, ?, ?, NULL)
+                INSERT INTO dynamic_universe_runs
+                (run_id, evaluated_at, ranked_at, status, candidate_count,
+                 approved_count, selected_count, error_message)
+                VALUES (?, ?, ?, 'succeeded', ?, ?, ?, NULL)
                 """,
                 (
                     run_id,
@@ -421,8 +485,11 @@ class SqliteUniverseStore:
             )
             self._connection.executemany(
                 """
-                INSERT INTO dynamic_universe_decisions VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO dynamic_universe_decisions
+                (decision_id, run_id, evaluated_at, symbol, score, amount_rank,
+                 gainer_rank, eligible_rank, change_rate, trading_amount,
+                 reference_price, risk_approved, selected, violations)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [_sqlite_decision(run_id, evaluated_at, item) for item in decisions],
             )
@@ -433,7 +500,9 @@ class SqliteUniverseStore:
         with self._connection:
             self._connection.execute(
                 """
-                INSERT INTO dynamic_universe_runs VALUES
+                INSERT INTO dynamic_universe_runs
+                (run_id, evaluated_at, ranked_at, status, candidate_count,
+                 approved_count, selected_count, error_message) VALUES
                 (?, ?, NULL, 'failed', 0, 0, 0, ?)
                 """,
                 (run_id, evaluated_at.isoformat(), error_message[:2000]),
@@ -458,15 +527,18 @@ class PostgresUniverseStore:
     def close(self) -> None:
         self._connection.close()
 
-    def latest_selected_since(self, since: datetime) -> tuple[str, ...] | None:
+    def latest_selected_between(
+        self, since: datetime, until: datetime
+    ) -> tuple[str, ...] | None:
         with self._connection.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT run_id FROM dynamic_universe_runs
-                WHERE status = 'succeeded' AND evaluated_at >= %s
+                WHERE status = 'succeeded'
+                  AND evaluated_at >= %s AND evaluated_at <= %s
                 ORDER BY evaluated_at DESC LIMIT 1
                 """,
-                (since,),
+                (since, until),
             )
             row = cursor.fetchone()
             if row is None:
@@ -474,7 +546,12 @@ class PostgresUniverseStore:
             cursor.execute(
                 """
                 SELECT symbol FROM dynamic_universe_decisions
-                WHERE run_id = %s AND selected ORDER BY score DESC, symbol
+                WHERE run_id = %s AND selected
+                ORDER BY
+                    CASE WHEN eligible_rank IS NULL THEN score END DESC,
+                    eligible_rank,
+                    amount_rank,
+                    symbol
                 """,
                 (row[0],),
             )
@@ -491,7 +568,9 @@ class PostgresUniverseStore:
         with self._connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO dynamic_universe_runs VALUES
+                INSERT INTO dynamic_universe_runs
+                (run_id, evaluated_at, ranked_at, status, candidate_count,
+                 approved_count, selected_count, error_message) VALUES
                 (%s, %s, %s, 'succeeded', %s, %s, %s, NULL)
                 """,
                 (
@@ -505,8 +584,12 @@ class PostgresUniverseStore:
             )
             cursor.executemany(
                 """
-                INSERT INTO dynamic_universe_decisions VALUES
-                (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO dynamic_universe_decisions
+                (decision_id, run_id, evaluated_at, symbol, score, amount_rank,
+                 gainer_rank, eligible_rank, change_rate, trading_amount,
+                 reference_price, risk_approved, selected, violations)
+                VALUES
+                (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 [_postgres_decision(run_id, evaluated_at, item) for item in decisions],
             )
@@ -518,7 +601,9 @@ class PostgresUniverseStore:
         with self._connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO dynamic_universe_runs VALUES
+                INSERT INTO dynamic_universe_runs
+                (run_id, evaluated_at, ranked_at, status, candidate_count,
+                 approved_count, selected_count, error_message) VALUES
                 (%s, %s, NULL, 'failed', 0, 0, 0, %s)
                 """,
                 (run_id, evaluated_at, error_message[:2000]),
@@ -541,63 +626,63 @@ def _ranking_rows(payload: object) -> tuple[list[Mapping[str, Any]], datetime | 
     if not isinstance(rankings, list):
         raise TypeError("ranking response must contain rankings")
     ranked_at_raw = payload.get("rankedAt")
-    ranked_at = (
-        datetime.fromisoformat(ranked_at_raw)
-        if isinstance(ranked_at_raw, str)
-        else None
-    )
+    ranked_at = None
+    if isinstance(ranked_at_raw, str):
+        ranked_at = datetime.fromisoformat(ranked_at_raw)
+        if ranked_at.tzinfo is None or ranked_at.utcoffset() is None:
+            raise ValueError("ranking rankedAt must include a timezone offset")
+    elif ranked_at_raw is not None:
+        raise TypeError("ranking rankedAt must be text or null")
     if any(not isinstance(item, Mapping) for item in rankings):
         raise TypeError("each ranking must be an object")
     return rankings, ranked_at
 
 
-def _combine_rankings(
-    amount_rows: Sequence[Mapping[str, Any]],
-    gainer_rows: Sequence[Mapping[str, Any]],
-    candidate_count: int,
+def _amount_rankings(
+    rows: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    combined: dict[str, dict[str, Any]] = {}
-    for source, rows in (("amount", amount_rows), ("gainer", gainer_rows)):
-        for item in rows:
-            symbol = item.get("symbol")
-            rank = item.get("rank")
-            if not isinstance(symbol, str) or not isinstance(rank, int):
-                raise TypeError("ranking item missing symbol or rank")
-            price = item.get("price")
-            if not isinstance(price, Mapping):
-                raise TypeError(f"ranking price missing for {symbol}")
-            entry = combined.setdefault(
-                symbol,
-                {
-                    "symbol": symbol,
-                    "amount_rank": None,
-                    "gainer_rank": None,
-                    "change_rate": Decimal(0),
-                    "trading_amount": Decimal(0),
-                    "reference_price": Decimal(0),
-                },
-            )
-            entry[f"{source}_rank"] = rank
-            entry["change_rate"] = _decimal(price.get("changeRate", 0))
-            entry["reference_price"] = _decimal(price.get("lastPrice", 0))
-            entry["trading_amount"] = max(
-                entry["trading_amount"], _decimal(item.get("tradingAmount", 0))
-            )
-    for item in combined.values():
-        amount_score = (
-            2 * (candidate_count + 1 - item["amount_rank"])
-            if item["amount_rank"] is not None
-            else 0
+    ranked: list[dict[str, Any]] = []
+    symbols: set[str] = set()
+    ranks: set[int] = set()
+    for item in rows:
+        symbol = item.get("symbol")
+        rank = item.get("rank")
+        if not isinstance(symbol, str) or not symbol:
+            raise TypeError("ranking item missing symbol")
+        if not isinstance(rank, int) or isinstance(rank, bool) or rank <= 0:
+            raise TypeError(f"ranking item has invalid rank for {symbol}")
+        if symbol in symbols or rank in ranks:
+            raise ValueError("ranking response contains duplicate symbol or rank")
+        symbols.add(symbol)
+        ranks.add(rank)
+        price = item.get("price")
+        if not isinstance(price, Mapping):
+            raise TypeError(f"ranking price missing for {symbol}")
+        ranked.append(
+            {
+                "symbol": symbol,
+                "score": Decimal(1) / Decimal(rank),
+                "amount_rank": rank,
+                "gainer_rank": None,
+                "eligible_rank": None,
+                "change_rate": _required_decimal(
+                    price, "changeRate", context=f"ranking price for {symbol}"
+                ),
+                "trading_amount": _required_decimal(
+                    item, "tradingAmount", context=f"ranking item for {symbol}"
+                ),
+                "reference_price": _required_decimal(
+                    price, "lastPrice", context=f"ranking price for {symbol}"
+                ),
+            }
         )
-        gainer_score = (
-            candidate_count + 1 - item["gainer_rank"]
-            if item["gainer_rank"] is not None
-            else 0
-        )
-        item["score"] = Decimal(amount_score + gainer_score)
     return sorted(
-        combined.values(),
-        key=lambda item: (-item["score"], -item["trading_amount"], item["symbol"]),
+        ranked,
+        key=lambda item: (
+            item["amount_rank"],
+            -item["trading_amount"],
+            item["symbol"],
+        ),
     )
 
 
@@ -614,13 +699,38 @@ def _stock_info(
         name = item.get("name")
         if not isinstance(symbol, str) or symbol not in requested:
             raise ValueError("stock response contains invalid symbol")
+        if symbol in result:
+            raise ValueError(f"stock response contains duplicate symbol: {symbol}")
         if not isinstance(name, str) or not name.strip():
             raise ValueError(f"stock name missing for {symbol}")
+        _stock_risk_fields(item, symbol)
         result[symbol] = item
     missing = sorted(set(requested) - result.keys())
     if missing:
         raise ValueError(f"stock info missing symbols: {', '.join(missing)}")
     return result
+
+
+def _stock_risk_fields(
+    stock: Mapping[str, Any], symbol: str
+) -> tuple[str, bool, str, bool]:
+    security_type = stock.get("securityType")
+    is_common_share = stock.get("isCommonShare")
+    status = stock.get("status")
+    korean_market_detail = stock.get("koreanMarketDetail")
+    if not isinstance(security_type, str) or not security_type:
+        raise TypeError(f"stock securityType missing for {symbol}")
+    if not isinstance(is_common_share, bool):
+        raise TypeError(f"stock isCommonShare missing for {symbol}")
+    if not isinstance(status, str) or not status:
+        raise TypeError(f"stock status missing for {symbol}")
+    if not isinstance(korean_market_detail, Mapping):
+        raise TypeError(f"stock koreanMarketDetail missing for {symbol}")
+    krx_suspended = korean_market_detail.get("krxTradingSuspended")
+    nxt_suspended = korean_market_detail.get("nxtTradingSuspended")
+    if not isinstance(krx_suspended, bool) or not isinstance(nxt_suspended, bool):
+        raise TypeError(f"stock suspension status missing for {symbol}")
+    return security_type, is_common_share, status, krx_suspended or nxt_suspended
 
 
 def _with_held(
@@ -636,9 +746,23 @@ def _seoul_day_start(now: datetime) -> datetime:
 
 def _decimal(value: object) -> Decimal:
     try:
-        return Decimal(str(value))
+        result = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError) as error:
         raise ValueError(f"invalid ranking decimal: {value}") from error
+    if not result.is_finite():
+        raise ValueError(f"invalid ranking decimal: {value}")
+    return result
+
+
+def _required_decimal(
+    payload: Mapping[str, Any], field: str, *, context: str
+) -> Decimal:
+    if field not in payload:
+        raise ValueError(f"{context} missing {field}")
+    result = _decimal(payload[field])
+    if field == "tradingAmount" and result < 0:
+        raise ValueError(f"{context} has negative {field}")
+    return result
 
 
 def _sqlite_decision(
@@ -652,6 +776,7 @@ def _sqlite_decision(
         str(item.score),
         item.amount_rank,
         item.gainer_rank,
+        item.eligible_rank,
         str(item.change_rate),
         str(item.trading_amount),
         str(item.reference_price),
@@ -672,6 +797,7 @@ def _postgres_decision(
         item.score,
         item.amount_rank,
         item.gainer_rank,
+        item.eligible_rank,
         item.change_rate,
         item.trading_amount,
         item.reference_price,

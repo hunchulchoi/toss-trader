@@ -196,6 +196,7 @@ PAPER_ORDER_QUANTITY=1
 PAPER_INITIAL_CASH=1000000
 CANDLE_REQUEST_INTERVAL_SECONDS=0.25
 DYNAMIC_UNIVERSE_CANDIDATE_COUNT=30
+DYNAMIC_UNIVERSE_RANKING_FETCH_COUNT=100
 DYNAMIC_UNIVERSE_SIZE=15
 ```
 
@@ -203,12 +204,16 @@ DYNAMIC_UNIVERSE_SIZE=15
 `/run-paper-cycle` endpoint는 환경값과 관계없이 `--interval 1m`을 강제한다.
 현재 신호 상태기계의 기준 문서는
 [`docs/paper-cycle-flow.md`](docs/paper-cycle-flow.md)다. 1m v2 cycle은 분봉과
-함께 일봉 200개를 요청하고 `nextBefore` cursor로 오래된 1개를 추가 수집한다.
-오늘 미완결봉을 제외한 완결 일봉이 200개보다 적으면 skip한다.
-종목은 고정 watchlist가 아니다. 서울 거래일 첫 cycle에서 Toss 시장 거래대금
-상위 30개와 1일 상승률 상위 30개를 합산 점수화한다. 직전 완결 일봉 200개의
-setup-v2.2 가격 조건을 통과한 종목만 RiskManager가 검사하고 상위 15개까지
-고정한다. 통과 종목이 부족해도 급등 종목으로 채우지 않으며 0종도 정상이다.
+함께 완결 일봉이 200개가 되거나 provider cursor가 소진될 때까지 bounded
+pagination한다. cursor 무진전·페이지 상한·부분 이력 뒤 빈 응답은 데이터 오류로
+재시도하고, 정상 응답으로 확인된 완결 일봉이 200개보다 적을 때만 skip한다.
+종목은 고정 watchlist가 아니다. 서울 거래일 첫 cycle에서 Toss 실시간 거래대금
+랭킹을 최대 100개 조회한다. STOCK·보통주·ACTIVE·거래정상 종목만 다시 순위를
+매겨 상위 30개의 직전 완결 일봉 200개를 검사하고, setup-v2.2 가격 조건 통과
+종목을 최대 15개까지 고정한다. `TOP_GAINERS`는 선정에 쓰지 않는다. 부족분을
+채우지 않으며 정상 평가 결과 0종도 성공이다. 랭킹·metadata·가격 데이터 오류는
+성공 cache로 저장하지 않고 다음 cycle에서 재시도한다. 현금·주문 한도·일일 손실·
+API 오류 같은 가변 Risk는 membership이 아니라 BUY 실행 단계에서 검사한다.
 BUY 후보는 MA 교차가 아니라 직전 완결 일봉의 setup-v2.2 가격 조건과 PIT
 수급·이벤트에서 직접 만든다. D+1 첫 완결 1분봉에서 3% 갭과 위험 수량을 다시
 검사하며, 누락은 `setup-v2-block`으로 차단한다. 이벤트는 OpenDART, 수급은

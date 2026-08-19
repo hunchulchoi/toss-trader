@@ -59,15 +59,20 @@ symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트�
 ## Universe and market snapshot
 
 1. 서울 거래일에 성공한 universe가 있으면 장중 같은 선택을 사용한다.
-2. 첫 cycle은 Toss 거래대금 상위 30개와 상승률 상위 30개를 합쳐 점수화한다.
-3. 직전 완결 일봉 200개의 pullback 또는 oversold reversal을 먼저 요구한다.
-4. 가격 setup 통과 종목만 거래 가능 상태와 RiskManager 후보 검사를 거쳐
-   상위 15개까지 선택한다. 부족분을 채우지 않으며 0종도 성공이다.
+2. 첫 cycle은 Toss 실시간 거래대금 랭킹을 최대 100개 조회한다. `rankedAt`은
+   provider provenance 시각일 뿐 전일 확정 거래대금 근거가 아니다.
+3. STOCK·보통주·ACTIVE·거래정상·유효 가격만 `eligible_rank`를 다시 매기고
+   상위 30개를 가격 평가 대상으로 삼는다. `TOP_GAINERS`는 선정에 쓰지 않는다.
+4. 직전 완결 일봉 200개의 pullback 또는 oversold reversal 통과 종목을
+   상위 15개까지 선택한다. 부족분을 채우지 않으며 정상 평가 0종도 성공이다.
+   현금·수량·주문 한도·일일 손실·API 오류는 BUY 실행 Risk에서만 검사한다.
 5. 순위 밖이어도 현재 보유 종목은 추적 대상에 포함한다.
-6. universe 생성 실패면 신규 BUY를 막고 기존 보유의 SELL 경로만 유지한다.
-7. 종목별 1분봉과 일봉 200개를 받고 `nextBefore`로 오래된 1개를 추가 수집한다.
-   오늘 미완결봉을 제외해도 완결 이력 200개를 유지한다.
-   완결 일봉 부족은 오류가 아닌
+6. 랭킹·metadata·가격 데이터 오류면 성공 cache를 만들지 않고 다음 cycle에서
+   재시도한다. 그동안 신규 BUY를 막고 기존 보유의 SELL 경로만 유지한다.
+7. 종목별 1분봉과 완결 일봉 200개를 받고, 부족하면 `nextBefore` cursor가
+   소진되거나 200개가 될 때까지 bounded pagination한다. cursor 무진전·페이지
+   상한·부분 이력 뒤 빈 응답은 데이터 오류로 재시도한다. 정상 소진이 확인된
+   완결 일봉 부족만 오류가 아닌
    `setup-v2:missing:completed-daily-candles(n/200)` skip이다.
 
 ## Setup-v2.2 candidate

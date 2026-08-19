@@ -540,6 +540,21 @@ class MonitoringAssetsTest(unittest.TestCase):
         ):
             self.assertIn(violation, encoded)
 
+        code_by_name = {
+            node["name"]: node.get("parameters", {}).get("jsCode", "")
+            for node in workflow["nodes"]
+        }
+        trade_code = code_by_name["Trade 정책 계산"]
+        universe_code = code_by_name["Universe 정책 계산"]
+        for mutable_violation in (
+            "max-order-notional",
+            "insufficient-paper-cash",
+            "daily-loss-limit",
+            "api-error-kill-switch",
+        ):
+            self.assertIn(mutable_violation, trade_code)
+            self.assertNotIn(mutable_violation, universe_code)
+
     def test_n8n_credentials_sync_from_infisical_without_literals(self) -> None:
         script = (
             ROOT / "automation" / "n8n" / "sync-infisical-credentials.sh"

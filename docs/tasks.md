@@ -16,21 +16,26 @@ agents must sync from `main` before claiming or handing off work.
 
 ## IN PROGRESS
 
-### STRAT-009 Harden setup-v2 universe membership
-
-- Owner: codex/cursor/agy
-- Status: IN PROGRESS
-- Goal: separate acquisition errors from valid empty selections, keep mutable
-  account/system Risk out of membership, and derive the authoritative universe
-  from overfetched trading-amount ranks after static eligibility filtering
-- Acceptance: failed acquisition never freezes the day; normal zero candidates
-  remain cacheable; amount-only eligible reranking with no filler; replay-ready
-  raw/eligible provenance; Python/n8n Risk parity; updated live-state docs; full
-  regression and three-role review
+No tasks in progress.
 
 ## REVIEW
 
-No tasks awaiting review.
+### STRAT-009 Harden setup-v2 universe membership
+
+- Owner: codex/cursor/agy
+- Status: REVIEW
+- Goal: separate acquisition errors from valid empty selections, keep mutable
+  account/system Risk out of membership, and derive the authoritative universe
+  from overfetched trading-amount ranks after static eligibility filtering
+- Result: amount-only overfetch, static eligible reranking, setup filtering, valid
+  empty caching, acquisition failure retry, mutable Risk execution-only, and
+  Python/n8n policy v2 parity implemented. Raw/eligible ranks are audit
+  provenance, not exact replay inputs.
+- Checks: 325 unit tests; scoped Ruff; JSON and n8n Code syntax; Git whitespace;
+  Cursor and agy final reviews with zero MUST FIX findings
+- Risks: production DB migration, n8n policy v2 publish, service rollout, and
+  first live dry-run remain pending; deploy workflow before automation to keep
+  the policy-version transition fail-closed
 
 ## DONE
 

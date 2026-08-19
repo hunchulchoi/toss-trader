@@ -130,6 +130,7 @@ class RiskManager:
     def evaluate_universe_candidate(
         self, candidate: UniverseCandidateRisk, context: UniverseRiskContext
     ) -> RiskDecision:
+        del context
         violations: list[str] = []
         if candidate.security_type != "STOCK":
             violations.append("unsupported-security-type")
@@ -141,15 +142,6 @@ class RiskManager:
             violations.append("trading-suspended")
         if candidate.reference_price <= 0:
             violations.append("invalid-reference-price")
-        notional = candidate.reference_price * context.quantity
-        if notional > self._limits.max_order_notional:
-            violations.append("max-order-notional")
-        if notional > context.available_cash:
-            violations.append("insufficient-paper-cash")
-        if context.daily_return_rate <= self._limits.daily_loss_limit:
-            violations.append("daily-loss-limit")
-        if context.consecutive_api_errors >= self._limits.max_consecutive_api_errors:
-            violations.append("api-error-kill-switch")
         return RiskDecision(approved=not violations, violations=tuple(violations))
 
 
@@ -241,7 +233,7 @@ class N8nRiskManager:
 
 def _risk_limits_payload(limits: RiskLimits) -> dict[str, object]:
     return {
-        "policyVersion": 1,
+        "policyVersion": 2,
         "maxOrderNotional": str(limits.max_order_notional),
         "maxPositionNotional": str(limits.max_position_notional),
         "maxDailyBuyCount": limits.max_daily_buy_count,
