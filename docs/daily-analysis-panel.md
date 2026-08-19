@@ -29,7 +29,7 @@ The checked-in runner is the canonical source. Deployment copies it to
 persistent data mount, then creates one no-agent job:
 
 ```text
-schedule: * 15-17 * * 1-5
+schedule: * 6-8 * * 1-5 (UTC = 15:00-17:59 KST)
 script: toss-trader-daily-panel.py
 mode: --no-agent
 delivery: local

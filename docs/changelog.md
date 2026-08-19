@@ -19,7 +19,12 @@
   판정만 기존 Alertmanager→Telegram 경로로 전송
 - 보안: n8n·terminal child에 Docker socket/Cursor credential/임의 shell 권한을
   추가하지 않음. `TRADING_ENABLED=false` 유지
-- 운영: 코드·로컬 n8n asset만 반영. 배포·n8n publish·Hermes cron 설치 전
+- 배포 시각: 2026-08-19 19:56 KST automation 재빌드·재생성,
+  19:57 KST PostgreSQL panel schema 초기화, 19:59 KST n8n import·publish·restart
+- 운영 확인: 2026-08-19 20:04 KST. automation healthy/restart 0,
+  n8n active/restart 0, `TRADING_ENABLED=false`. Hermes persistent runner와
+  UTC `* 6-8 * * 1-5`(KST 15:00~17:59) no-agent cron 설치. queue 0 상태
+  dry smoke는 모델·Telegram 호출 없이 exit 0
 - 추가 기록: 2026-08-19 19:39 KST. main Hermes에서 GPT·Grok 4.6 Fast·
   Gemini 3.7 Flash의 실제 read-only JSON/token 응답 성공. Cursor CLI의 동시
   프로세스 경합을 피하도록 각 round 내부 호출은 순차 실행하고, round 사이의

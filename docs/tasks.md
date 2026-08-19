@@ -16,22 +16,29 @@ agents must sync from `main` before claiming or handing off work.
 
 ## IN PROGRESS
 
-### AI-002 Multi-agent daily paper review panel
-
-- Owner: codex
-- Status: IN PROGRESS
-- Goal: replace the single-model closing analysis with independent GPT quant,
-  Grok anomaly, and Gemini risk opinions, cross-review, and a Hermes final judge;
-  persist every opinion and exact reported token count before Telegram delivery
-- Started: 2026-08-19 18:19 KST
-- Safety: Cursor models run read-only in the main Hermes container; n8n and its
-  child terminal receive neither Docker access nor Cursor credentials
+No tasks in progress.
 
 ## REVIEW
 
 No tasks awaiting review.
 
 ## DONE
+
+### AI-002 Multi-agent daily paper review panel
+
+- Owner: codex
+- Status: DONE
+- Result: n8n queues the shared closing snapshot; main Hermes runs GPT quant,
+  Grok 4.6 Fast skeptic, and Gemini 3.7 Flash Risk independent opinions and
+  cross-reviews before a Hermes final judge. Seven opinions and provider token
+  counts are idempotently stored before the final Telegram report.
+- Checks: 336 unit tests; scoped Ruff and Git whitespace; real read-only model
+  JSON/token smoke for all four models; production schema, n8n graph, empty
+  queue runner, health, restart count, and `TRADING_ENABLED=false` verified
+- Risks: first full seven-stage production execution occurs after the next
+  15:40 KST closing cycle; Cursor/Hermes provider latency or failure suppresses
+  the final report and sends a critical failure alert while preserving completed
+  opinions.
 
 ### AI-001 Pass cycle candles and setup summary to Hermes trade advisor
 
