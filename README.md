@@ -200,6 +200,7 @@ DYNAMIC_UNIVERSE_SIZE=15
 
 `STRATEGY_INTERVAL=1d`는 수동 실행과 15:40 마감 cycle의 기본값이다. 장중
 `/run-paper-cycle` endpoint는 환경값과 관계없이 `--interval 1m`을 강제한다.
+1m v2 cycle은 분봉과 함께 일봉 200개를 수집하고, 완결 일봉이 부족하면 skip한다.
 종목은 고정 watchlist가 아니라 30분마다 Toss 시장 거래대금 상위 30개와
 1일 상승률 상위 30개를 합산 점수화해 RiskManager가 승인한 상위 15개를 쓴다.
 universe 갱신 시 이미 `MA20 > MA60`인 종목은 최초 trend entry를 허용한다.

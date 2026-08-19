@@ -57,7 +57,7 @@ MCP holdings/pnl은 조회 시점 fills 재생이라 Grafana snapshot 패널과 
 
 회사명은 `market_symbols` 조인. body·secret·전체 Hermes prompt/response 미저장.
 
-candle 이력 부족은 `skipped`. `failed_count`·API streak 불변. `partial_failure`는 종목 `error`. 합치지 말 것.
+candle 이력 부족과 setup-v2 완결 일봉 200 미달은 `skipped`. `failed_count`·API streak 불변. `partial_failure`는 종목 `error`. 합치지 말 것.
 단일 통화 `daily_return_rate`는 UTC 일자 시작 총자산 대비 비용 반영 총자산
 수익률이다. 다중통화는 환율 기준이 없어 통화별 MTM 수익률 중 최저값을 쓴다.
 상세 계산은 [`pnl-engine.md`](pnl-engine.md)를 따른다.

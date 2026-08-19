@@ -39,6 +39,10 @@ from .v2_runtime import OfficialV2CycleStrategy
 HANDLED_CYCLE_ERRORS = (OSError, RuntimeError, TossApiError, TypeError, ValueError)
 
 
+def _is_setup_v2_missing(error: BaseException) -> bool:
+    return str(error).startswith("setup-v2:missing:")
+
+
 @dataclass(frozen=True, slots=True)
 class SymbolCycleResult:
     symbol: str
@@ -174,6 +178,12 @@ class PaperCycleRunner:
                         else long_window + 1
                     ),
                 )
+                if self._v2_strategy is not None and interval == "1m":
+                    self._collector.collect(
+                        symbol=symbol,
+                        interval="1d",
+                        count=200,
+                    )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
                 api_failed = True
@@ -252,7 +262,7 @@ class PaperCycleRunner:
                     if not candidate.decision.approved:
                         skips[index] = _v2_rejection_reason(candidate)
                 except ValueError as error:
-                    if str(error).startswith("setup-v2:missing:"):
+                    if _is_setup_v2_missing(error):
                         skips[index] = str(error)
                         continue
                     errors[index] = f"setup-v2: {error}"
@@ -448,6 +458,11 @@ class PaperCycleRunner:
                             + plan.planned_heat
                         )
                         reserved_cash += signal.notional + toss_trade_costs(signal).total
+                except ValueError as error:
+                    if _is_setup_v2_missing(error):
+                        skips[index] = str(error)
+                        continue
+                    errors[index] = f"setup-v2: {error}"
                 except HANDLED_CYCLE_ERRORS as error:
                     errors[index] = f"setup-v2: {error}"
 

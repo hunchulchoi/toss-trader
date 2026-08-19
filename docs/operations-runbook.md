@@ -156,6 +156,13 @@ docker exec common-postgres psql -U postgres -d postgres -P pager=off -c \
 Toss candle 요청은 성공했지만 저장 이력이 61개보다 적으면 오류가 아니다.
 종목 결과에 `skipReason`. `failed_count`·API streak 불변. `partial_failure`(종목 `error`)와 섞지 말 것.
 
+### setup-v2 완결 일봉 200개 미달
+
+`setup-v2:missing:completed-daily-candles(n/200)`은 skip이다. rule `prepare`와
+Hermes shared snapshot 재생성 모두 `failed_count`에 넣지 않는다. 장중 1m v2는
+분봉과 함께 일봉 200개를 요청한다. 요청 성공 후에도 완결 세션이 200 미만이면
+계속 skip. API 요청 실패만 종목 `error`다.
+
 ### Hermes token 0 + 거부 다수
 
 한도 preflight. `paper_risk_decisions` 위반 코드 확인. `hermes_trade` 없음이 정상.

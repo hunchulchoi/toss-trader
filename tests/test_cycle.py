@@ -34,6 +34,7 @@ class WatchlistCandleClient:
     ) -> None:
         self.closes = closes
         self.calls: list[tuple[str, int]] = []
+        self.interval_calls: list[tuple[str, str, int]] = []
         self.calendar_calls: list[str] = []
         self.closed_countries = closed_countries
 
@@ -51,6 +52,7 @@ class WatchlistCandleClient:
     ) -> dict:
         del before, adjusted
         self.calls.append((symbol, count))
+        self.interval_calls.append((symbol, interval, count))
         if symbol not in self.closes:
             raise ValueError("simulated-symbol-error")
         start = datetime(2026, 8, 9, tzinfo=UTC)
@@ -600,6 +602,78 @@ class PaperCycleRunnerTest(unittest.TestCase):
         finally:
             hermes_ledger.close()
             hermes_state.close()
+
+    def test_hermes_shared_snapshot_skips_missing_daily_candles(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(12), Decimal(13), Decimal(10)]}
+        )
+        now = datetime(2026, 8, 12, 7, 0, tzinfo=UTC)
+        snapshot = self._runner(client, v2_strategy=strategy).prepare(
+            symbols=("005930",), interval="1m", short_window=2, long_window=3,
+            quantity=Decimal(1), now=now,
+        )
+        strategy.build_error = ValueError(
+            "setup-v2:missing:completed-daily-candles(60/200)"
+        )
+        hermes_ledger = PaperLedger(":memory:", portfolio_id="hermes")
+        hermes_state = SqliteCycleStateStore(":memory:", portfolio_id="hermes")
+        try:
+            result = PaperCycleRunner(
+                collector=MarketCollector(
+                    client=client, repository=self.market_repository
+                ),
+                strategy=StoredMaStrategy(self.market_repository),
+                trading=PaperTradingService(
+                    ledger=hermes_ledger,
+                    risk_manager=RiskManager(RiskLimits()),
+                ),
+                calendar=MarketCalendarService(client),
+                performance=PortfolioPerformance(
+                    ledger=hermes_ledger,
+                    market_repository=self.market_repository,
+                ),
+                state=hermes_state,
+                v2_strategy=strategy,
+                clock=lambda: now + timedelta(seconds=2),
+            ).run(
+                symbols=("005930",), interval="1m", short_window=2, long_window=3,
+                quantity=Decimal(1), now=now,
+                snapshot=replace(snapshot, v2_candidates=()),
+            )
+
+            self.assertEqual(result.failed_count, 0)
+            self.assertEqual(result.skipped_count, 1)
+            self.assertEqual(
+                result.items[0].skip_reason,
+                "setup-v2:missing:completed-daily-candles(60/200)",
+            )
+            self.assertIsNone(result.items[0].error)
+            self.assertEqual(result.insight["funnel"]["setupV2Blocked"], 1)
+        finally:
+            hermes_ledger.close()
+            hermes_state.close()
+
+    def test_1m_v2_prepare_collects_completed_daily_history(self) -> None:
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [_minute_bar(datetime(2026, 8, 12, 0, 0, tzinfo=UTC), open_price="10", low_price="9.5")],
+        )
+
+        self._runner(client, v2_strategy=strategy).prepare(
+            symbols=("005930",), interval="1m", short_window=2, long_window=3,
+            quantity=Decimal(1), now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertIn(("005930", "1m", 4), client.interval_calls)
+        self.assertIn(("005930", "1d", 200), client.interval_calls)
 
     def test_1m_continuation_skips_when_daily_trend_is_not_risk_on(self) -> None:
         self.market_repository.upsert_candles(_daily_trend("005930", rising=False))

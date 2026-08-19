@@ -145,8 +145,10 @@ Rule: preflight 없이 n8n 1회. payload는 신호+RiskContext. 뉴스·호가 �
 종목별 처리:
 
 1. Toss OAuth 토큰 획득 또는 캐시 토큰 재사용
-2. 기본 MA용 `long_window + 1`개 캔들 수집. v2 BUY 후보가 있으면 일봉 200개,
-   마감 cycle은 처음부터 일봉 200개 수집
+2. 기본 MA용 `long_window + 1`개 캔들 수집. 장중 1m v2 cycle은 같은 종목에
+   일봉 200개도 수집한다. 마감 1d cycle은 처음부터 일봉 200개. 완결 일봉이
+   200개 미만이면 `setup-v2:missing:completed-daily-candles` skip이지
+   종목 `error`가 아니다. Hermes shared snapshot이 후보를 다시 만들어도 같다.
 3. 저장된 종가로 이전·현재 MA20/MA60 계산
 4. 골든크로스면 `BUY`, 데드크로스면 `SELL`. 장중 1분봉은 교차가 없어도
    일봉 상승 추세 + 1분 단기>장기 + 종가>단기MA + 미보유면 하루 1회
