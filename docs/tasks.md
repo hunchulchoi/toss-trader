@@ -16,22 +16,37 @@ agents must sync from `main` before claiming or handing off work.
 
 ## IN PROGRESS
 
-No active tasks.
+### STRAT-009 Harden setup-v2 universe membership
+
+- Owner: codex/cursor/agy
+- Status: IN PROGRESS
+- Goal: separate acquisition errors from valid empty selections, keep mutable
+  account/system Risk out of membership, and derive the authoritative universe
+  from overfetched trading-amount ranks after static eligibility filtering
+- Acceptance: failed acquisition never freezes the day; normal zero candidates
+  remain cacheable; amount-only eligible reranking with no filler; replay-ready
+  raw/eligible provenance; Python/n8n Risk parity; updated live-state docs; full
+  regression and three-role review
 
 ## REVIEW
+
+No tasks awaiting review.
+
+## DONE
 
 ### STRAT-008 Align universe with setup-v2 price candidates
 
 - Owner: codex
-- Status: REVIEW
+- Status: DONE
 - Result: gated ranked symbols with completed-daily setup-v2 price rules before
   RiskManager, froze each successful selection for the Seoul trading date, kept
   held symbols for exits, and made an empty candidate set a successful no-BUY cycle
-- Checks: 312 unit tests; scoped Ruff and Git whitespace checks
-- Risks: first cycle may fetch daily history for every ranked symbol; production
-  dry-run and deployment remain pending explicit operational authorization
-
-## DONE
+- Checks: 312 unit tests; scoped Ruff and Git whitespace checks; deployed
+  automation healthy with restart 0 and `TRADING_ENABLED=false`; 13:55 Rule/Hermes
+  cycles succeeded with zero failures and API errors
+- Risks: first cycle may fetch daily history for every ranked symbol; today's
+  pre-deployment successful universe remains cached, so the first live filtered
+  selection will occur on the next Seoul trading date
 
 ### WEB-002 Cycle universe trends
 
