@@ -263,6 +263,18 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("N8N_RISK_MANAGER_TOKEN", compose)
         self.assertNotIn("/var/run/docker.sock", compose)
 
+    def test_pit_collector_receives_shared_postgres_settings(self) -> None:
+        compose = (ROOT / "compose.yaml").read_text()
+        pit_block = compose.split("  pit-collector:", 1)[1].split(
+            "  paper-mcp:", 1
+        )[0]
+
+        self.assertIn("POSTGRES_HOST: ${POSTGRES_HOST:-}", pit_block)
+        self.assertIn("POSTGRES_PORT: ${POSTGRES_PORT:-5431}", pit_block)
+        self.assertIn("POSTGRES_USER: ${POSTGRES_USER:-}", pit_block)
+        self.assertIn("POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}", pit_block)
+        self.assertIn("POSTGRES_DB: ${POSTGRES_DB:-}", pit_block)
+
     def test_compose_uses_isolated_zero_tool_hermes_sidecar(self) -> None:
         compose = (ROOT / "compose.yaml").read_text()
         hermes_config = (

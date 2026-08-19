@@ -41,6 +41,7 @@ from .official_data import (
     OfficialApiClient,
     OfficialDataCollector,
     OfficialDataRepository,
+    open_official_data_repository,
 )
 from .paper import DuplicatePaperOrder, open_paper_ledger
 from .paper_mcp import PaperMcpService, PostgresPaperReadStore, serve_paper_mcp
@@ -127,6 +128,12 @@ def build_parser() -> argparse.ArgumentParser:
     krx_flow.add_argument("--foreign-csv", required=True)
     krx_flow.add_argument("--institutional-csv", required=True)
     krx_flow.add_argument("--trading-csv")
+
+    migrate_pit = subparsers.add_parser(
+        "migrate-official-sqlite",
+        help="copy legacy SQLite PIT rows into PostgreSQL idempotently",
+    )
+    migrate_pit.add_argument("--source", required=True)
 
     stored_strategy = subparsers.add_parser(
         "scan-ma", help="evaluate MA crossover from stored candles"
@@ -360,6 +367,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _collect_kis_flow(settings, args)
         if args.command == "import-krx-flow-csv":
             return _import_krx_flow_csv(settings, args)
+        if args.command == "migrate-official-sqlite":
+            return _migrate_official_sqlite(settings, args)
         if args.command == "scan-ma":
             return _scan_ma(settings, args)
         if args.command == "backtest-ma":
@@ -428,7 +437,7 @@ def _collect_official_data(settings: Settings, args: argparse.Namespace) -> int:
     end = args.end or datetime.now(UTC).date()
     start = args.start or end - timedelta(days=730)
     years = args.years or list(range(start.year - 1, end.year + 1))
-    repository = OfficialDataRepository(settings.market_db_path)
+    repository = _official_repository(settings)
     try:
         collector = OfficialDataCollector(
             OfficialApiClient(
@@ -468,7 +477,7 @@ def _serve_pit_collector(settings: Settings, args: argparse.Namespace) -> int:
     if not dart_key or not datago_key:
         raise ValueError("OPENDART_API_KEY and DATAGOKR_API_KEY are required")
     kis_key, kis_secret = _kis_credentials()
-    repository = OfficialDataRepository(settings.market_db_path)
+    repository = _official_repository(settings)
     try:
         collector = OfficialDataCollector(
             OfficialApiClient(
@@ -523,7 +532,7 @@ def _serve_pit_collector(settings: Settings, args: argparse.Namespace) -> int:
 
 def _collect_kis_flow(settings: Settings, args: argparse.Namespace) -> int:
     key, secret = _kis_credentials()
-    repository = OfficialDataRepository(settings.market_db_path)
+    repository = _official_repository(settings)
     try:
         symbols = args.symbols or repository.symbols()
         if not symbols:
@@ -561,7 +570,7 @@ def _collect_kis_flow(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def _import_krx_flow_csv(settings: Settings, args: argparse.Namespace) -> int:
-    repository = OfficialDataRepository(settings.market_db_path)
+    repository = _official_repository(settings)
     try:
         session_index = resolve_krx_session_index(
             repository,
@@ -577,6 +586,35 @@ def _import_krx_flow_csv(settings: Settings, args: argparse.Namespace) -> int:
             session_index=session_index,
         )
         return _emit({**asdict(result), "tradingEnabled": False})
+    finally:
+        repository.close()
+
+
+def _official_repository(settings: Settings) -> OfficialDataRepository:
+    return open_official_data_repository(
+        postgres_parameters=settings.postgres_connection_parameters(),
+        sqlite_path=settings.market_db_path,
+    )
+
+
+def _migrate_official_sqlite(settings: Settings, args: argparse.Namespace) -> int:
+    parameters = settings.postgres_connection_parameters()
+    if not parameters:
+        raise ValueError("PostgreSQL settings are required for PIT migration")
+    repository = open_official_data_repository(
+        postgres_parameters=parameters,
+        sqlite_path=settings.market_db_path,
+    )
+    try:
+        imported = repository.import_sqlite(args.source)
+        return _emit(
+            {
+                "source": args.source,
+                "target": "postgresql",
+                "insertedRows": imported,
+                "tradingEnabled": False,
+            }
+        )
     finally:
         repository.close()
 
@@ -1103,7 +1141,10 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             state=cycle_state,
             v2_strategy=OfficialV2CycleStrategy(
                 market_repository,
-                context_factory=OfficialSetupContextFactory(settings.market_db_path),
+                context_factory=OfficialSetupContextFactory(
+                    settings.market_db_path,
+                    postgres_parameters=settings.postgres_connection_parameters(),
+                ),
             ),
         ).run(
             symbols=symbols,
@@ -1405,7 +1446,10 @@ def _run_market_scan(settings: Settings, args: argparse.Namespace) -> int:
             repository=repository,
             candidate_builder=OfficialV2CycleStrategy(
                 repository,
-                context_factory=OfficialSetupContextFactory(settings.market_db_path),
+                context_factory=OfficialSetupContextFactory(
+                    settings.market_db_path,
+                    postgres_parameters=settings.postgres_connection_parameters(),
+                ),
             ),
         ).run(
             benchmark_symbols=benchmarks,

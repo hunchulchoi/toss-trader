@@ -83,8 +83,9 @@ POSTGRES_PASSWORD=...
 POSTGRES_DB=toss_trader
 ```
 
-모든 키가 준비되면 `market_candles` 테이블과 최신 조회 인덱스를 자동
-생성하고, paper trading은 같은 DB의 `paper_fills` 테이블을 사용합니다.
+모든 키가 준비되면 시세, paper trading, 공식 PIT 저장소를 같은 PostgreSQL에
+생성합니다. `market_universe_raw_v2`와 `market_flow_pit_v2`는 `session_date`
+기준 월별 파티션이며, 나머지 PIT 테이블은 일반 테이블입니다.
 비밀번호를 Compose 파일이나 저장소에 직접 기록하지 마세요.
 
 운영 Toss DB는 `common-postgres`의 호스트 포트 `5431`만 사용합니다.

@@ -25,6 +25,11 @@ CSV에서 빠진 종목은 적재하지 않고 해당 종목만 setup-v2에서 �
 `market_pit_coverage(dataset=flow_krx)`를 기록한다. 같은 소스·세션 재실행은
 원본 관측값과 `available_at`을 바꾸지 않는다.
 
+운영에서는 `common-postgres`의 월별 `session_date` 파티션에 저장한다. PostgreSQL
+설정이 없는 로컬 개발 환경만 `MARKET_DB_PATH` SQLite로 돌아간다. 과거 파티션은
+백테스트·감사·정정 재현 자료이므로 자동 삭제하지 않는다. 보존기간이 확정되면
+archive와 행 수·hash 검증 후 월 파티션 단위로 detach/drop한다.
+
 ## 실행
 
 프로젝트 `AGENTS.md`의 machine identity 메모리 토큰 규칙으로 Infisical을

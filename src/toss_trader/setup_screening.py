@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import ROUND_FLOOR, Decimal
@@ -10,6 +10,7 @@ from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 from .models import Candle, Side, TradeSignal
+from .official_data import _PostgresConnectionAdapter
 from .paper import toss_trade_costs
 from .repository import MarketReadRepository
 
@@ -154,8 +155,14 @@ class StrictSetupV2EntryGate:
 
 
 class OfficialSetupContextFactory:
-    def __init__(self, database_path: str) -> None:
+    def __init__(
+        self,
+        database_path: str,
+        *,
+        postgres_parameters: Mapping[str, str | int] | None = None,
+    ) -> None:
         self._database_path = database_path
+        self._postgres_parameters = postgres_parameters
 
     def __call__(
         self,
@@ -165,8 +172,24 @@ class OfficialSetupContextFactory:
         gap_up_chase: bool,
     ) -> SetupContext:
         decision_utc = decision_at.astimezone(ZoneInfo("UTC")).isoformat()
+        database_errors: list[type[Exception]] = [sqlite3.OperationalError]
         try:
-            connection = sqlite3.connect(self._database_path)
+            if self._postgres_parameters:
+                try:
+                    import psycopg
+                except ImportError as error:
+                    raise RuntimeError(
+                        "PostgreSQL support requires: pip install 'toss-trader[postgres]'"
+                    ) from error
+                database_errors.append(psycopg.Error)
+                connection = _PostgresConnectionAdapter(
+                    psycopg.connect(
+                        **self._postgres_parameters,
+                        options="-c default_transaction_read_only=on",
+                    )
+                )
+            else:
+                connection = sqlite3.connect(self._database_path)
             coverage = connection.execute(
                 """SELECT 1 FROM market_pit_coverage
                 WHERE dataset='events' AND status='SUCCESS'
@@ -223,7 +246,7 @@ class OfficialSetupContextFactory:
                 ORDER BY session_index DESC LIMIT 6""",
                 (symbol, signal_session.isoformat(), decision_at.isoformat()),
             ).fetchall()
-        except sqlite3.OperationalError:
+        except tuple(database_errors):
             return SetupContext(
                 decision_at=decision_at,
                 signal_session=signal_session,

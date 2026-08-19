@@ -160,6 +160,11 @@ services:
       ALERTMANAGER_API_URL: http://alertmanager:9093/api/v2/alerts
       TRADING_ENABLED: "false"
       MARKET_DB_PATH: /app/data/market.db
+      POSTGRES_HOST: ${POSTGRES_HOST:-}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5431}
+      POSTGRES_USER: ${POSTGRES_USER:-}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-}
       CANDLE_REQUEST_INTERVAL_SECONDS: ${CANDLE_REQUEST_INTERVAL_SECONDS:-0.25}
     volumes:
       - paper-data:/app/data

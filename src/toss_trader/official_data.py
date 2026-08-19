@@ -4,7 +4,7 @@ import hashlib
 import json
 import sqlite3
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from time import sleep
-from typing import Any
+from typing import Any, Self
 from urllib.parse import urlencode
 from zipfile import ZipFile
 from zoneinfo import ZoneInfo
@@ -141,6 +141,80 @@ CREATE TABLE IF NOT EXISTS market_pit_coverage (
     PRIMARY KEY (dataset, coverage_start, coverage_end)
 )
 """
+
+POSTGRES_UNIVERSE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS market_universe_raw_v2 (
+    session_date DATE NOT NULL,
+    symbol TEXT NOT NULL,
+    isin_code TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    market_category TEXT NOT NULL,
+    close_price TEXT,
+    market_cap TEXT,
+    trading_value TEXT,
+    listed_share_count TEXT,
+    security_type TEXT NOT NULL DEFAULT 'UNKNOWN',
+    source TEXT NOT NULL,
+    source_record_id TEXT NOT NULL,
+    published_at TEXT,
+    available_at TEXT,
+    retrieved_at TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    PRIMARY KEY (session_date, symbol, source)
+) PARTITION BY RANGE (session_date)
+"""
+
+POSTGRES_FLOW_SCHEMA = """
+CREATE TABLE IF NOT EXISTS market_flow_pit_v2 (
+    symbol TEXT NOT NULL,
+    session_date DATE NOT NULL,
+    session_index INTEGER NOT NULL,
+    available_at TEXT NOT NULL,
+    foreign_net_buy TEXT NOT NULL,
+    institutional_net_buy TEXT NOT NULL,
+    trading_value TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_record_id TEXT NOT NULL,
+    retrieved_at TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    PRIMARY KEY (symbol, session_date, source)
+) PARTITION BY RANGE (session_date)
+"""
+
+OFFICIAL_TABLE_COLUMNS = {
+    "market_financial_facts_v2": (
+        "symbol", "corp_code", "business_year", "report_code", "fs_div",
+        "statement_division", "account_id", "account_name", "amount", "currency",
+        "rcept_no", "rcept_dt", "available_at", "source", "retrieved_at",
+        "payload_hash",
+    ),
+    "market_events_pit_v2": (
+        "symbol", "corp_code", "rcept_no", "rcept_dt", "report_name",
+        "available_at", "blocked_through", "is_entry_blocking", "is_preannounced",
+        "scheduled_for", "source", "retrieved_at", "payload_hash",
+    ),
+    "market_universe_raw_v2": (
+        "session_date", "symbol", "isin_code", "display_name", "market_category",
+        "close_price", "market_cap", "trading_value", "listed_share_count",
+        "security_type", "source", "source_record_id", "published_at", "available_at",
+        "retrieved_at", "payload_hash",
+    ),
+    "market_valuation_snapshots_v2": (
+        "symbol", "business_year", "report_code", "fs_div", "rcept_no",
+        "available_at", "ttm_eps", "trailing_eps_growth_yoy", "owner_equity",
+        "listed_share_count", "bps", "reference_price", "trailing_per", "pbr",
+        "bps_method", "status", "method",
+    ),
+    "market_flow_pit_v2": (
+        "symbol", "session_date", "session_index", "available_at", "foreign_net_buy",
+        "institutional_net_buy", "trading_value", "source", "source_record_id",
+        "retrieved_at", "payload_hash",
+    ),
+    "market_pit_coverage": (
+        "dataset", "coverage_start", "coverage_end", "completed_at", "source",
+        "row_count", "status",
+    ),
+}
 
 OFFICIAL_INDEXES = (
     (
@@ -345,20 +419,122 @@ class OfficialApiClient:
         return response.body
 
 
+class _PostgresConnectionAdapter:
+    def __init__(self, connection: Any) -> None:
+        self._connection = connection
+        self.total_changes = 0
+
+    def execute(self, sql: str, parameters: Sequence[object] = ()) -> Any:
+        return self._connection.execute(_postgres_sql(sql), parameters)
+
+    def executemany(self, sql: str, rows: Sequence[Sequence[object]]) -> Any:
+        cursor = self._connection.cursor()
+        cursor.executemany(_postgres_sql(sql), rows)
+        self.total_changes += max(cursor.rowcount, 0)
+        cursor.close()
+
+    def commit(self) -> None:
+        self._connection.commit()
+
+    def close(self) -> None:
+        self._connection.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, error_type: object, error: object, traceback: object) -> None:
+        if error_type is None:
+            self._connection.commit()
+        else:
+            self._connection.rollback()
+
+
+def _postgres_sql(sql: str) -> str:
+    translated = sql.replace("?", "%s")
+    marker = "INSERT OR IGNORE INTO"
+    if marker in translated:
+        translated = translated.replace(marker, "INSERT INTO", 1).rstrip()
+        translated += " ON CONFLICT DO NOTHING"
+    return translated
+
+
 class OfficialDataRepository:
-    def __init__(self, database_path: str) -> None:
-        if database_path != ":memory:":
-            Path(database_path).parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(database_path)
-        for schema in (
-            FINANCIAL_SCHEMA,
-            EVENT_SCHEMA,
-            UNIVERSE_SCHEMA,
-            VALUATION_SCHEMA,
-            FLOW_SCHEMA,
-            COVERAGE_SCHEMA,
-        ):
+    def __init__(
+        self,
+        database_path: str,
+        *,
+        postgres_parameters: Mapping[str, str | int] | None = None,
+        connect: Callable[..., Any] | None = None,
+        database_error: type[Exception] | None = None,
+    ) -> None:
+        self._backend = "postgresql" if postgres_parameters else "sqlite"
+        if postgres_parameters:
+            required = {"host", "port", "user", "password", "dbname"}
+            missing = sorted(required - postgres_parameters.keys())
+            if missing:
+                raise ValueError(
+                    f"missing PostgreSQL parameters: {', '.join(missing)}"
+                )
+            if connect is None:
+                try:
+                    import psycopg
+                except ImportError as error:
+                    raise RuntimeError(
+                        "PostgreSQL support requires: pip install 'toss-trader[postgres]'"
+                    ) from error
+                connect = psycopg.connect
+                database_error = psycopg.Error
+            caught_database_error = database_error or Exception
+            try:
+                raw_connection = connect(
+                    **{name: postgres_parameters[name] for name in required}
+                )
+            except caught_database_error as error:
+                raise RuntimeError("PostgreSQL official data connection failed") from error
+            self._connection = _PostgresConnectionAdapter(raw_connection)
+            schemas = (
+                FINANCIAL_SCHEMA,
+                EVENT_SCHEMA,
+                POSTGRES_UNIVERSE_SCHEMA,
+                VALUATION_SCHEMA,
+                POSTGRES_FLOW_SCHEMA,
+                COVERAGE_SCHEMA,
+            )
+        else:
+            if database_path != ":memory:":
+                Path(database_path).parent.mkdir(parents=True, exist_ok=True)
+            self._connection = sqlite3.connect(database_path)
+            schemas = (
+                FINANCIAL_SCHEMA,
+                EVENT_SCHEMA,
+                UNIVERSE_SCHEMA,
+                VALUATION_SCHEMA,
+                FLOW_SCHEMA,
+                COVERAGE_SCHEMA,
+            )
+        for schema in schemas:
             self._connection.execute(schema)
+        if self._backend == "postgresql":
+            self._connection.execute(
+                "ALTER TABLE market_events_pit_v2 "
+                "ADD COLUMN IF NOT EXISTS blocked_through TEXT"
+            )
+            self._connection.execute(
+                "ALTER TABLE market_events_pit_v2 ADD COLUMN IF NOT EXISTS "
+                "is_entry_blocking INTEGER NOT NULL DEFAULT 0"
+            )
+            for name in (
+                "owner_equity", "listed_share_count", "bps", "reference_price",
+                "trailing_per", "pbr", "bps_method",
+            ):
+                self._connection.execute(
+                    "ALTER TABLE market_valuation_snapshots_v2 "
+                    f"ADD COLUMN IF NOT EXISTS {name} TEXT"
+                )
+            for index in OFFICIAL_INDEXES:
+                self._connection.execute(index)
+            self._connection.commit()
+            return
         event_columns = {
             row[1]
             for row in self._connection.execute(
@@ -395,6 +571,33 @@ class OfficialDataRepository:
                 )
         for index in OFFICIAL_INDEXES:
             self._connection.execute(index)
+        self._connection.commit()
+
+    @property
+    def backend(self) -> str:
+        return self._backend
+
+    def _ensure_session_partitions(
+        self, table: str, sessions: Iterable[object]
+    ) -> None:
+        if self._backend != "postgresql":
+            return
+        months: set[tuple[int, int]] = set()
+        for raw_session in sessions:
+            session = (
+                raw_session
+                if isinstance(raw_session, date)
+                else date.fromisoformat(str(raw_session))
+            )
+            months.add((session.year, session.month))
+        for year, month in sorted(months):
+            start = date(year, month, 1)
+            end = date(year + (month == 12), month % 12 + 1, 1)
+            partition = f"{table}_y{year:04d}m{month:02d}"
+            self._connection.execute(
+                f"CREATE TABLE IF NOT EXISTS {partition} PARTITION OF {table} "
+                f"FOR VALUES FROM ('{start.isoformat()}') TO ('{end.isoformat()}')"
+            )
         self._connection.commit()
 
     def close(self) -> None:
@@ -489,6 +692,9 @@ class OfficialDataRepository:
             "available_at",
             "retrieved_at",
             "payload_hash",
+        )
+        self._ensure_session_partitions(
+            "market_universe_raw_v2", (row["session_date"] for row in rows)
         )
         with self._connection:
             self._connection.executemany(
@@ -722,7 +928,7 @@ class OfficialDataRepository:
         rows = self._connection.execute(
             "SELECT DISTINCT session_date FROM market_universe_raw_v2 ORDER BY 1"
         ).fetchall()
-        return [date.fromisoformat(row[0]) for row in rows]
+        return [date.fromisoformat(str(row[0])) for row in rows]
 
     def symbols(self) -> list[str]:
         try:
@@ -781,6 +987,9 @@ class OfficialDataRepository:
             "retrieved_at",
             "payload_hash",
         )
+        self._ensure_session_partitions(
+            "market_flow_pit_v2", (row["session_date"] for row in rows)
+        )
         before = self._connection.total_changes
         with self._connection:
             self._connection.executemany(
@@ -790,6 +999,43 @@ class OfficialDataRepository:
                 [tuple(row[field] for field in fields) for row in rows],
             )
         return self._connection.total_changes - before
+
+    def import_sqlite(self, source_path: str) -> dict[str, int]:
+        if self._backend != "postgresql":
+            raise ValueError("SQLite PIT migration requires a PostgreSQL target")
+        source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)
+        imported: dict[str, int] = {}
+        try:
+            for table, expected_columns in OFFICIAL_TABLE_COLUMNS.items():
+                source_columns = {
+                    str(row[1])
+                    for row in source.execute(f"PRAGMA table_info({table})").fetchall()
+                }
+                columns = tuple(
+                    column for column in expected_columns if column in source_columns
+                )
+                if not columns:
+                    imported[table] = 0
+                    continue
+                names = ", ".join(columns)
+                rows = source.execute(f"SELECT {names} FROM {table}").fetchall()
+                if table in {"market_universe_raw_v2", "market_flow_pit_v2"}:
+                    session_index = columns.index("session_date")
+                    self._ensure_session_partitions(
+                        table, (row[session_index] for row in rows)
+                    )
+                before = self._connection.total_changes
+                placeholders = ", ".join("?" for _ in columns)
+                with self._connection:
+                    self._connection.executemany(
+                        f"INSERT OR IGNORE INTO {table} ({names}) "
+                        f"VALUES ({placeholders})",
+                        rows,
+                    )
+                imported[table] = self._connection.total_changes - before
+        finally:
+            source.close()
+        return imported
 
     def collected_financial_keys(self) -> set[tuple[str, int, str, str]]:
         rows = self._connection.execute(
@@ -824,6 +1070,17 @@ class OfficialDataRepository:
                 SET published_at=?, available_at=? WHERE session_date=?""",
                 updates,
             )
+
+
+def open_official_data_repository(
+    *,
+    postgres_parameters: Mapping[str, str | int] | None,
+    sqlite_path: str,
+) -> OfficialDataRepository:
+    return OfficialDataRepository(
+        sqlite_path,
+        postgres_parameters=postgres_parameters,
+    )
 
 
 class OfficialDataCollector:

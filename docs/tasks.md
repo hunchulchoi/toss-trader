@@ -16,7 +16,14 @@ agents must sync from `main` before claiming or handing off work.
 
 ## IN PROGRESS
 
-No active tasks.
+### DATA-006 Move official PIT storage to PostgreSQL partitions
+
+- Owner: codex
+- Status: IN PROGRESS
+- Goal: move official PIT collection and setup-v2 reads from the shared SQLite
+  file to `common-postgres`, with monthly partitions for session-heavy tables
+- Acceptance: idempotent legacy copy, row-count parity, PostgreSQL runtime reads,
+  healthy collector/automation deployment, and no automatic partition deletion
 
 ## REVIEW
 
