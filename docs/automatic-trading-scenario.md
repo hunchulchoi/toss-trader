@@ -344,6 +344,8 @@ CANDLE_REQUEST_INTERVAL_SECONDS=0.25
 고정하며 부족분을 채우지 않는다. 정상 평가 0종도 성공이다. 랭킹·metadata·가격
 데이터 오류는 실패로 기록하고 성공 cache 없이 재시도한다. 주문 한도·가용 현금·
 일일 손실·API 오류 streak는 membership이 아니라 BUY 실행 Risk에서 검사한다.
+종목 유형·보통주·거래 상태·기준가 membership은 로컬 순수 검증으로 처리해
+후보 최대 100개를 n8n으로 순차 호출하지 않는다.
 기존 보유 종목은 별도로 계속 추적한다.
 판단은 `dynamic_universe_runs`, `dynamic_universe_decisions`에 저장한다.
 universe가 갱신된 시점에는 선정 종목 중 `MA20 > MA60`인 기존 상승 추세도

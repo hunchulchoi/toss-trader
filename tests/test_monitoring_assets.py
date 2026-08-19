@@ -546,6 +546,8 @@ class MonitoringAssetsTest(unittest.TestCase):
         }
         trade_code = code_by_name["Trade 정책 계산"]
         universe_code = code_by_name["Universe 정책 계산"]
+        self.assertIn("limits.policyVersion !== 1", trade_code)
+        self.assertIn("limits.policyVersion !== 2", universe_code)
         for mutable_violation in (
             "max-order-notional",
             "insufficient-paper-cash",
@@ -554,6 +556,19 @@ class MonitoringAssetsTest(unittest.TestCase):
         ):
             self.assertIn(mutable_violation, trade_code)
             self.assertNotIn(mutable_violation, universe_code)
+
+    def test_universe_membership_is_local_and_trade_risk_remains_n8n_capable(self) -> None:
+        source = (ROOT / "src" / "toss_trader" / "cli.py").read_text()
+        universe_block = source.split("universe_result = DynamicUniverseSelector(", 1)[
+            1
+        ].split(").resolve(", 1)[0]
+        trading_block = source.split("trading=PaperTradingService(", 1)[1].split(
+            "initial_cash=", 1
+        )[0]
+
+        self.assertIn("risk_manager=RiskManager(RiskLimits())", universe_block)
+        self.assertNotIn("_cycle_risk_manager()", universe_block)
+        self.assertIn("risk_manager=_cycle_risk_manager()", trading_block)
 
     def test_n8n_credentials_sync_from_infisical_without_literals(self) -> None:
         script = (

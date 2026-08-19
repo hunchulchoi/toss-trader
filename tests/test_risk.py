@@ -302,7 +302,7 @@ class N8nRiskManagerTest(unittest.TestCase):
         self.assertEqual(
             payload["limits"],
             {
-                "policyVersion": 2,
+                "policyVersion": 1,
                 "maxOrderNotional": "300000",
                 "maxPositionNotional": "1000000",
                 "maxDailyBuyCount": 5,
@@ -313,6 +313,36 @@ class N8nRiskManagerTest(unittest.TestCase):
             },
         )
         self.assertNotIn(b"risk-token-long-enough", request.data)
+
+    def test_routes_optional_universe_contract_with_policy_v2(self) -> None:
+        response = BytesIO(b'{"approved":true,"violations":[]}')
+        manager = N8nRiskManager(
+            webhook_url="http://n8n:5678/webhook/toss-trader-risk-manager",
+            token="risk-token-long-enough",
+        )
+
+        with patch("urllib.request.urlopen", return_value=response) as urlopen:
+            decision = manager.evaluate_universe_candidate(
+                UniverseCandidateRisk(
+                    symbol="005930",
+                    reference_price=Decimal(71000),
+                    security_type="STOCK",
+                    is_common_share=True,
+                    status="ACTIVE",
+                    trading_suspended=False,
+                ),
+                UniverseRiskContext(
+                    quantity=Decimal(100),
+                    available_cash=Decimal(0),
+                    daily_return_rate=Decimal("-0.50"),
+                    consecutive_api_errors=100,
+                ),
+            )
+
+        self.assertTrue(decision.approved)
+        payload = json.loads(urlopen.call_args.args[0].data)
+        self.assertEqual(payload["kind"], "universe")
+        self.assertEqual(payload["limits"]["policyVersion"], 2)
 
     def test_fails_closed_when_workflow_is_unavailable(self) -> None:
         manager = N8nRiskManager(

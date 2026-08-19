@@ -284,7 +284,9 @@ sequenceDiagram
     end
 ```
 
-Hermes 한도 거부는 webhook 전 로컬 preflight. n8n 없음. Rule·universe는 항상 이 경로.
+Hermes 한도 거부는 webhook 전 로컬 preflight라 n8n을 호출하지 않는다. universe
+정적 membership도 로컬 순수 검증으로 처리한다. Rule/Hermes의 실제 BUY·SELL만
+n8n RiskManager 경로를 사용한다.
 
 ### 6. 공통 failure·운영 검증
 
@@ -359,13 +361,14 @@ RiskManager의 주요 제한:
 flowchart TD
     START[동적 universe 후보 또는 MA 신호] --> KIND{판단 종류}
 
-    KIND -->|universe| UIN[후보 종목·기준가·종목 상태\n수량·가용 현금·손익·API 오류]
+    KIND -->|universe| UIN[후보 종목·기준가·종목 상태]
     KIND -->|trade Rule| REQUEST
     KIND -->|trade Hermes| PRE[로컬 RiskManager\nHardLimits]
     PRE -->|위반| RLEDGER
     PRE -->|통과| HA[Hermes advisor]
     HA --> TIN
-    UIN --> REQUEST
+    UIN --> LOCAL[로컬 정적 membership 검증]
+    LOCAL --> ULEDGER[(dynamic_universe_runs\ndynamic_universe_decisions)]
     TIN[BUY/SELL 신호·보유 수량/금액\n현금·일일 BUY·장 상태·Hermes 판단] --> REQUEST
 
     REQUEST[automation N8nRiskManager\nPOST n8n RiskManager webhook\n전용 bearer] --> AUTH{n8n Header Auth}
@@ -380,9 +383,7 @@ flowchart TD
     REJECT --> RETURN[automation에 결정 반환]
     APPROVE --> RETURN
 
-    RETURN --> TYPE{판단 종류}
-    TYPE -->|universe| ULEDGER[(dynamic_universe_runs\ndynamic_universe_decisions)]
-    TYPE -->|trade| RLEDGER[(paper_risk_decisions)]
+    RETURN --> RLEDGER[(paper_risk_decisions)]
     ULEDGER --> SELECT[승인 후보 상위 15종목만 선정]
     RLEDGER --> FILL{승인?}
     FILL -->|예| PAPER[(paper_fills)]
@@ -391,7 +392,7 @@ flowchart TD
 
 | 구분 | 평가 입력 | 거부 조건 | 기록 결과 |
 |---|---|---|---|
-| `universe` | 종목 유형·보통주 여부·거래 상태·정지 여부·기준가 | 비주식/우선주, 비활성·정지, 가격 오류 | `dynamic_universe_decisions`에 후보별 raw/eligible rank·승인·위반·선정 여부. 현금·손실·API 상태는 BUY 실행 Risk에서 검사 |
+| `universe` | 종목 유형·보통주 여부·거래 상태·정지 여부·기준가 | 로컬 검증: 비주식/우선주, 비활성·정지, 가격 오류 | `dynamic_universe_decisions`에 후보별 raw/eligible rank·승인·위반·선정 여부. n8n 호출 없음 |
 | `trade` | 신호·포지션·현금·장 상태·Hermes | Hermes: 로컬 한도 먼저. 통과 후 advisor+n8n. Rule: n8n 1회 | 판단은 `paper_risk_decisions`. 승인만 fill. 한도 거부는 `hermes_trade` 없음 |
 
 RiskManager는 추천·실주문을 하지 않는다. timeout·인증·JSON 오류는 모두

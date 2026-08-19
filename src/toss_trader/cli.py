@@ -1089,7 +1089,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 collector=collector,
                 repository=market_repository,
                 store=universe_store,
-                risk_manager=_cycle_risk_manager(),
+                risk_manager=RiskManager(RiskLimits()),
                 candidate_count=settings.dynamic_universe_candidate_count,
                 ranking_fetch_count=settings.dynamic_universe_ranking_fetch_count,
                 universe_size=settings.dynamic_universe_size,

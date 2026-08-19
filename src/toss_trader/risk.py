@@ -169,7 +169,8 @@ class N8nRiskManager:
                 "kind": "trade",
                 "signal": _trade_signal_payload(signal),
                 "context": _risk_context_payload(context),
-            }
+            },
+            policy_version=1,
         )
 
     def evaluate_universe_candidate(
@@ -192,11 +193,16 @@ class N8nRiskManager:
                     "dailyReturnRate": str(context.daily_return_rate),
                     "consecutiveApiErrors": context.consecutive_api_errors,
                 },
-            }
+            },
+            policy_version=2,
         )
 
-    def _call(self, payload: dict[str, object]) -> RiskDecision:
-        payload["limits"] = _risk_limits_payload(self._limits)
+    def _call(
+        self, payload: dict[str, object], *, policy_version: int
+    ) -> RiskDecision:
+        payload["limits"] = _risk_limits_payload(
+            self._limits, policy_version=policy_version
+        )
         payload["parent"] = {
             "workflowId": os.environ.get("N8N_PARENT_WORKFLOW_ID", "unknown"),
             "executionId": os.environ.get("N8N_PARENT_EXECUTION_ID", "unknown"),
@@ -231,9 +237,11 @@ class N8nRiskManager:
             )
 
 
-def _risk_limits_payload(limits: RiskLimits) -> dict[str, object]:
+def _risk_limits_payload(
+    limits: RiskLimits, *, policy_version: int
+) -> dict[str, object]:
     return {
-        "policyVersion": 2,
+        "policyVersion": policy_version,
         "maxOrderNotional": str(limits.max_order_notional),
         "maxPositionNotional": str(limits.max_position_notional),
         "maxDailyBuyCount": limits.max_daily_buy_count,

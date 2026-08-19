@@ -17,7 +17,11 @@
 - 추적: `dynamic_universe_decisions.eligible_rank`를 idempotent migration으로
   추가. raw amount rank와 함께 순서 감사 provenance로 보존. metadata/config/
   candle snapshot이 없으므로 exact replay는 아직 지원하지 않음
-- Risk 계약: Python과 n8n을 policy v2로 맞추고, 기존 BUY 실행 차단 규칙은 유지
+- Risk 계약: universe 정적 규칙의 Python/n8n policy v2 parity를 맞추고,
+  기존 BUY 실행 차단 규칙은 유지
+- 추가 기록: 2026-08-19 15:44 KST. 최대 100회의 순차 n8n 호출을 피하도록
+  universe 정적 membership은 로컬 검증으로 고정. 실제 BUY·SELL만 n8n Risk를
+  사용하며 trade는 기존 policy v1, 선택적 universe 호환 계약은 v2로 분리
 - 운영: 코드·workflow export만 변경. DB migration·n8n publish·서비스 배포 대기
 
 ### Cycle 카드 메트릭·사유 한 줄
