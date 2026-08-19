@@ -211,6 +211,11 @@ def _payload():
                 datetime(2026, 8, 13, 2, tzinfo=UTC),
             ),
         ),
+        trend_rows=(
+            ("005930", datetime(2026, 8, 12, 6, tzinfo=UTC), "68000"),
+            ("005930", datetime(2026, 8, 13, 6, tzinfo=UTC), "71000"),
+            ("005930", datetime(2026, 8, 14, 6, tzinfo=UTC), "72000"),
+        ),
         default_initial_cash=Decimal(1000000),
     )
 
@@ -248,6 +253,10 @@ class TimelineWebTest(unittest.TestCase):
         self.assertEqual(
             runs["rule-run"]["symbolStates"][0]["name"],
             "삼성전자",
+        )
+        self.assertEqual(
+            payload["cycleTimeline"]["trends"]["005930"][-1]["close"],
+            "72000",
         )
 
     def test_empty_active_ledgers_keep_initial_cash_days(self) -> None:
@@ -373,7 +382,7 @@ class _Cursor:
         self.queries.append(query)
 
     def fetchall(self):
-        rows = [(), (), (), (), (), ()]
+        rows = [(), (), (), (), (), (), ()]
         value = rows[self._index]
         self._index += 1
         return value

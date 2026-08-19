@@ -175,6 +175,12 @@ payload = build_paper_timeline(
             datetime(2026, 8, 13, 2, tzinfo=UTC),
         ),
     ),
+    trend_rows=(
+        ("005930", datetime(2026, 8, 11, 6, tzinfo=UTC), "67000"),
+        ("005930", datetime(2026, 8, 12, 6, tzinfo=UTC), "68000"),
+        ("005930", datetime(2026, 8, 13, 6, tzinfo=UTC), "71000"),
+        ("005930", datetime(2026, 8, 14, 6, tzinfo=UTC), "72000"),
+    ),
     default_initial_cash=Decimal(1000000),
 )
 

@@ -37,6 +37,24 @@
 .cycle-row { display: grid; grid-template-columns: 104px minmax(0, 1fr); border-top: 1px solid var(--line); padding-top: 10px; }
 .cycle-time { padding: 14px 12px 0 2px; color: var(--muted); font: 500 10px var(--mono); }
 .cycle-time strong { display: block; color: var(--text); font-size: 18px; margin-bottom: 5px; }
+.cycle-content { display: grid; gap: 10px; min-width: 0; }
+.cycle-universe { border: 1px solid var(--line); background: rgba(17,24,21,.72); }
+.cycle-universe summary { padding: 11px 14px; cursor: pointer; color: var(--mint); font: 700 10px var(--mono); letter-spacing: .08em; list-style: none; }
+.cycle-universe summary::-webkit-details-marker { display: none; }
+.cycle-universe summary::after { content: " +"; }
+.cycle-universe[open] summary::after { content: " −"; }
+.universe-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; padding: 0 14px 14px; }
+.universe-item { display: grid; gap: 9px; min-width: 0; padding: 11px; border: 1px solid var(--line); color: var(--text); text-decoration: none; }
+.universe-item:hover { border-color: var(--mint); }
+.universe-item-head { display: flex; justify-content: space-between; gap: 10px; }
+.universe-item-head strong, .universe-item-head span { display: block; }
+.universe-item-head strong { font: 700 10px var(--mono); }
+.universe-item-head span, .universe-item small { color: var(--muted); font-size: 9px; }
+.universe-item-head b { font: 600 12px var(--mono); }
+.universe-trend { width: 100%; height: 64px; display: block; }
+.universe-trend polyline { fill: none; stroke: var(--mint); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.universe-marker { stroke: var(--amber); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
+.universe-missing { margin: 0; padding: 0 14px 14px; color: var(--muted); font-size: 10px; }
 .cycle-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cycle-card { border: 1px solid var(--line); background: var(--panel); min-width: 0; }
 .cycle-card.rule { border-left: 3px solid var(--mint); }

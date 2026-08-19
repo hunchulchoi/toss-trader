@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### WEB-002 Cycle universe trends
+
+- Owner: codex
+- Status: DONE
+- Result: added a lazy cycle-level universe panel that deduplicates the exact
+  persisted Rule/Hermes symbols and renders each symbol's full available
+  200-session daily trend with latest price and a cycle-selection time marker
+- Checks: 310 unit tests; 4 Playwright desktop/mobile tests; scoped Ruff,
+  JavaScript syntax, and Git whitespace checks
+- Risks: legacy cycles without `cycle_insight.symbols` expose only their stored
+  symbol count; trend lines intentionally include candles after selection while
+  the amber marker identifies the universe selection point
+
 ### WEB-001 Paper cycle timeline
 
 - Owner: codex

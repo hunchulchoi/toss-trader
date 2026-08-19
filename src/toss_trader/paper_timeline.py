@@ -149,6 +149,28 @@ class PostgresPaperTimelineStore:
                         """
                     )
                     cycle_rows = cursor.fetchall()
+                    universe_symbols = _cycle_symbols(cycle_rows)
+                    if universe_symbols:
+                        cursor.execute(
+                            """
+                            SELECT symbol, timestamp, close_price
+                            FROM (
+                                SELECT symbol, timestamp, close_price,
+                                       ROW_NUMBER() OVER (
+                                           PARTITION BY symbol
+                                           ORDER BY timestamp DESC
+                                       ) AS recency
+                                FROM market_candles
+                                WHERE interval = '1d' AND symbol = ANY(%s)
+                            ) AS ranked
+                            WHERE recency <= 200
+                            ORDER BY symbol, timestamp
+                            """,
+                            (universe_symbols,),
+                        )
+                        trend_rows = cursor.fetchall()
+                    else:
+                        trend_rows = ()
             finally:
                 connection.close()
         except self._database_error as error:
@@ -162,6 +184,7 @@ class PostgresPaperTimelineStore:
             advice_rows=advice_rows,
             name_rows=name_rows,
             minute_rows=minute_rows,
+            trend_rows=trend_rows,
             default_initial_cash=self._initial_cash,
         )
 
@@ -176,6 +199,7 @@ def build_paper_timeline(
     advice_rows: Sequence[Sequence[Any]] = (),
     name_rows: Sequence[Sequence[Any]] = (),
     minute_rows: Sequence[Sequence[Any]] = (),
+    trend_rows: Sequence[Sequence[Any]] = (),
     default_initial_cash: Decimal,
 ) -> dict[str, Any]:
     initial_cash = {
@@ -300,7 +324,11 @@ def build_paper_timeline(
             fills=fills,
             names=names,
         ),
-        "cycleTimeline": _cycle_timeline(cycle_rows=cycle_rows, names=names),
+        "cycleTimeline": _cycle_timeline(
+            cycle_rows=cycle_rows,
+            names=names,
+            trend_rows=trend_rows,
+        ),
         "errors": _error_events(
             cycle_rows=cycle_rows,
             advice_rows=advice_rows,
@@ -313,6 +341,7 @@ def _cycle_timeline(
     *,
     cycle_rows: Sequence[Sequence[Any]],
     names: Mapping[str, str],
+    trend_rows: Sequence[Sequence[Any]],
 ) -> dict[str, Any]:
     runs = []
     for row in cycle_rows:
@@ -373,7 +402,31 @@ def _cycle_timeline(
         key=lambda item: (str(item["startedAt"]), str(item["portfolioId"])),
         reverse=True,
     )
-    return {"runs": runs}
+    trends: dict[str, list[dict[str, str]]] = {}
+    for symbol, timestamp, close_price in trend_rows:
+        trends.setdefault(str(symbol), []).append(
+            {
+                "timestamp": _datetime(timestamp).isoformat(),
+                "close": str(close_price),
+            }
+        )
+    return {"runs": runs, "trends": trends}
+
+
+def _cycle_symbols(cycle_rows: Sequence[Sequence[Any]]) -> list[str]:
+    symbols: dict[str, None] = {}
+    for row in cycle_rows:
+        insight = _json_mapping(row[13]) if len(row) > 13 else {}
+        raw_states = insight.get("symbols")
+        if not isinstance(raw_states, Sequence) or isinstance(raw_states, (str, bytes)):
+            continue
+        for state in raw_states:
+            if not isinstance(state, Mapping):
+                continue
+            symbol = str(state.get("symbol") or "")
+            if symbol:
+                symbols[symbol] = None
+    return list(symbols)
 
 
 def _portfolio_days(
