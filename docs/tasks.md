@@ -29,13 +29,14 @@ No tasks in progress.
   from overfetched trading-amount ranks after static eligibility filtering
 - Result: amount-only overfetch, static eligible reranking, setup filtering, valid
   empty caching, acquisition failure retry, mutable Risk execution-only, and
-  Python/n8n policy v2 parity implemented. Raw/eligible ranks are audit
-  provenance, not exact replay inputs.
-- Checks: 325 unit tests; scoped Ruff; JSON and n8n Code syntax; Git whitespace;
-  Cursor and agy final reviews with zero MUST FIX findings
-- Risks: production DB migration, n8n policy v2 publish, service rollout, and
-  first live dry-run remain pending; deploy workflow before automation to keep
-  the policy-version transition fail-closed
+  local membership and n8n execution Risk separation implemented. The optional
+  n8n universe contract remains policy v2-compatible for parity tests. Raw/
+  eligible ranks are audit provenance, not exact replay inputs.
+- Checks: 327 unit tests; scoped Ruff; JSON and n8n Code syntax; Git whitespace;
+  isolated real Toss smoke; Cursor and agy reviews with zero MUST FIX findings
+- Risks: production DB migration and service rollout remain pending. Optional
+  n8n universe compatibility path is policy v2, while live trade stays backward-
+  compatible with policy v1 and production membership makes no n8n call
 
 ## DONE
 

@@ -37,7 +37,7 @@ toss-trader automation-runs --type market_scan --status failed --limit 100
 | legacy 장중 endpoint | `/run-paper-cycle`은 호환용 직접 endpoint이며 Hermes 비교 task를 호출하지 않음 | `paper_cycle_runs`, `paper_risk_decisions`, `paper_fills` |
 | 운영 장중 workflow | `paper-rule-1m` → `paper-hermes-1m`. advisor는 신호+한도 통과 때만 | `Paper Cycle Run Log`, `Hermes Automation Run Log`, `n8n Flow Review Log` |
 | 장전·마감 분석 | n8n이 Hermes API를 직접 호출하고, automation의 `hermes-*-result` endpoint가 응답·token을 검증·기록 | `automation_run_logs`의 `market_scan`·`daily`, token panel |
-| RiskManager | 신호 또는 universe 후보마다 승인/거부를 먼저 저장. 승인된 trade만 fill 생성 | `Dynamic Universe Risk Decisions`, 최근 `paper_risk_decisions`, `Recent Paper Fills` |
+| RiskManager | universe는 로컬 정적 membership을 후보 장부에 저장. BUY·SELL 신호만 n8n 최종 Risk를 호출하며 승인된 trade만 fill 생성 | `Dynamic Universe Risk Decisions`, 최근 `paper_risk_decisions`, `Recent Paper Fills` |
 
 Grafana `Toss Trader`: 장부 `toss-postgres`(ro), 상태 패널 `toss-prometheus`.
 첫 화면은 상태·Rule vs Hermes·체결. 1분 차트·universe·자동화는 접힘.
