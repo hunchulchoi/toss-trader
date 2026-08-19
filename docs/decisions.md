@@ -9,7 +9,7 @@
 
 The n8n closing workflow persists a daily panel job after both paper portfolios
 finish. A no-agent Hermes cron script claims the job and invokes three fixed,
-read-only Cursor models in two parallel rounds:
+read-only Cursor models in two isolated rounds:
 
 - GPT `gpt-5.6-sol-medium`: quant analyst
 - Grok `cursor-grok-4.6-high-fast`: skeptic / anomaly detector

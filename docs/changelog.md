@@ -20,6 +20,10 @@
 - 보안: n8n·terminal child에 Docker socket/Cursor credential/임의 shell 권한을
   추가하지 않음. `TRADING_ENABLED=false` 유지
 - 운영: 코드·로컬 n8n asset만 반영. 배포·n8n publish·Hermes cron 설치 전
+- 추가 기록: 2026-08-19 19:39 KST. main Hermes에서 GPT·Grok 4.6 Fast·
+  Gemini 3.7 Flash의 실제 read-only JSON/token 응답 성공. Cursor CLI의 동시
+  프로세스 경합을 피하도록 각 round 내부 호출은 순차 실행하고, round 사이의
+  독립 분석→상호검토 경계는 유지
 
 ### Hermes 종목 판단에 cycle 시세·수급 스냅샷
 

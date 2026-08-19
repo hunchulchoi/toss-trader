@@ -8,7 +8,6 @@ import subprocess
 import tempfile
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -225,29 +224,23 @@ def _hermes_call(
     }
 
 
-def _run_parallel(
+def _run_round(
     prompts: dict[str, str], *, panel_id: str, stage_prefix: str
 ) -> dict[str, dict[str, Any]]:
     results: dict[str, dict[str, Any]] = {}
     errors: list[Exception] = []
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {
-            executor.submit(_cursor_call, name, prompt): name
-            for name, prompt in prompts.items()
-        }
-        for future in as_completed(futures):
-            name = futures[future]
-            try:
-                opinion = future.result()
-            except Exception as error:  # noqa: BLE001 - preserve peer results
-                errors.append(error)
-                continue
-            opinion["stage"] = f"{stage_prefix}:{name}"
-            results[name] = opinion
-            _post(
-                "/workflow/daily-panel-opinion",
-                {"panelId": panel_id, "opinion": opinion},
-            )
+    for name, prompt in prompts.items():
+        try:
+            opinion = _cursor_call(name, prompt)
+        except Exception as error:  # noqa: BLE001 - preserve peer results
+            errors.append(error)
+            continue
+        opinion["stage"] = f"{stage_prefix}:{name}"
+        results[name] = opinion
+        _post(
+            "/workflow/daily-panel-opinion",
+            {"panelId": panel_id, "opinion": opinion},
+        )
     if errors:
         raise errors[0]
     return results
@@ -263,14 +256,14 @@ def main() -> int:
         raise TypeError("claimed panel context is invalid")
     opinions: list[dict[str, Any]] = []
     try:
-        independent = _run_parallel(
+        independent = _run_round(
             {name: _independent_prompt(name, context) for name in ROLES},
             panel_id=panel_id,
             stage_prefix="independent",
         )
         opinions.extend(independent.values())
 
-        reviews = _run_parallel(
+        reviews = _run_round(
             {
                 name: _review_prompt(name, context, independent)
                 for name in ROLES
