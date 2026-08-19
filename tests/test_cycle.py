@@ -31,6 +31,7 @@ class WatchlistCandleClient:
         closes: dict[str, list[Decimal]],
         *,
         closed_countries: frozenset[str] = frozenset(),
+        daily_next_before: str | None = None,
     ) -> None:
         self.closes = closes
         self.calls: list[tuple[str, int]] = []
@@ -38,6 +39,7 @@ class WatchlistCandleClient:
         self.before_calls: list[tuple[str, str, str | None]] = []
         self.calendar_calls: list[str] = []
         self.closed_countries = closed_countries
+        self.daily_next_before = daily_next_before
 
     def stocks(self, symbols: tuple[str, ...]) -> list[dict]:
         return [{"symbol": symbol, "name": f"Name {symbol}"} for symbol in symbols]
@@ -71,7 +73,11 @@ class WatchlistCandleClient:
                 }
                 for index, close in enumerate(self.closes[symbol])
             ],
-            "nextBefore": None,
+            "nextBefore": (
+                self.daily_next_before
+                if interval == "1d" and before is None
+                else None
+            ),
         }
 
     def market_calendar(self, country: str, *, day=None) -> dict:
@@ -662,7 +668,8 @@ class PaperCycleRunnerTest(unittest.TestCase):
 
     def test_1m_v2_prepare_collects_completed_daily_history(self) -> None:
         client = WatchlistCandleClient(
-            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]},
+            daily_next_before="older-cursor",
         )
         strategy = FakeV2CycleStrategy(
             _v2_candidate(),
@@ -676,8 +683,9 @@ class PaperCycleRunnerTest(unittest.TestCase):
 
         self.assertIn(("005930", "1m", 4), client.interval_calls)
         self.assertIn(("005930", "1d", 200), client.interval_calls)
+        self.assertIn(("005930", "1d", 1), client.interval_calls)
         self.assertIn(
-            ("005930", "1d", "2026-08-12T00:00:00+09:00"),
+            ("005930", "1d", "older-cursor"),
             client.before_calls,
         )
 
