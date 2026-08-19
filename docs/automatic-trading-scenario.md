@@ -1,5 +1,8 @@
 # Toss Trader 자동매매 시나리오
 
+paper cycle의 신호·진입·청산 상태기계는
+[`paper-cycle-flow.md`](paper-cycle-flow.md)를 기준으로 한다.
+
 ## 현재 범위
 
 현재 시스템은 **paper trading 전용**이다.
@@ -37,7 +40,7 @@ Telegram 장전 리포트
         ▼
 Toss paper cycle
   ├─ 캔들 수집
-  ├─ MA20/MA60 신호 계산
+  ├─ 전일 setup-v2.2 후보 + D+1 첫 봉 검사
   ├─ 시장 일정·포트폴리오 조회
   ├─ RiskManager 승인/거부
   └─ paper 체결·사이클 상태 저장
@@ -103,10 +106,9 @@ discovery universe 안에서 발굴한다.
 - 평일 `09:00~15:20 KST`, 5분 간격 실행
 - n8n이 `paper-rule-1m`, `paper-hermes-1m` task를 순차 호출
 - task endpoint는 host port 없이 `openclaw-net` 내부에서만 접근
-- 종목별 최근 1분봉 61개로 MA20/MA60 계산
-- 골든크로스 `BUY`, 데드크로스 `SELL`
-- 교차가 없어도 일봉 `RISK_ON`(종가 > MA20 > MA60, 20일 모멘텀 > 0)이고
-  1분 `close > MA20 > MA60`이며 미보유면 하루 1회 trend continuation `BUY`
+- 종목별 1분봉과 완결 일봉 200개 수집
+- 직전 완결 일봉의 setup-v2.2 후보를 D+1 첫 완결 1분봉에서 arm
+- 보유 포지션은 persisted stop·structure invalidation으로 SELL 관리
 - Rule은 Hermes 없음. Hermes는 신호+한도 통과 때만. 한도 거부는 판단 행만
 - 정상 무신호는 Telegram을 보내지 않음
 - 체결, 의미 있는 RiskManager 거부, 종목/API 오류만 즉시 보고
@@ -145,20 +147,17 @@ Rule: preflight 없이 n8n 1회. payload는 신호+RiskContext. 뉴스·호가 �
 종목별 처리:
 
 1. Toss OAuth 토큰 획득 또는 캐시 토큰 재사용
-2. 기본 MA용 `long_window + 1`개 캔들 수집. 장중 1m v2 cycle은 같은 종목에
-   일봉 200개도 수집한다. 마감 1d cycle은 처음부터 일봉 200개. 완결 일봉이
+2. 장중 1m v2 cycle은 1분봉과 같은 종목의 일봉 200개를 수집한다. 완결 일봉이
    200개 미만이면 `setup-v2:missing:completed-daily-candles` skip이지
    종목 `error`가 아니다. Hermes shared snapshot이 후보를 다시 만들어도 같다.
-3. 저장된 종가로 이전·현재 MA20/MA60 계산
-4. 골든크로스면 `BUY`, 데드크로스면 `SELL`. 장중 1분봉은 교차가 없어도
-   일봉 상승 추세 + 1분 단기>장기 + 종가>단기MA + 미보유면 하루 1회
-   continuation `BUY`. 그 외는 신호 없음
-5. BUY는 strict setup-v2 가격·PIT 수급·이벤트·3% 갭 필터 적용. 누락 또는
-   위반이면 `setup-v2-block`; SELL은 우회
-6. 통과 신호가 있으면 국가별 정규장 일정과 시장 휴장 여부 조회
-7. Hermes면 hard preflight → 통과 시 advisor → n8n Risk. Rule은 n8n 1회
-8. 승인 시 paper 체결 기록
-9. 사이클 결과·API 오류 수 저장
+3. 직전 완결 일봉의 가격 setup과 PostgreSQL PIT 수급 6세션·이벤트를 평가한다.
+4. 다음 거래일 첫 완결 1분봉에서 3% 갭, stop, ATR, heat, cash로 BUY를 arm한다.
+5. 기존 v2 포지션은 structure invalidation 또는 stop touch 다음 봉 시가로
+   SELL 후보를 만든다.
+6. BUY plan을 먼저 저장하고 국가별 정규장 일정과 시장 휴장 여부를 확인한다.
+7. Hermes면 hard preflight → 통과 시 advisor → n8n Risk. Rule은 n8n Risk 1회
+8. 승인 시 paper 체결 기록. 미체결 BUY plan은 제거하고 SELL 체결 plan도 종료
+9. 손익을 다시 계산하고 cycle 결과·API 오류 수를 저장한다.
 
 한 종목 실패는 다른 종목 처리를 막지 않는다. 일부 실패는
 `partial_failure`, 전부 실패는 `failed`로 저장된다. 같은 캔들에서 생성된

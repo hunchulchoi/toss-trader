@@ -17,7 +17,7 @@ Hermes Telegram의 paper 장부 조회는
 - SQLite/PostgreSQL paper trading ledger
 - 멱등 캔들 collector와 저장 데이터 기반 MA scanner
 - watchlist 수집·MA 스캔·RiskManager·paper 체결 단일 사이클
-- 평일 장중 5분 간격 1분봉 MA20/MA60 paper cycle
+- 평일 장중 5분 간격 setup-v2.2 paper cycle
 - 장전 benchmark 시장 상태 분석과 설정 universe 종목 발굴
 - RiskManager 판단·자동화 실행·Hermes token 감사 장부
 - 시장 데이터 SQLite 저장 및 공유 PostgreSQL 선택 지원
@@ -202,15 +202,15 @@ DYNAMIC_UNIVERSE_SIZE=15
 
 `STRATEGY_INTERVAL=1d`는 수동 실행과 15:40 마감 cycle의 기본값이다. 장중
 `/run-paper-cycle` endpoint는 환경값과 관계없이 `--interval 1m`을 강제한다.
-1m v2 cycle은 분봉과 함께 일봉 200개를 수집하고, 완결 일봉이 부족하면 skip한다.
+현재 신호 상태기계의 기준 문서는
+[`docs/paper-cycle-flow.md`](docs/paper-cycle-flow.md)다. 1m v2 cycle은 분봉과
+함께 일봉 200개를 수집하고, 완결 일봉이 부족하면 skip한다.
 종목은 고정 watchlist가 아니라 30분마다 Toss 시장 거래대금 상위 30개와
 1일 상승률 상위 30개를 합산 점수화해 RiskManager가 승인한 상위 15개를 쓴다.
-universe 갱신 시 이미 `MA20 > MA60`인 종목은 최초 trend entry를 허용한다.
-장중 1분봉은 신규 교차 외에, 일봉이 `close > MA20 > MA60`이고 모멘텀이
-양수이며 1분 `close > MA20 > MA60`인 미보유 종목을 BUY 후보로 만든다.
-모든 BUY 후보는 setup-v2의 200일 가격·PIT 수급·이벤트·갭 사전 게이트를
-추가로 통과해야 하며, 누락은 `setup-v2-block`으로 차단한다. 이벤트는
-OpenDART, 수급은 KIS first-observed 행을 쓴다. 수급 6세션이 찰 때까지
+BUY 후보는 MA 교차가 아니라 직전 완결 일봉의 setup-v2.2 가격 조건과 PIT
+수급·이벤트에서 직접 만든다. D+1 첫 완결 1분봉에서 3% 갭과 위험 수량을 다시
+검사하며, 누락은 `setup-v2-block`으로 차단한다. 이벤트는 OpenDART, 수급은
+같은 세션에서 KRX를 KIS first-observed보다 우선한다. 수급 6세션이 찰 때까지
 신규 BUY 0건이 정상이다. 현재 paper 실험값은 하루 최대 매수 5회, 동시
 보유 10종목이다. 이 값은 2026-08-14 장중 변경 뒤 아직 온전한 거래일 검증을
 거치지 않은 미확정 값이다.
@@ -289,7 +289,7 @@ Telegram 비밀값으로 생성한 Alertmanager 설정은 container tmpfs에만 
 | 시각(KST) | 작업 | Hermes | Telegram |
 |---|---|---|---|
 | 평일 08:30 | 시장분석·종목발굴 | 시장 의견 생성 | 리포트 전송 |
-| 평일 09:00~15:20, 5분 간격 | 1분봉 MA 후보 + strict setup-v2 rule/Hermes 비교 | v2·한도 통과 신호만 advisor | 특이사항만 전송 |
+| 평일 09:00~15:20, 5분 간격 | setup-v2.2 D+1 rule/Hermes 비교 | v2·한도 통과 신호만 advisor | 특이사항만 전송 |
 | 평일 15:40 | 일봉 paper + 당일 1m v2 퍼널 마감 분석 | 규칙 준수 요약 | 마감 리포트 전송 |
 
 장중 신호는 RiskManager 승인 후에만 100만원 가상 장부에 반영한다. 휴장일에는

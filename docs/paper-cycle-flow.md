@@ -1,0 +1,172 @@
+# Paper cycle flow
+
+이 문서는 현재 운영 중인 setup-v2.2 paper cycle의 기준 설명이다. 시스템은
+`TRADING_ENABLED=false`이며 PostgreSQL에 가상 판단·체결만 기록한다. 증권사
+실계좌 주문은 생성하지 않는다.
+
+## Daily schedule
+
+| 시각(KST) | 실행 | 역할 |
+|---|---|---|
+| 평일 08:30 | market scan | 장전 후보 분석·Telegram 리포트. 체결 없음 |
+| 평일 09:00~15:20, 5분 간격 | Rule 1m → Hermes 1m | 같은 시장 snapshot으로 독립 paper 장부 비교 |
+| 평일 15:40 | Rule 1d → Hermes 1d → daily review | 당일 1m cycle 퍼널·체결·규칙 준수 마감 리뷰 |
+
+모든 schedule은 먼저 Toss 한국장 calendar를 확인한다. 휴장 또는 calendar 조회
+실패면 이후 scan, cycle, Hermes, Telegram 작업을 실행하지 않는다.
+
+## One intraday cycle
+
+```mermaid
+flowchart TD
+    N[n8n 5분 trigger] --> CAL{한국 정규장인가?}
+    CAL -->|아니오·조회 실패| STOP[전체 작업 중단]
+    CAL -->|예| U[동적 universe 갱신 또는 30분 cache]
+    U --> S[Rule: 1m + 완결 일봉 200개 수집]
+    S --> PIT[PostgreSQL PIT 조회]
+    PIT --> C{전일 setup-v2.2 후보 승인?}
+    C -->|누락·위반| SKIP[setup-v2 block / fill 없음]
+    C -->|승인| BAR{오늘 첫 1분봉 완결?}
+    BAR -->|아니오| WAIT[waiting:first-session-bar]
+    BAR -->|예| ARM[D+1 갭 재검사 + 위험기반 수량 계산]
+    ARM -->|0주·한도 위반| SKIP
+    ARM -->|armed| PLAN[v2 position plan 선저장]
+    PLAN --> RR[Rule RiskManager]
+    RR -->|승인| RF[Rule paper fill]
+    RR -->|거부·오류| NF[fill 없음]
+    S --> SHARE[sharedSnapshot]
+    SHARE --> H[Hermes 별도 장부에서 동일 시장 입력 재생]
+    H --> PRE{local hard preflight}
+    PRE -->|거부| HD[판단 기록 / token 0]
+    PRE -->|통과| ADV[Hermes advisor]
+    ADV --> HR[n8n RiskManager]
+    HR -->|승인| HF[Hermes paper fill]
+    HR -->|거부·오류| NF
+    RF --> LEDGER[손익 재계산 + cycle/감사 장부]
+    HF --> LEDGER
+    SKIP --> LEDGER
+    WAIT --> LEDGER
+    NF --> LEDGER
+    LEDGER --> NOTICE{체결·유의미 거부·오류?}
+    NOTICE -->|예| TG[Alertmanager → Telegram]
+    NOTICE -->|아니오| QUIET[무알림 정상 종료]
+```
+
+Rule이 시장 데이터를 한 번 수집해 `sharedSnapshot`을 만든다. Hermes는 같은
+symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트폴리오의 차이는
+시장 입력이 아니라 advisor 개입 여부와 각자의 현금·포지션·리스크 장부다.
+
+## Universe and market snapshot
+
+1. 동적 universe가 30분 이내면 cache를 사용한다.
+2. 만료됐으면 Toss 거래대금 상위 30개와 상승률 상위 30개를 합쳐 점수화한다.
+3. 거래 가능 상태와 RiskManager 후보 검사를 통과한 상위 15개를 선택한다.
+4. 순위 밖이어도 현재 보유 종목은 추적 대상에 포함한다.
+5. universe 갱신 실패면 신규 BUY를 막고 기존 보유의 SELL 경로만 유지한다.
+6. 종목별 1분봉과 완결 일봉 200개를 수집한다. 완결 일봉 부족은 오류가 아닌
+   `setup-v2:missing:completed-daily-candles(n/200)` skip이다.
+
+## Setup-v2.2 candidate
+
+후보는 오늘 장중 가격이 아니라 직전 완결 일봉까지의 200일 데이터로 만든다.
+기존 MA 골든크로스가 BUY를 만들고 setup-v2가 뒤에서 거르는 구조가 아니다.
+
+필수 입력:
+
+- 가격: 200개 연속 완결 일봉, MA50·MA200·RSI14·ATR14
+- 수급: 의사결정 시각에 이미 관측된 연속 6세션
+- 이벤트: 해당 signal session의 OpenDART coverage
+- 소스 우선순위: 같은 세션이면 KRX 공식 CSV → KIS first-observed
+- 시간 규칙: `available_at <= decision_at`인 행만 사용
+
+가격 setup은 pullback 또는 oversold reversal 중 하나가 필요하다. 수급은 최근
+5세션 외국인 순매수 비율이 음수에서 양수로 전환되고 최신 외국인 순매수가
+양수여야 한다. 기관 확인은 추가 강도지만 외국인 반전 자체는 필수다.
+
+다음은 신규 BUY를 차단한다.
+
+- 수급 6세션 미달 또는 세션 불연속
+- event coverage 없음, 임박 공시 존재
+- 가격 setup 없음, RSI 과열, falling knife
+- 물타기, stop 근접, 필수 입력 UNKNOWN
+
+valuation tier는 기록하지만 현재 실제 수량 배수는 항상 `1.0`이다.
+
+## D+1 entry and sizing
+
+승인 후보는 다음 거래일 첫 정규장 1분봉이 완결될 때까지 대기한다. 첫 봉의
+timestamp는 session open과 같아야 한다.
+
+1. 첫 봉 시가가 signal close보다 3% 이상 높으면 `gap-up-chase`로 차단한다.
+2. 구조적 stop은 setup 일봉 저가다.
+3. 실제 stop 거리는 `max(시가-stop, ATR14 × 1.5)`다.
+4. 진입·청산 각각 5bp 불리한 slippage와 국내 거래비용을 반영한다.
+5. 수량은 다음 한도의 최솟값을 정수 주식 단위로 내림한다.
+
+| 제한 | 값 |
+|---|---:|
+| 1회 위험 예산 | equity의 0.5% |
+| 전체 open heat | equity의 2% |
+| cluster heat | equity의 1% |
+| 주문 금액 | 300,000원 |
+| 가용 현금 | 비용 포함 초과 금지 |
+
+신뢰 가능한 sector master가 아직 없어서 모든 종목을 `UNKNOWN` 단일 cluster로
+취급한다. 같은 cycle의 앞선 후보가 fill되기 전이라도 heat와 cash를 임시
+예약해 뒤 후보의 중복 사용을 막는다. 계산 결과가 1주 미만이면 BUY하지 않는다.
+
+## Position and exit state machine
+
+BUY 직전에 `paper_v2_position_plans`를 먼저 저장한다. RiskManager·Hermes가
+거부하거나 fill 저장에 실패하면 plan을 제거한다. BUY fill과 plan이 모두 있는
+포지션만 v2 관리 대상으로 본다.
+
+보유 중 exit 순서:
+
+1. 이전 cycle에서 stop/structure exit가 pending이면 trigger 다음 완결 1분봉
+   시가로 SELL 후보를 만든다.
+2. pullback 포지션의 이후 완결 일봉 종가가 MA50 아래면 structure invalidation.
+3. 1분봉 저가가 stop에 닿으면 즉시 같은 봉에서 체결하지 않고 다음 완결
+   1분봉 시가로 hard-stop SELL 후보를 만든다.
+4. SELL fill 후 v2 plan을 제거한다.
+
+plan 없는 legacy 포지션이 하나라도 있으면 신규 v2 BUY를 fail-closed한다. 해당
+포지션을 임의 규칙으로 청산하지 않는다.
+
+## Risk, advisor, and persistence
+
+armed 신호도 최종 RiskManager를 통과해야 한다. 주요 제한은 주문 30만원,
+종목 100만원, 하루 BUY 5회, 동시 보유 10종목, 일일 수익률 -3%, API 연속 오류
+5회, 휴장, 마감 10분 전 신규 BUY 금지다.
+
+- Rule: 신호를 n8n RiskManager로 직접 보낸다.
+- Hermes: local hard preflight 통과 후에만 advisor를 호출하고, 그 결과를 다시
+  n8n RiskManager로 보낸다.
+- Risk 판단 저장이 실패하면 승인 신호도 체결하지 않는다.
+- 모든 paper fill은 PostgreSQL 장부에만 기록한다.
+
+| 장부 | 내용 |
+|---|---|
+| `paper_risk_decisions` | 승인·거부와 위반 코드 |
+| `paper_fills` | 가상 체결 |
+| `paper_v2_position_plans` | entry·stop·heat·exit pending 상태 |
+| `paper_portfolio_snapshots` | equity·실현/미실현손익·비용 |
+| `paper_cycle_runs` | 상태, count, API streak, `cycle_insight` |
+| `automation_run_logs` | n8n stage, Hermes 근거·token, 실패 |
+
+종목 한 개의 오류는 나머지 종목을 막지 않는다. 일부 오류는
+`partial_failure`, 전부 오류는 `failed`다. 필수 데이터 미달과 정상 대기는
+`skip`이며 API error streak를 올리지 않는다.
+
+## End-of-day cycle
+
+15:40의 `1d` cycle은 현재 독립 v2.2 BUY/SELL 신호를 만들지 않는다. Rule과
+Hermes 장부의 성과 snapshot을 닫고, 같은 서울 일자의 `1m cycle_insight`를
+모아 setup 차단·시가 대기·보유 idle·체결을 마감 분석에 전달한다. 장중 실제로
+없었던 매수 기회를 사후 뉴스로 만들어내지 않는다.
+
+## Current readiness rule
+
+자동 실행과 paper 장부는 준비돼 있어도 종목별 연속 수급이 6세션보다 적으면
+신규 BUY 0건이 정상이다. 이는 장애가 아니라 의도된 PIT fail-closed 상태다.
+실계좌 주문은 별도 구현·검증·명시적 승인 전까지 불가능하다.

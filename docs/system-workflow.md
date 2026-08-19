@@ -299,6 +299,9 @@ Hermes 한도 거부는 webhook 전 로컬 preflight. n8n 없음. Rule·universe
 
 ## 장중 paper cycle
 
+신호·진입·청산의 canonical 상태기계는
+[`paper-cycle-flow.md`](paper-cycle-flow.md)를 따른다.
+
 ```mermaid
 flowchart TD
     S[n8n 5분 trigger] --> API[POST /workflow/paper-rule-1m]
@@ -314,13 +317,13 @@ flowchart TD
     UR --> UL[(dynamic_universe_runs\ndynamic_universe_decisions)]
     UR --> PICK[승인 상위 15 + 보유 종목]
     UC --> C
-    PICK --> C[종목별 /candles 61개 순차 조회]
+    PICK --> C[종목별 1m + 완결 일봉 200개 순차 조회]
     C -->|최소 0.25초 + rate-limit 대기| MC[(market_candles)]
-    MC --> MA[MA20/MA60 계산]
-    MA --> X{신호 조건}
-    X -->|universe 갱신 + MA20 > MA60| B[최초 trend BUY]
-    X -->|새 골든/데드크로스| CS[BUY/SELL]
-    X -->|조건 없음| NS[신호 없음]
+    MC --> PIT[(PostgreSQL PIT<br/>수급 6세션 + 이벤트)]
+    PIT --> X{전일 setup-v2.2 승인 +<br/>D+1 첫 완결봉 arm?}
+    X -->|신규 entry| B[위험 수량 BUY]
+    X -->|보유 stop/structure exit| CS[SELL]
+    X -->|누락·대기·조건 없음| NS[skip / v2 idle]
     B --> SPLIT{포트폴리오}
     CS --> SPLIT
     SPLIT -->|규칙 기반| RM[n8n RiskManager 최종 판단]
@@ -345,7 +348,7 @@ RiskManager의 주요 제한:
 - paper 가용 현금 초과 금지
 - 종목 포지션 최대 `1,000,000원`
 - 하루 BUY 최대 5건
-- 동시 보유 최대 5종목
+- 동시 보유 최대 10종목
 - 일일 수익률 `-3%` 이하 신규 체결 차단
 - Toss API 연속 오류 5회 이상 차단
 - 휴장일과 장 마감 10분 전 BUY 차단
