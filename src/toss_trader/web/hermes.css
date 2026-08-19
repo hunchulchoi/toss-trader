@@ -1,0 +1,19 @@
+.hermes-kpis { margin-bottom: 12px; }
+.hermes-list { display: grid; gap: 0; }
+.hermes-item { border-top: 1px solid var(--line); padding: 8px 0; }
+.hermes-item:first-child { border-top: 0; padding-top: 0; }
+.hermes-item-head {
+  display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline;
+  font: 500 11px var(--mono);
+}
+.hermes-item-head time { color: var(--muted); }
+.hermes-kind { color: var(--mint); font-weight: 700; }
+.hermes-item.approved .hermes-verdict { color: var(--mint); }
+.hermes-item.rejected .hermes-verdict { color: var(--red); }
+.hermes-item.missing .hermes-body { color: var(--muted); font-style: italic; }
+.hermes-meta { color: var(--muted); }
+.hermes-body {
+  margin: 6px 0 0; color: var(--text); font-size: 13px; line-height: 1.45;
+  white-space: pre-wrap;
+}
+.hermes-error { margin: 6px 0 0; color: var(--red); font-size: 12px; }

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Hermes Conversations</title>
+  <link rel="stylesheet" href="/assets/timeline.css">
+  <link rel="stylesheet" href="/assets/cycles.css">
+  <link rel="stylesheet" href="/assets/hermes.css">
+  <script src="/assets/hermes.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Paper 장부 타임라인으로 이동">
+      <span class="brand-mark">TR</span>
+      <span><strong>TOSS / PAPER</strong><small>HERMES LOG</small></span>
+    </a>
+    <div class="topbar-meta">
+      <a class="topbar-link" href="/cycles">CYCLES</a>
+      <span class="status-dot"></span>
+      <span id="updated-at">데이터 로딩 중</span>
+      <span class="readonly">READ ONLY</span>
+    </div>
+  </header>
+
+  <main class="cycle-page" data-testid="hermes-log">
+    <header class="cycle-hero">
+      <div>
+        <p class="eyebrow">HERMES · AUTOMATION_RUN_LOGS</p>
+        <h1>Hermes 대화</h1>
+        <p class="caption">종목 판단 rationale · 장전/마감 응답. 요청 JSON은 저장하지 않음</p>
+      </div>
+      <a class="ledger-link" href="/">장부 타임라인 보기 →</a>
+    </header>
+
+    <section class="cycle-controls" aria-label="Hermes 필터">
+      <label><span>날짜</span><select id="date-filter"></select></label>
+      <label><span>종류</span><select id="kind-filter">
+        <option value="all">전체</option>
+        <option value="hermes_trade">종목 판단</option>
+        <option value="market_scan">장전 분석</option>
+        <option value="daily">마감 분석</option>
+      </select></label>
+      <label><span>상태</span><select id="status-filter">
+        <option value="all">전체 상태</option>
+        <option value="succeeded">성공</option>
+        <option value="failed">실패</option>
+      </select></label>
+      <button id="refresh" type="button">새로고침</button>
+    </section>
+
+    <section class="cycle-kpis hermes-kpis" aria-label="Hermes 요약">
+      <article><span>표시</span><strong id="run-count">—</strong></article>
+      <article><span>종목 판단</span><strong id="trade-count">—</strong></article>
+      <article><span>본문 없음</span><strong id="missing-count">—</strong></article>
+      <article><span>token</span><strong id="token-sum">—</strong></article>
+    </section>
+
+    <section class="cycle-section">
+      <div class="cycle-section-head">
+        <div><p class="eyebrow">NEWEST FIRST</p><h2>응답</h2></div>
+        <span id="visible-range" class="quiet-pill">—</span>
+      </div>
+      <div id="hermes-list" class="hermes-list"></div>
+      <p id="hermes-empty" class="empty" hidden>조건에 맞는 Hermes 기록이 없습니다.</p>
+    </section>
+  </main>
+
+  <div id="error-state" class="error-state" hidden>
+    <strong>Hermes 기록을 불러오지 못했습니다.</strong>
+    <button id="retry-load" type="button">다시 시도</button>
+  </div>
+</body>
+</html>

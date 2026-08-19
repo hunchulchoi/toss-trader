@@ -55,7 +55,10 @@ MCP holdings/pnl은 조회 시점 fills 재생이라 Grafana snapshot 패널과 
 | `Paper Cycle Run Log` | rule/Hermes 포트폴리오별 cycle 상태, 신호·체결·실패·제외 수 | `paper_cycle_runs` |
 | `Hermes Automation Run Log` | 장전·마감·실제 advisor token. 한도 preflight 거부는 없음 | `automation_run_logs`의 `market_scan`, `daily`, `hermes_trade` |
 
-회사명은 `market_symbols` 조인. body·secret·전체 Hermes prompt/response 미저장.
+회사명은 `market_symbols` 조인. 요청 JSON·secret은 저장하지 않는다. 종목 판단
+응답은 `hermes_trade.details.rationale`. 장전·마감 응답은 2026-08-19부터
+`details.assistant`(최대 4000자). 그 이전 daily/market_scan 행은 token만 있다.
+읽기 전용 페이지 `/hermes`.
 
 candle 이력 부족과 setup-v2 완결 일봉 200 미달은 `skipped`. `failed_count`·API streak 불변. `partial_failure`는 종목 `error`. 합치지 말 것.
 단일 통화 `daily_return_rate`는 UTC 일자 시작 총자산 대비 비용 반영 총자산

@@ -7,6 +7,15 @@
 
 ## 2026-08-19
 
+### Hermes 대화 조회 페이지
+
+- 기록 시각: 2026-08-19 16:45 KST
+- 동작: `/hermes`가 `automation_run_logs`의 `hermes_trade`·`market_scan`·`daily`를
+  읽는다. 종목 판단은 기존 `rationale`. 장전/마감은 이제 `details.assistant`에
+  응답 본문(최대 4000자). 요청 JSON·secret은 계속 안 넣음. 과거 장전/마감은
+  token만 있어 본문 없음으로 표시
+- 운영: 코드만, 배포 대기
+
 ### KIS 최신 세션 원장 지연 보완
 
 - 기록 시각: 2026-08-19 16:26 KST

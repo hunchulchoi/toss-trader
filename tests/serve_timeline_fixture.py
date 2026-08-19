@@ -181,6 +181,26 @@ payload = build_paper_timeline(
         ("005930", datetime(2026, 8, 13, 6, tzinfo=UTC), "71000"),
         ("005930", datetime(2026, 8, 14, 6, tzinfo=UTC), "72000"),
     ),
+    hermes_log_rows=(
+        (
+            "trade-1",
+            "hermes_trade",
+            "succeeded",
+            "decision",
+            datetime(2026, 8, 13, 2, tzinfo=UTC),
+            datetime(2026, 8, 13, 2, 0, 1, tzinfo=UTC),
+            30,
+            10,
+            40,
+            None,
+            {
+                "symbol": "000660",
+                "side": "BUY",
+                "approved": True,
+                "rationale": "위험 한도 안입니다.",
+            },
+        ),
+    ),
     default_initial_cash=Decimal(1000000),
 )
 
