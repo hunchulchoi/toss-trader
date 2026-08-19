@@ -33,6 +33,10 @@ Naver values are not promoted.
   API call.
 - Net-buy amounts use `frgn_ntby_tr_pbmn` and `orgn_ntby_tr_pbmn`, with
   `acml_tr_pbmn` as the ratio denominator.
+- If the DataGo price ledger lags the completed KIS date, session indexes are
+  extended only across business days confirmed by the Toss KR calendar. This
+  prevents valid recent KIS rows from being discarded while keeping holidays
+  fail-closed.
 - History returned by the first call is usable only after its actual retrieval
   timestamp. It is never backdated for a historical decision.
 - Each symbol commits independently and first observations are immutable, so a

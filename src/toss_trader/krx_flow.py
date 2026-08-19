@@ -173,27 +173,42 @@ def resolve_krx_session_index(
     calendar: KrMarketCalendar,
     session_date: date,
 ) -> int:
-    indexes = repository.session_indexes()
-    if session_date in indexes:
+    indexes = resolve_kr_session_indexes_through(
+        repository,
+        calendar,
+        session_date,
+    )
+    try:
         return indexes[session_date]
-    previous = max((day for day in indexes if day < session_date), default=None)
+    except KeyError as error:
+        raise ValueError(
+            f"KRX import date is not a Korean session: {session_date}"
+        ) from error
+
+
+def resolve_kr_session_indexes_through(
+    repository: OfficialDataRepository,
+    calendar: KrMarketCalendar,
+    through: date,
+) -> dict[date, int]:
+    indexes = repository.session_indexes()
+    if through in indexes:
+        return indexes
+    previous = max((day for day in indexes if day < through), default=None)
     if previous is None:
-        raise ValueError("cannot resolve KRX session without an earlier official session")
+        raise ValueError("cannot resolve KR session without an earlier official session")
     index = indexes[previous]
     candidate = previous + timedelta(days=1)
-    while candidate <= session_date:
+    while candidate <= through:
         session = calendar.regular_session(
             "KR",
             now=datetime.combine(candidate, time(12), tzinfo=SEOUL),
         )
         if session.is_business_day:
             index += 1
-        if candidate == session_date:
-            if not session.is_business_day:
-                raise ValueError(f"KRX import date is not a Korean session: {session_date}")
-            return index
+            indexes[candidate] = index
         candidate += timedelta(days=1)
-    raise AssertionError("unreachable")
+    return indexes
 
 
 def _parse_net_purchase_csv(raw: bytes) -> dict[str, Decimal]:

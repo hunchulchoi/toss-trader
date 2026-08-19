@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from .client import HttpRequest, Transport, UrllibTransport
+from .krx_flow import KrMarketCalendar, resolve_kr_session_indexes_through
 from .official_data import OfficialDataRepository
 
 KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
@@ -176,10 +177,19 @@ class KisInvestorFlowCollector:
         as_of: date,
         completed_through: date,
         retrieved_at: datetime,
+        calendar: KrMarketCalendar | None = None,
     ) -> int:
         if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
             raise ValueError("retrieved_at must include a timezone offset")
-        session_indexes = self._repository.session_indexes()
+        session_indexes = (
+            resolve_kr_session_indexes_through(
+                self._repository,
+                calendar,
+                completed_through,
+            )
+            if calendar is not None
+            else self._repository.session_indexes()
+        )
         retrieved_text = retrieved_at.isoformat()
         stored = 0
         self._failures = []

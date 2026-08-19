@@ -230,6 +230,76 @@ class OfficialDataTest(unittest.TestCase):
             ("000001: KIS API error temporary", "invalid symbol: 'AAPL'"),
         )
 
+    def test_kis_collector_extends_lagging_ledger_with_toss_calendar(self) -> None:
+        class FakeClient:
+            def daily_investor_flow(self, symbol, *, as_of):
+                del symbol, as_of
+                return [
+                    {
+                        "stck_bsop_date": session,
+                        "frgn_ntby_tr_pbmn": "1",
+                        "orgn_ntby_tr_pbmn": "2",
+                        "acml_tr_pbmn": "3",
+                    }
+                    for session in ("20260817", "20260818", "20260819")
+                ]
+
+        class FakeCalendar:
+            def regular_session(self, country, *, now):
+                self.country = country
+                return type(
+                    "Session",
+                    (),
+                    {
+                        "is_business_day": now.date()
+                        in {date(2026, 8, 18), date(2026, 8, 19)}
+                    },
+                )()
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "market.db"
+            repository = OfficialDataRepository(str(path))
+            repository.upsert_universe_rows(
+                [
+                    {
+                        "session_date": "2026-08-14",
+                        "symbol": "005930",
+                        "isin_code": "KR7005930003",
+                        "display_name": "삼성전자",
+                        "market_category": "KOSPI",
+                        "close_price": "100",
+                        "market_cap": "1",
+                        "trading_value": "3",
+                        "listed_share_count": "1",
+                        "security_type": "COMMON",
+                        "source": "test",
+                        "source_record_id": "2026-08-14:005930",
+                        "published_at": None,
+                        "available_at": None,
+                        "retrieved_at": "2026-08-14T09:00:00+00:00",
+                        "payload_hash": "2026-08-14:005930",
+                    }
+                ]
+            )
+            stored = KisInvestorFlowCollector(FakeClient(), repository).collect(
+                symbols=["005930"],
+                as_of=date(2026, 8, 19),
+                completed_through=date(2026, 8, 19),
+                retrieved_at=datetime(2026, 8, 19, 7, tzinfo=UTC),
+                calendar=FakeCalendar(),
+            )
+            repository.close()
+
+            connection = sqlite3.connect(path)
+            rows = connection.execute(
+                "SELECT session_date, session_index FROM market_flow_pit_v2 "
+                "ORDER BY session_date"
+            ).fetchall()
+            connection.close()
+
+        self.assertEqual(stored, 2)
+        self.assertEqual(rows, [("2026-08-18", 2), ("2026-08-19", 3)])
+
     def test_kis_collector_stops_after_token_failure(self) -> None:
         class FakeClient:
             def __init__(self) -> None:
