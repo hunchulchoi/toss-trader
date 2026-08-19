@@ -34,8 +34,8 @@ No tasks awaiting review.
   prompts, and Telegram output so no analyst can describe it as a closing result.
   Separate Hermes no-agent poll windows consume the midday and closing queues
   promptly through the same idempotent claim endpoint.
-- Checks: targeted automation and monitoring asset tests; JSON and Git
-  whitespace validation
+- Checks: 338 unit tests; Ruff, JSON, Git whitespace, and live n8n node validation;
+  published workflow export, services, safety switch, queue, and runner dry smoke
 - Risks: each briefing invokes the full seven-opinion panel, so weekday model
   usage increases by one panel. Calendar lookup failure remains fail-closed.
 
