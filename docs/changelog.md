@@ -12,7 +12,8 @@
 - 기록 시각: 2026-08-19 14:40 KST
 - 동작: 실행흐름 row·KPI·히어로 높이 축소. 배경 그리드·ambient 제거.
   universe 스파크라인 28px
-- 운영: 코드만, 배포 대기
+- 운영: 반영함. 2026-08-19 14:50 KST `timeline` recreate. `/healthz` 200,
+  restart 0, healthy. Tailscale `100.74.208.69:19094` `/cycles` 200
 
 ### 동적 universe vs setup-v2 교차토론
 
