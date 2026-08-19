@@ -33,7 +33,7 @@ from .cycle_state import CycleStateStore, open_cycle_state_store
 from .errors import TossApiError
 from .execution import PaperTradingService
 from .kis_flow import KisInvestorFlowClient, KisInvestorFlowCollector
-from .krx_flow import KrxInvestorFlowCsvImporter
+from .krx_flow import KrxInvestorFlowCsvImporter, resolve_krx_session_index
 from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
 from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
@@ -126,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
     krx_flow.add_argument("--session-date", required=True, type=date.fromisoformat)
     krx_flow.add_argument("--foreign-csv", required=True)
     krx_flow.add_argument("--institutional-csv", required=True)
+    krx_flow.add_argument("--trading-csv")
 
     stored_strategy = subparsers.add_parser(
         "scan-ma", help="evaluate MA crossover from stored candles"
@@ -562,11 +563,18 @@ def _collect_kis_flow(settings: Settings, args: argparse.Namespace) -> int:
 def _import_krx_flow_csv(settings: Settings, args: argparse.Namespace) -> int:
     repository = OfficialDataRepository(settings.market_db_path)
     try:
+        session_index = resolve_krx_session_index(
+            repository,
+            MarketCalendarService(_client(settings)),
+            args.session_date,
+        )
         result = KrxInvestorFlowCsvImporter(repository).import_files(
             session_date=args.session_date,
             foreign_csv=args.foreign_csv,
             institutional_csv=args.institutional_csv,
+            trading_csv=args.trading_csv,
             target_symbols=repository.symbols(),
+            session_index=session_index,
         )
         return _emit({**asdict(result), "tradingEnabled": False})
     finally:

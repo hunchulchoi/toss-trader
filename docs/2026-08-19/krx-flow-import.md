@@ -6,11 +6,16 @@ KRX 정보데이터시스템의 전일 확정치를 setup-v2 수급 원장에 �
 ## 입력 계약
 
 - 같은 세션·같은 시장 범위의 `외국인합계`, `기관합계` CSV 두 개
+- DataGo 원장에 해당 세션이 아직 없으면 KRX `전종목 시세` 거래대금 CSV
 - 필수 열: `종목코드`, `거래대금_순매수` (`순매수거래대금`,
   `순매수대금`도 허용)
 - UTF-8/CP949, comma/tab/semicolon 구분 지원
 - 두 파일에 모두 있는 현재 `market_symbols`의 6자리 국내 종목만 적재
 - 해당 세션이 공식 universe 원장에 있고 종목별 거래대금이 양수여야 함
+
+DataGo 공식 원장이 전일 세션을 아직 게시하지 않았다면 마지막 원장 세션부터
+import 날짜까지 Toss 한국장 캘린더를 확인해 session index를 계산한다. import
+날짜가 휴장이거나 이전 공식 세션이 없으면 거부한다.
 
 헤더·세션·거래대금 검증이 실패하면 행을 쓰지 않는다. 투자자 거래가 없어 한쪽
 CSV에서 빠진 종목은 적재하지 않고 해당 종목만 setup-v2에서 계속 fail-closed한다.
@@ -29,7 +34,8 @@ CSV에서 빠진 종목은 적재하지 않고 해당 종목만 setup-v2에서 �
 toss-trader import-krx-flow-csv \
   --session-date 2026-08-18 \
   --foreign-csv /path/to/foreign.csv \
-  --institutional-csv /path/to/institutional.csv
+  --institutional-csv /path/to/institutional.csv \
+  --trading-csv /path/to/all-stocks.csv
 ```
 
 KIS와 KRX가 같은 종목·세션에 공존하면 setup-v2 조회는 KRX를 우선하되,

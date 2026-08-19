@@ -6,11 +6,52 @@ import unittest
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from toss_trader.krx_flow import KrxInvestorFlowCsvImporter
+from toss_trader.krx_flow import KrxInvestorFlowCsvImporter, resolve_krx_session_index
 from toss_trader.official_data import OfficialDataRepository
 
 
 class KrxFlowImportTest(unittest.TestCase):
+    def test_resolves_lagging_official_session_with_toss_calendar(self) -> None:
+        class FakeCalendar:
+            def regular_session(self, country, *, now):
+                self.country = country
+                return type(
+                    "Session",
+                    (),
+                    {"is_business_day": now.date() == date(2026, 8, 18)},
+                )()
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = OfficialDataRepository(str(Path(directory) / "market.db"))
+            repository.upsert_universe_rows(
+                [
+                    {
+                        "session_date": "2026-08-14",
+                        "symbol": "005930",
+                        "isin_code": "KR7005930003",
+                        "display_name": "삼성전자",
+                        "market_category": "KOSPI",
+                        "close_price": "100",
+                        "market_cap": "1",
+                        "trading_value": "1000",
+                        "listed_share_count": "1",
+                        "security_type": "COMMON",
+                        "source": "datago",
+                        "source_record_id": "005930",
+                        "published_at": None,
+                        "available_at": None,
+                        "retrieved_at": "2026-08-14T09:00:00+00:00",
+                        "payload_hash": "005930",
+                    }
+                ]
+            )
+
+            index = resolve_krx_session_index(
+                repository, FakeCalendar(), date(2026, 8, 18)
+            )
+            repository.close()
+
+        self.assertEqual(index, 2)
     def test_imports_matching_official_csv_with_observed_availability(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -147,3 +188,34 @@ class KrxFlowImportTest(unittest.TestCase):
         self.assertFalse(result.complete)
         self.assertEqual(result.missing_foreign, ("035420",))
         self.assertEqual(result.missing_institutional, ("000660",))
+
+    def test_uses_krx_trading_csv_when_datago_session_is_lagging(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = OfficialDataRepository(str(root / "market.db"))
+            foreign = root / "foreign.csv"
+            institutional = root / "institutional.csv"
+            trading = root / "trading.csv"
+            foreign.write_text(
+                "종목코드,거래대금_순매수\n005930,100\n", encoding="utf-8"
+            )
+            institutional.write_text(
+                "종목코드,거래대금_순매수\n005930,-20\n", encoding="utf-8"
+            )
+            trading.write_text(
+                "종목코드,거래대금\n005930,5000\n", encoding="utf-8"
+            )
+
+            result = KrxInvestorFlowCsvImporter(repository).import_files(
+                session_date=date(2026, 8, 18),
+                foreign_csv=foreign,
+                institutional_csv=institutional,
+                trading_csv=trading,
+                target_symbols=["005930"],
+                session_index=10,
+                retrieved_at=datetime(2026, 8, 19, 0, tzinfo=UTC),
+            )
+            repository.close()
+
+        self.assertEqual(result.inserted_rows, 1)
+        self.assertIsNotNone(result.trading_file_hash)

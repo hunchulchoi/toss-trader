@@ -152,7 +152,8 @@ KRX 정보데이터시스템에서 같은 날짜·전체 종목으로 각각 내
 infisical run --env=prod --path=/ -- toss-trader import-krx-flow-csv \
   --session-date 2026-08-18 \
   --foreign-csv /path/to/foreign.csv \
-  --institutional-csv /path/to/institutional.csv
+  --institutional-csv /path/to/institutional.csv \
+  --trading-csv /path/to/all-stocks.csv
 ```
 
 두 파일에 모두 있는 현재 유니버스 종목 중 해당 세션의 공식 거래대금이 있는
