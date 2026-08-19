@@ -9,6 +9,7 @@ from json import dumps
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .advisor import hermes_market_review
 from .calendar import MarketCalendarService, MarketSession, country_for_symbol
 from .cycle_state import CycleStateStore
 from .errors import TossApiError
@@ -555,6 +556,8 @@ class PaperCycleRunner:
                     performance=performance,
                     consecutive_api_errors=consecutive_api_errors,
                     new_buys_allowed=new_buys_allowed,
+                    candidate=v2_candidates[index] if v2_candidates else None,
+                    plan=v2_plans_to_store[index] if v2_plans_to_store else None,
                 )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
@@ -643,6 +646,8 @@ class PaperCycleRunner:
         performance: DailyPortfolioPerformance,
         consecutive_api_errors: int,
         new_buys_allowed: bool,
+        candidate: DailySetupCandidate | None = None,
+        plan: ArmedTradePlan | None = None,
     ) -> PaperExecutionResult:
         return self._trading.submit(
             signal,
@@ -652,6 +657,29 @@ class PaperCycleRunner:
             daily_return_rate=performance.daily_return_rate,
             consecutive_api_errors=consecutive_api_errors,
             new_buys_allowed=new_buys_allowed,
+            market_review=self._hermes_market_review(
+                signal.symbol, now, candidate=candidate, plan=plan
+            ),
+        )
+
+    def _hermes_market_review(
+        self,
+        symbol: str,
+        now: datetime,
+        *,
+        candidate: DailySetupCandidate | None,
+        plan: ArmedTradePlan | None,
+    ) -> dict[str, object] | None:
+        if self._v2_strategy is None:
+            return None
+        daily_fn = getattr(self._v2_strategy, "completed_daily_bars", None)
+        daily = daily_fn(symbol, now=now, limit=30) if callable(daily_fn) else ()
+        minutes = self._v2_strategy.completed_one_minute_bars(symbol, now=now)[-60:]
+        return hermes_market_review(
+            daily=daily,
+            minutes=minutes,
+            candidate=candidate,
+            plan=plan,
         )
 
     def _daily_risk_on(self, symbol: str) -> bool:

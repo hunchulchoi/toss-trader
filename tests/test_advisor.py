@@ -2,9 +2,9 @@ import unittest
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from toss_trader.advisor import HermesTradeAdvisor
+from toss_trader.advisor import HermesTradeAdvisor, hermes_market_review
 from toss_trader.automation import HermesAnalysis
-from toss_trader.models import Side, TradeSignal
+from toss_trader.models import Candle, Side, TradeSignal
 from toss_trader.paper import PaperLedger
 from toss_trader.risk import RiskContext
 
@@ -64,6 +64,40 @@ class HermesTradeAdvisorTest(unittest.TestCase):
         run = self.ledger.recent_automation_runs(run_type="hermes_trade")[0]
         self.assertEqual(run["totalTokens"], 40)
         self.assertEqual(run["details"]["rationale"], "거래량 확인 필요")
+
+    def test_includes_compact_market_review_in_payload(self) -> None:
+        analyzer = StubAnalyzer(
+            HermesAnalysis(
+                content='{"approved": true, "rationale": "되돌림과 수급 확인"}',
+            )
+        )
+        advisor = HermesTradeAdvisor(
+            analyzer=analyzer,  # type: ignore[arg-type]
+            audit=self.ledger,
+            symbol_names={"005930": "삼성전자"},
+        )
+        bar = Candle(
+            symbol="005930",
+            interval="1d",
+            timestamp=datetime(2026, 8, 17, 6, tzinfo=UTC),
+            open_price=Decimal(69000),
+            high_price=Decimal(71000),
+            low_price=Decimal(68000),
+            close_price=Decimal(70000),
+            volume=Decimal(1000),
+            currency="KRW",
+        )
+
+        advisor.advise(
+            self.signal,
+            self.context,
+            review=hermes_market_review(daily=(bar,), minutes=()),
+        )
+
+        market = analyzer.payloads[0]["market"]  # type: ignore[index]
+        self.assertEqual(market["daily"][0]["c"], "70000")
+        self.assertEqual(market["minutes"], [])
+        self.assertNotIn("apiKey", str(analyzer.payloads[0]))
 
     def test_records_failure_and_raises(self) -> None:
         advisor = HermesTradeAdvisor(

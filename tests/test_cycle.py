@@ -135,6 +135,12 @@ class FakeV2CycleStrategy:
         del symbol, now
         return tuple(self.bars)
 
+    def completed_daily_bars(
+        self, symbol: str, *, now: datetime, limit: int = 30
+    ) -> tuple[Candle, ...]:
+        del symbol, now, limit
+        return ()
+
     def latest_completed_daily_bar(self, symbol: str, *, now: datetime):
         del symbol, now
 

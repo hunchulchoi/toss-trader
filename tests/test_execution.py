@@ -191,7 +191,7 @@ class PaperTradingServiceTest(unittest.TestCase):
         risk_calls: list[str] = []
 
         class Advisor:
-            def advise(self, signal, context):  # type: ignore[no-untyped-def]
+            def advise(self, signal, context, review=None):  # type: ignore[no-untyped-def]
                 advisor_calls.append(signal.signal_id)
                 return TradeAdvice(approved=True, rationale="approve")
 
@@ -228,7 +228,7 @@ class PaperTradingServiceTest(unittest.TestCase):
         calls: list[str] = []
 
         class Advisor:
-            def advise(self, signal, context):  # type: ignore[no-untyped-def]
+            def advise(self, signal, context, review=None):  # type: ignore[no-untyped-def]
                 calls.append("advisor")
                 return TradeAdvice(approved=False, rationale="strategy rejected")
 

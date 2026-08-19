@@ -142,7 +142,9 @@ n8n의 각 task 호출마다 automation service가 별도 프로세스로
 `paper_risk_decisions`, `paper_cycle_runs`는 `portfolio_id`로 격리한다.
 
 Hermes: 로컬 hard preflight 통과 후에만 advisor. 한도 거부 → 판단 1행, token 0.
-Rule: preflight 없이 n8n 1회. payload는 신호+RiskContext. 뉴스·호가 없음.
+Rule: preflight 없이 n8n 1회. advisor payload는 신호+RiskContext에 cycle이 이미
+수집한 최근 완결 일봉 30개·분봉 60개·setup-v2·PIT 수급 요약을 붙인다. Hermes가
+Toss API를 직접 조회하지 않는다. 뉴스·호가 없음.
 장애는 `Hermes 분석 실패: 응답을 받지 못해 체결 차단`. token은 `hermes_trade`.
 
 종목별 처리:

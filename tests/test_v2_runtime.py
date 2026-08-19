@@ -57,6 +57,9 @@ class OfficialV2CycleStrategyTest(unittest.TestCase):
 
         self.assertEqual(candidate.close_price, history[-2].close_price)
         self.assertEqual(self.contexts[-1][3], False)
+        daily = self.strategy.completed_daily_bars("005930", now=now, limit=30)
+        self.assertEqual(len(daily), 30)
+        self.assertEqual(daily[-1].close_price, history[-2].close_price)
 
     def test_requires_two_hundred_completed_daily_bars(self) -> None:
         start = datetime(2026, 1, 1, tzinfo=UTC)

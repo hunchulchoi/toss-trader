@@ -7,6 +7,13 @@
 
 ## 2026-08-19
 
+### Hermes 종목 판단에 cycle 시세·수급 스냅샷
+
+- 기록 시각: 2026-08-19 17:25 KST
+- 동작: advisor user JSON에 최근 완결 일봉 30·분봉 60·setup-v2·PIT 수급 요약.
+  sidecar tool/Toss 직접 조회 없음. 한도 숫자만으로 승인하지 말라고 prompt 보강
+- 운영: 코드만, 배포 대기
+
 ### OpenDART 당일 coverage 조기 고정 방지
 
 - 기록 시각: 2026-08-19 17:20 KST
