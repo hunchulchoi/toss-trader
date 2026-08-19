@@ -12,7 +12,8 @@
 - 기록 시각: 2026-08-19 17:25 KST
 - 동작: advisor user JSON에 최근 완결 일봉 30·분봉 60·setup-v2·PIT 수급 요약.
   sidecar tool/Toss 직접 조회 없음. 한도 숫자만으로 승인하지 말라고 prompt 보강
-- 운영: 코드만, 배포 대기
+- 운영: 반영함. 2026-08-19 17:34 KST `automation` recreate. health `healthy`,
+  restart 0, `TRADING_ENABLED=false`. 라이브 이미지에 market prompt 확인
 
 ### OpenDART 당일 coverage 조기 고정 방지
 
