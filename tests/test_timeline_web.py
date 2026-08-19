@@ -87,13 +87,51 @@ def _payload():
             ),
         ),
         cycle_rows=(
-            ("rule", "succeeded", "1d", datetime(2026, 8, 13, 0, tzinfo=UTC)),
+            (
+                "rule",
+                "succeeded",
+                "1m",
+                datetime(2026, 8, 13, 0, tzinfo=UTC),
+                None,
+                "rule-run",
+                datetime(2026, 8, 13, 0, 0, 12, tzinfo=UTC),
+                15,
+                0,
+                0,
+                0,
+                0,
+                "0",
+                {
+                    "idleReason": "setup-v2-block",
+                    "newBuysAllowed": True,
+                    "funnel": {"scanned": 15, "setupV2Blocked": 15},
+                    "reasons": {"setup-v2-block": 15},
+                    "symbols": [
+                        {
+                            "symbol": "005930",
+                            "reason": "setup-v2-block",
+                            "skipReason": "setup-v2:violation:flow-not-confirmed",
+                            "error": None,
+                            "fillSide": None,
+                        }
+                    ],
+                },
+            ),
             (
                 "hermes",
                 "failed",
-                "1d",
+                "1m",
                 datetime(2026, 8, 13, 0, tzinfo=UTC),
                 "Hermes API timeout",
+                "hermes-run",
+                datetime(2026, 8, 13, 0, 0, 15, tzinfo=UTC),
+                15,
+                0,
+                0,
+                1,
+                1,
+                "0",
+                None,
             ),
         ),
         risk_rows=(
@@ -205,6 +243,12 @@ class TimelineWebTest(unittest.TestCase):
             "71000",
         )
         self.assertEqual(payload["errors"][0]["message"], "Hermes API timeout")
+        runs = {run["runId"]: run for run in payload["cycleTimeline"]["runs"]}
+        self.assertEqual(runs["rule-run"]["durationMs"], 12000)
+        self.assertEqual(
+            runs["rule-run"]["symbolStates"][0]["name"],
+            "삼성전자",
+        )
 
     def test_empty_active_ledgers_keep_initial_cash_days(self) -> None:
         payload = build_paper_timeline(
@@ -228,20 +272,39 @@ class TimelineWebTest(unittest.TestCase):
         payload = _payload()
 
         root = timeline_response("GET", "/", payload)
+        cycles = timeline_response("GET", "/cycles", payload)
         css = timeline_response("GET", "/assets/timeline.css", payload)
+        cycle_css = timeline_response("GET", "/assets/cycles.css", payload)
         script = timeline_response("GET", "/assets/timeline.js", payload)
+        cycle_script = timeline_response("GET", "/assets/cycles.js", payload)
         api = timeline_response("GET", "/api/timeline?ignored=1", payload)
 
         self.assertEqual(root[0], 200)
         self.assertIn(b'data-portfolio="rule"', root[2])
+        self.assertIn(b'data-testid="cycle-timeline"', cycles[2])
         self.assertIn(b".sparkline", css[2])
+        self.assertIn(b".cycle-row", cycle_css[2])
         self.assertIn(b"state.data.portfolios", script[2])
+        self.assertIn(b"cycleTimeline", cycle_script[2])
         self.assertIn(b"https://www.tossinvest.com/stocks/A", script[2])
         self.assertIn(b"stock-order-link", css[2])
         self.assertEqual(json.loads(api[2])["portfolios"]["hermes"]["label"], "Hermes")
         self.assertEqual(timeline_response("GET", "/healthz", payload)[0], 200)
         self.assertEqual(timeline_response("GET", "/missing", payload)[0], 404)
         self.assertEqual(timeline_response("POST", "/api/timeline", payload)[0], 405)
+
+    def test_api_resolves_fresh_payload_provider_per_request(self) -> None:
+        calls = []
+
+        def provider():
+            calls.append(len(calls) + 1)
+            return {"sequence": calls[-1]}
+
+        first = timeline_response("GET", "/api/timeline", provider)
+        second = timeline_response("GET", "/api/timeline", provider)
+
+        self.assertEqual(json.loads(first[2]), {"sequence": 1})
+        self.assertEqual(json.loads(second[2]), {"sequence": 2})
 
     def test_store_forces_postgres_read_only(self) -> None:
         cursor = _Cursor()
@@ -291,7 +354,7 @@ class TimelineWebTest(unittest.TestCase):
         status = json.loads(output.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertEqual(status["portfolios"], ["rule", "hermes"])
-        self.assertEqual(serve.call_args.kwargs["payload"], payload)
+        self.assertIs(serve.call_args.kwargs["payload"], store.return_value.payload)
         self.assertEqual(serve.call_args.kwargs["port"], 8099)
 
 
@@ -310,7 +373,7 @@ class _Cursor:
         self.queries.append(query)
 
     def fetchall(self):
-        rows = [(), (), (), (), ()]
+        rows = [(), (), (), (), (), ()]
         value = rows[self._index]
         self._index += 1
         return value

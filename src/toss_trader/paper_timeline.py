@@ -128,25 +128,21 @@ class PostgresPaperTimelineStore:
                         minute_rows = cursor.fetchall()
                     else:
                         minute_rows = ()
-                    decision_symbols = sorted(
-                        {str(row[2]) for row in risk_rows} | set(symbols)
+                    cursor.execute(
+                        """
+                        SELECT symbol, display_name
+                        FROM market_symbols
+                        ORDER BY symbol
+                        """
                     )
-                    name_rows: Sequence[Sequence[Any]] = ()
-                    if decision_symbols:
-                        cursor.execute(
-                            """
-                            SELECT symbol, display_name
-                            FROM market_symbols
-                            WHERE symbol = ANY(%s)
-                            ORDER BY symbol
-                            """,
-                            (decision_symbols,),
-                        )
-                        name_rows = cursor.fetchall()
+                    name_rows = cursor.fetchall()
                     cursor.execute(
                         """
                         SELECT portfolio_id, status, interval, started_at,
-                               error_message
+                               error_message, run_id, finished_at, symbol_count,
+                               signal_count, fill_count, failed_count,
+                               consecutive_api_errors, daily_return_rate,
+                               cycle_insight
                         FROM paper_cycle_runs
                         WHERE portfolio_id IN ('rule', 'hermes')
                         ORDER BY started_at
@@ -304,12 +300,80 @@ def build_paper_timeline(
             fills=fills,
             names=names,
         ),
+        "cycleTimeline": _cycle_timeline(cycle_rows=cycle_rows, names=names),
         "errors": _error_events(
             cycle_rows=cycle_rows,
             advice_rows=advice_rows,
             names=names,
         ),
     }
+
+
+def _cycle_timeline(
+    *,
+    cycle_rows: Sequence[Sequence[Any]],
+    names: Mapping[str, str],
+) -> dict[str, Any]:
+    runs = []
+    for row in cycle_rows:
+        if str(row[0]) not in PORTFOLIOS:
+            continue
+        started_at = _datetime(row[3])
+        finished_at = (
+            _datetime(row[6]) if len(row) > 6 and row[6] is not None else None
+        )
+        insight = _json_mapping(row[13]) if len(row) > 13 else {}
+        raw_states = insight.get("symbols")
+        symbol_states = []
+        if isinstance(raw_states, Sequence) and not isinstance(
+            raw_states, (str, bytes)
+        ):
+            for raw_state in raw_states:
+                if not isinstance(raw_state, Mapping):
+                    continue
+                symbol = str(raw_state.get("symbol") or "")
+                symbol_states.append(
+                    {
+                        "symbol": symbol,
+                        "name": names.get(symbol),
+                        "reason": raw_state.get("reason"),
+                        "skipReason": raw_state.get("skipReason"),
+                        "error": raw_state.get("error"),
+                        "fillSide": raw_state.get("fillSide"),
+                    }
+                )
+        runs.append(
+            {
+                "runId": str(row[5]) if len(row) > 5 else None,
+                "portfolioId": str(row[0]),
+                "status": str(row[1]),
+                "interval": str(row[2]),
+                "startedAt": started_at.isoformat(),
+                "finishedAt": finished_at.isoformat() if finished_at else None,
+                "durationMs": (
+                    int((finished_at - started_at).total_seconds() * 1000)
+                    if finished_at
+                    else None
+                ),
+                "symbolCount": int(row[7]) if len(row) > 7 else 0,
+                "signalCount": int(row[8]) if len(row) > 8 else 0,
+                "fillCount": int(row[9]) if len(row) > 9 else 0,
+                "failedCount": int(row[10]) if len(row) > 10 else 0,
+                "consecutiveApiErrors": int(row[11]) if len(row) > 11 else 0,
+                "dailyReturnRate": str(row[12]) if len(row) > 12 else "0",
+                "error": str(row[4]) if len(row) > 4 and row[4] is not None else None,
+                "idleReason": insight.get("idleReason"),
+                "newBuysAllowed": insight.get("newBuysAllowed"),
+                "funnel": _mapping_or_empty(insight.get("funnel")),
+                "reasons": _mapping_or_empty(insight.get("reasons")),
+                "symbolStates": symbol_states,
+            }
+        )
+    runs.sort(
+        key=lambda item: (str(item["startedAt"]), str(item["portfolioId"])),
+        reverse=True,
+    )
+    return {"runs": runs}
 
 
 def _portfolio_days(
@@ -536,9 +600,16 @@ def _json_mapping(value: Any) -> Mapping[str, Any]:
     if isinstance(value, Mapping):
         return value
     if isinstance(value, str):
-        parsed = json.loads(value)
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
         return parsed if isinstance(parsed, Mapping) else {}
     return {}
+
+
+def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 def _string_list(value: Any) -> list[str]:

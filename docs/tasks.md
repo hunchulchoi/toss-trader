@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### WEB-001 Paper cycle timeline
+
+- Owner: codex
+- Status: DONE
+- Result: added a read-only `/cycles` page with live 30-second refresh,
+  Rule/Hermes pairing, date/portfolio/status filters, cycle KPI/funnel views,
+  and per-symbol setup-v2 block reasons; timeline API now reads a fresh database
+  snapshot on every request
+- Checks: 310 unit tests; 4 Playwright desktop/mobile browser tests; JavaScript
+  syntax and Git whitespace checks
+- Risks: old cycle rows without `cycle_insight` remain visible with aggregate
+  counts only; the page does not mutate portfolios or trading state
+
 ### STRAT-007 Align Toss opening-minute timestamps
 
 - Owner: codex

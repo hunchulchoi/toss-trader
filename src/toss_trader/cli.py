@@ -914,10 +914,11 @@ def _serve_paper_timeline(settings: Settings, args: argparse.Namespace) -> int:
     parameters = settings.postgres_connection_parameters()
     if parameters is None:
         raise ValueError("paper timeline requires PostgreSQL configuration")
-    payload = PostgresPaperTimelineStore(
+    store = PostgresPaperTimelineStore(
         parameters,
         initial_cash=settings.paper_initial_cash,
-    ).payload()
+    )
+    payload = store.payload()
     print(
         json.dumps(
             {
@@ -932,7 +933,7 @@ def _serve_paper_timeline(settings: Settings, args: argparse.Namespace) -> int:
         ),
         flush=True,
     )
-    serve_timeline(host=args.host, port=args.port, payload=payload)
+    serve_timeline(host=args.host, port=args.port, payload=store.payload)
     return 0
 
 

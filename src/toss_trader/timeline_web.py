@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
@@ -12,18 +12,24 @@ from urllib.parse import urlsplit
 
 _ASSETS = {
     "/": ("timeline.html", "text/html; charset=utf-8"),
+    "/cycles": ("cycles.html", "text/html; charset=utf-8"),
+    "/cycles/": ("cycles.html", "text/html; charset=utf-8"),
     "/assets/timeline.css": ("timeline.css", "text/css; charset=utf-8"),
     "/assets/timeline.js": (
         "timeline.js",
         "text/javascript; charset=utf-8",
     ),
+    "/assets/cycles.css": ("cycles.css", "text/css; charset=utf-8"),
+    "/assets/cycles.js": ("cycles.js", "text/javascript; charset=utf-8"),
 }
+
+TimelinePayload = Mapping[str, Any] | Callable[[], Mapping[str, Any]]
 
 
 def timeline_response(
     method: str,
     path: str,
-    payload: Mapping[str, Any],
+    payload: TimelinePayload,
 ) -> tuple[int, str, bytes]:
     if method not in {"GET", "HEAD"}:
         return 405, "application/json; charset=utf-8", b'{"error":"method not allowed"}'
@@ -31,8 +37,9 @@ def timeline_response(
     if normalized == "/healthz":
         return 200, "application/json; charset=utf-8", b'{"status":"ok"}'
     if normalized == "/api/timeline":
+        resolved = payload() if callable(payload) else payload
         body = json.dumps(
-            payload,
+            resolved,
             ensure_ascii=False,
             separators=(",", ":"),
             default=_json_default,
@@ -47,7 +54,7 @@ def timeline_response(
 
 
 def create_timeline_server(
-    *, host: str, port: int, payload: Mapping[str, Any]
+    *, host: str, port: int, payload: TimelinePayload
 ) -> ThreadingHTTPServer:
     if not host.strip():
         raise ValueError("timeline host must not be empty")
@@ -91,7 +98,7 @@ def create_timeline_server(
     return ThreadingHTTPServer((host, port), Handler)
 
 
-def serve_timeline(*, host: str, port: int, payload: Mapping[str, Any]) -> None:
+def serve_timeline(*, host: str, port: int, payload: TimelinePayload) -> None:
     with create_timeline_server(host=host, port=port, payload=payload) as server:
         server.serve_forever()
 

@@ -62,3 +62,19 @@ test('비교·판단·오류·1분봉 체결 마커를 함께 탐색한다', asy
   await expect(page.locator('#minute-executions')).toContainText('RULE BUY');
   await expect(page.locator('#minute-executions')).toContainText('rule entry');
 });
+
+test('cycle 실행 결과와 종목별 차단 사유를 조회한다', async ({ page }) => {
+  const response = await page.goto('/cycles');
+  expect(response.status()).toBe(200);
+
+  await expect(page.getByTestId('cycle-timeline')).toBeVisible();
+  await expect(page.locator('.cycle-row')).toHaveCount(1);
+  await expect(page.locator('.cycle-card.rule')).toContainText('성공');
+  await expect(page.locator('.cycle-card.hermes')).toContainText('Hermes API timeout');
+  await expect(page.locator('#signal-fill')).toHaveText('1 / 1');
+
+  await page.locator('.cycle-card.rule details').click();
+  await expect(page.locator('.cycle-card.rule .funnel')).toContainText('v2 차단 14');
+  await expect(page.locator('.cycle-card.rule .symbol-state-list')).toContainText('삼성전자');
+  await expect(page.locator('.cycle-card.rule .symbol-state-list')).toContainText('수급 반전 미확인');
+});
