@@ -188,9 +188,17 @@ def build_paper_timeline(
         if str(portfolio_id) in PORTFOLIOS
     }
     fills = [_fill(row) for row in fill_rows if str(row[0]) in PORTFOLIOS]
-    if not fills:
-        raise ValueError("paper timeline requires Rule or Hermes fills")
-    first_date = min(item["executedAt"].astimezone(SEOUL).date() for item in fills)
+    cycle_dates = {
+        _datetime(row[3]).astimezone(SEOUL).date()
+        for row in cycle_rows
+        if str(row[0]) in PORTFOLIOS
+    }
+    if fills:
+        first_date = min(item["executedAt"].astimezone(SEOUL).date() for item in fills)
+    elif cycle_dates:
+        first_date = min(cycle_dates)
+    else:
+        first_date = datetime.now(SEOUL).date()
     daily_marks: dict[date, dict[str, dict[str, Any]]] = {}
     mark_history: dict[str, list[dict[str, Any]]] = {}
     names: dict[str, str] = {}
@@ -221,11 +229,6 @@ def build_paper_timeline(
         mark_history.setdefault(symbol, []).append(mark)
         if trading_date >= first_date:
             daily_marks.setdefault(trading_date, {})[symbol] = mark
-    cycle_dates = {
-        _datetime(row[3]).astimezone(SEOUL).date()
-        for row in cycle_rows
-        if str(row[0]) in PORTFOLIOS
-    }
     dates = sorted({*daily_marks, *cycle_dates, first_date})
     dates = [trading_date for trading_date in dates if trading_date >= first_date]
     if not dates:

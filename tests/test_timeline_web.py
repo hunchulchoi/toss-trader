@@ -206,6 +206,24 @@ class TimelineWebTest(unittest.TestCase):
         )
         self.assertEqual(payload["errors"][0]["message"], "Hermes API timeout")
 
+    def test_empty_active_ledgers_keep_initial_cash_days(self) -> None:
+        payload = build_paper_timeline(
+            initial_rows=(("rule", "1000000"), ("hermes", "1000000")),
+            fill_rows=(),
+            mark_rows=(),
+            cycle_rows=(),
+            default_initial_cash=Decimal(1000000),
+        )
+
+        rule = payload["portfolios"]["rule"]["days"][-1]
+        hermes = payload["portfolios"]["hermes"]["days"][-1]
+        self.assertEqual(rule["equity"], Decimal(1000000))
+        self.assertEqual(hermes["cash"], Decimal(1000000))
+        self.assertEqual(rule["positions"], [])
+        self.assertEqual(hermes["trades"], [])
+        self.assertEqual(payload["comparison"][-1]["equityDelta"], "0")
+        self.assertEqual(payload["decisions"], [])
+
     def test_serves_read_only_page_assets_api_and_health(self) -> None:
         payload = _payload()
 
@@ -240,8 +258,9 @@ class TimelineWebTest(unittest.TestCase):
             connect=lambda **kwargs: connection,
         )
 
-        with self.assertRaises(ValueError):
-            store.payload()
+        payload = store.payload()
+        self.assertEqual(set(payload["portfolios"]), {"rule", "hermes"})
+        self.assertEqual(payload["portfolios"]["rule"]["days"][-1]["positions"], [])
         self.assertIn("default_transaction_read_only=on", connection.connect_options)
         self.assertTrue(
             all(query.lstrip().upper().startswith("SELECT") for query in cursor.queries)

@@ -109,7 +109,8 @@ PYTHONPATH=src python3 -m toss_trader backtest-portfolio-ma \
 
 `serve-paper-timeline`은 PostgreSQL의 `paper_fills`, `paper_cycle_runs`,
 `market_candles`를 읽어 Rule과 Hermes 장부를 각각 KST 날짜별로 재생한다.
-CLI holdings나 Toss 실계좌 API는 호출하지 않는다.
+CLI holdings나 Toss 실계좌 API는 호출하지 않는다. 활성 세대 체결이 0이면
+초기현금 하루짜리를 만들고 기동을 거부하지 않는다.
 
 ```bash
 PYTHONPATH=src python3 -m toss_trader serve-paper-timeline \

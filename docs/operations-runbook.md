@@ -163,6 +163,12 @@ Hermes shared snapshot 재생성 모두 `failed_count`에 넣지 않는다. 장�
 분봉과 함께 일봉 200개를 요청한다. 요청 성공 후에도 완결 세션이 200 미만이면
 계속 skip. API 요청 실패만 종목 `error`다.
 
+### paper 타임라인 502
+
+Tailscale `19094` 502는 `toss-trader-timeline-1`이 죽은 것이다. 활성 Rule/Hermes
+체결 0은 정상 빈 장부이며 페이지는 초기현금으로 떠야 한다. 재시작 루프면
+로그의 JSON `error`를 본다. archive 세대(`rule-v1-*`)는 이 페이지 범위 밖이다.
+
 ### Hermes token 0 + 거부 다수
 
 한도 preflight. `paper_risk_decisions` 위반 코드 확인. `hermes_trade` 없음이 정상.
