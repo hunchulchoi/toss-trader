@@ -19,7 +19,12 @@ from .official_data import OfficialDataRepository
 KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
 KIS_FLOW_PATH = "/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily"
 KIS_FLOW_TR_ID = "FHPTJ04160001"
-_SYMBOL = re.compile(r"^[0-9]{6}$")
+_SYMBOL = re.compile(r"^[0-9A-Z]{6}$")
+_FLOW_AMOUNT_FIELDS = (
+    "frgn_ntby_tr_pbmn",
+    "orgn_ntby_tr_pbmn",
+    "acml_tr_pbmn",
+)
 KIS_TOKEN_COOLDOWN_SECONDS = 61.0
 
 logger = logging.getLogger(__name__)
@@ -61,7 +66,7 @@ class KisInvestorFlowClient:
 
     def daily_investor_flow(self, symbol: str, *, as_of: date) -> list[dict[str, Any]]:
         if not _SYMBOL.fullmatch(symbol):
-            raise ValueError("KIS symbol must be six digits")
+            raise ValueError("KIS symbol must be six uppercase alphanumeric characters")
         query = urlencode(
             {
                 "FID_COND_MRKT_DIV_CODE": "J",
@@ -201,6 +206,13 @@ class KisInvestorFlowCollector:
             rows: list[dict[str, object]] = []
             try:
                 payload_rows = self._client.daily_investor_flow(symbol, as_of=as_of)
+                rows = _flow_rows(
+                    payload_rows,
+                    symbol=symbol,
+                    completed_through=completed_through,
+                    session_indexes=session_indexes,
+                    retrieved_text=retrieved_text,
+                )
             except KisTokenRequestError as error:
                 self._failures.append(str(error))
                 logger.warning("KIS flow stopped because token issuance failed: %s", error)
@@ -209,38 +221,55 @@ class KisInvestorFlowCollector:
                 self._failures.append(f"{symbol}: {error}")
                 logger.warning("KIS flow skipped symbol=%s: %s", symbol, error)
                 continue
-            for payload in payload_rows:
-                raw_date = str(payload.get("stck_bsop_date", ""))
-                if len(raw_date) != 8 or not raw_date.isdigit():
-                    continue
-                session = date(int(raw_date[:4]), int(raw_date[4:6]), int(raw_date[6:]))
-                if session > completed_through or session not in session_indexes:
-                    continue
-                foreign = _decimal_field(payload, "frgn_ntby_tr_pbmn")
-                institutional = _decimal_field(payload, "orgn_ntby_tr_pbmn")
-                trading_value = _decimal_field(payload, "acml_tr_pbmn")
-                if trading_value <= 0:
-                    continue
-                canonical = json.dumps(
-                    payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-                ).encode()
-                rows.append(
-                    {
-                        "symbol": symbol,
-                        "session_date": session.isoformat(),
-                        "session_index": session_indexes[session],
-                        "available_at": retrieved_text,
-                        "foreign_net_buy": str(foreign),
-                        "institutional_net_buy": str(institutional),
-                        "trading_value": str(trading_value),
-                        "source": f"kis:{KIS_FLOW_TR_ID}",
-                        "source_record_id": f"{symbol}:{session.isoformat()}",
-                        "retrieved_at": retrieved_text,
-                        "payload_hash": sha256(canonical).hexdigest(),
-                    }
-                )
             stored += self._repository.insert_flow_rows(rows)
         return stored
+
+
+def _flow_rows(
+    payload_rows: Sequence[Mapping[str, object]],
+    *,
+    symbol: str,
+    completed_through: date,
+    session_indexes: Mapping[date, int],
+    retrieved_text: str,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for payload in payload_rows:
+        raw_date = str(payload.get("stck_bsop_date", ""))
+        if len(raw_date) != 8 or not raw_date.isdigit():
+            continue
+        session = date(int(raw_date[:4]), int(raw_date[4:6]), int(raw_date[6:]))
+        if session > completed_through or session not in session_indexes:
+            continue
+        if any(
+            not str(payload.get(field, "")).replace(",", "").strip()
+            for field in _FLOW_AMOUNT_FIELDS
+        ):
+            continue
+        foreign = _decimal_field(payload, "frgn_ntby_tr_pbmn")
+        institutional = _decimal_field(payload, "orgn_ntby_tr_pbmn")
+        trading_value = _decimal_field(payload, "acml_tr_pbmn")
+        if trading_value <= 0:
+            continue
+        canonical = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode()
+        rows.append(
+            {
+                "symbol": symbol,
+                "session_date": session.isoformat(),
+                "session_index": session_indexes[session],
+                "available_at": retrieved_text,
+                "foreign_net_buy": str(foreign),
+                "institutional_net_buy": str(institutional),
+                "trading_value": str(trading_value),
+                "source": f"kis:{KIS_FLOW_TR_ID}",
+                "source_record_id": f"{symbol}:{session.isoformat()}",
+                "retrieved_at": retrieved_text,
+                "payload_hash": sha256(canonical).hexdigest(),
+            }
+        )
+    return rows
 
 
 def _decimal_field(payload: Mapping[str, Any], field: str) -> Decimal:

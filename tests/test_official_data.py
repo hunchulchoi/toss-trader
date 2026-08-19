@@ -62,6 +62,32 @@ class OfficialDataTest(unittest.TestCase):
         self.assertEqual(request.headers["tr_id"], "FHPTJ04160001")
         self.assertEqual(request.headers["authorization"], "Bearer memory-only")
 
+    def test_kis_flow_accepts_alphanumeric_krx_short_code(self) -> None:
+        class FakeTransport:
+            def __init__(self) -> None:
+                self.requests = []
+
+            def send(self, request, timeout):
+                del timeout
+                self.requests.append(request)
+                if request.url.endswith("/oauth2/tokenP"):
+                    return HttpResponse(
+                        200,
+                        {},
+                        b'{"access_token":"token","expires_in":300}',
+                    )
+                return HttpResponse(200, {}, b'{"rt_cd":"0","output2":[]}')
+
+        transport = FakeTransport()
+        KisInvestorFlowClient(
+            app_key="key",
+            app_secret="secret",
+            transport=transport,
+            minimum_interval_seconds=0,
+        ).daily_investor_flow("0004V0", as_of=date(2026, 8, 19))
+
+        self.assertIn("FID_INPUT_ISCD=0004V0", transport.requests[-1].url)
+
     def test_kis_token_cooldown_retries_once(self) -> None:
         class FakeTransport:
             def __init__(self) -> None:
@@ -299,6 +325,62 @@ class OfficialDataTest(unittest.TestCase):
 
         self.assertEqual(stored, 2)
         self.assertEqual(rows, [("2026-08-18", 2), ("2026-08-19", 3)])
+
+    def test_kis_collector_skips_blank_row_without_stopping_other_rows(self) -> None:
+        class FakeClient:
+            def daily_investor_flow(self, symbol, *, as_of):
+                del symbol, as_of
+                return [
+                    {
+                        "stck_bsop_date": "20260818",
+                        "frgn_ntby_tr_pbmn": "",
+                        "orgn_ntby_tr_pbmn": "",
+                        "acml_tr_pbmn": "",
+                    },
+                    {
+                        "stck_bsop_date": "20260819",
+                        "frgn_ntby_tr_pbmn": "1",
+                        "orgn_ntby_tr_pbmn": "2",
+                        "acml_tr_pbmn": "3",
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = OfficialDataRepository(str(Path(directory) / "market.db"))
+            repository.upsert_universe_rows(
+                [
+                    {
+                        "session_date": session,
+                        "symbol": "0004V0",
+                        "isin_code": "KR70004V0000",
+                        "display_name": "엔비알모션",
+                        "market_category": "KOSDAQ",
+                        "close_price": "100",
+                        "market_cap": "1",
+                        "trading_value": "3",
+                        "listed_share_count": "1",
+                        "security_type": "COMMON",
+                        "source": "test",
+                        "source_record_id": session,
+                        "published_at": None,
+                        "available_at": None,
+                        "retrieved_at": "2026-08-19T07:00:00+00:00",
+                        "payload_hash": session,
+                    }
+                    for session in ("2026-08-18", "2026-08-19")
+                ]
+            )
+            collector = KisInvestorFlowCollector(FakeClient(), repository)
+            stored = collector.collect(
+                symbols=["0004V0"],
+                as_of=date(2026, 8, 19),
+                completed_through=date(2026, 8, 19),
+                retrieved_at=datetime(2026, 8, 19, 7, tzinfo=UTC),
+            )
+            repository.close()
+
+        self.assertEqual(stored, 1)
+        self.assertEqual(collector.failures, ())
 
     def test_kis_collector_stops_after_token_failure(self) -> None:
         class FakeClient:

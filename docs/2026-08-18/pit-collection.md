@@ -33,6 +33,10 @@ Naver values are not promoted.
   API call.
 - Net-buy amounts use `frgn_ntby_tr_pbmn` and `orgn_ntby_tr_pbmn`, with
   `acml_tr_pbmn` as the ratio denominator.
+- KRX short codes may be six uppercase alphanumeric characters; codes such as
+  `0004V0` are valid common stocks, not malformed numeric symbols. Historical
+  rows with blank amount fields are ignored, while malformed nonblank amounts
+  fail only that symbol and do not terminate the daemon.
 - If the DataGo price ledger lags the completed KIS date, session indexes are
   extended only across business days confirmed by the Toss KR calendar. This
   prevents valid recent KIS rows from being discarded while keeping holidays
