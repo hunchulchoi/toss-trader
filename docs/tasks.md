@@ -20,25 +20,22 @@ No tasks in progress.
 
 ## REVIEW
 
-### STRAT-009 Harden setup-v2 universe membership
-
-- Owner: codex/cursor/agy
-- Status: REVIEW
-- Goal: separate acquisition errors from valid empty selections, keep mutable
-  account/system Risk out of membership, and derive the authoritative universe
-  from overfetched trading-amount ranks after static eligibility filtering
-- Result: amount-only overfetch, static eligible reranking, setup filtering, valid
-  empty caching, acquisition failure retry, mutable Risk execution-only, and
-  local membership and n8n execution Risk separation implemented. The optional
-  n8n universe contract remains policy v2-compatible for parity tests. Raw/
-  eligible ranks are audit provenance, not exact replay inputs.
-- Checks: 327 unit tests; scoped Ruff; JSON and n8n Code syntax; Git whitespace;
-  isolated real Toss smoke; Cursor and agy reviews with zero MUST FIX findings
-- Risks: production DB migration and service rollout remain pending. Optional
-  n8n universe compatibility path is policy v2, while live trade stays backward-
-  compatible with policy v1 and production membership makes no n8n call
+No tasks awaiting review.
 
 ## DONE
+
+### DATA-008 Extend KIS sessions past the lagging price ledger
+
+- Owner: codex
+- Status: DONE
+- Result: extend the repository session index through the KIS completion date
+  only with Toss-confirmed Korean sessions, so delayed DataGo price rows no
+  longer discard newer KIS flow; holidays remain excluded and KRX shares the
+  same resolver
+- Checks: 328 unit tests; scoped Ruff and Git whitespace; live KIS/Toss smoke
+  stored 2026-08-14, 2026-08-18, and 2026-08-19 as consecutive temporary rows
+  with zero failures and `TRADING_ENABLED=false`
+- Risks: production rollout and an idempotent operational backfill remain pending
 
 ### STRAT-009 Harden setup-v2 universe membership
 

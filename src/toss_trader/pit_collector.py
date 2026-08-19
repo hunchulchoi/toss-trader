@@ -90,6 +90,7 @@ def run_pit_collection(
                 as_of=local_day,
                 completed_through=local_day,
                 retrieved_at=now.astimezone(UTC),
+                calendar=calendar,
             )
             flow_failures = tuple(getattr(flow_collector, "failures", ()))
             flow_status = (

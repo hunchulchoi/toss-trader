@@ -555,6 +555,7 @@ def _collect_kis_flow(settings: Settings, args: argparse.Namespace) -> int:
             as_of=as_of,
             completed_through=completed_through,
             retrieved_at=now,
+            calendar=MarketCalendarService(_client(settings)),
         )
         return _emit(
             {
