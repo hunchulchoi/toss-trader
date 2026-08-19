@@ -34,11 +34,11 @@ No tasks awaiting review.
   counts are idempotently stored before the final Telegram report.
 - Checks: 336 unit tests; scoped Ruff and Git whitespace; real read-only model
   JSON/token smoke for all four models; production schema, n8n graph, empty
-  queue runner, health, restart count, and `TRADING_ENABLED=false` verified
-- Risks: first full seven-stage production execution occurs after the next
-  15:40 KST closing cycle; Cursor/Hermes provider latency or failure suppresses
-  the final report and sends a critical failure alert while preserving completed
-  opinions.
+  queue runner, health, restart count, and `TRADING_ENABLED=false`; full manual
+  seven-stage panel succeeded with seven DB opinions and final reporter accepted
+- Risks: Cursor/Hermes provider latency or failure suppresses the final report
+  and sends a critical failure alert while preserving completed opinions. The
+  first automatically scheduled run remains the next 15:40 KST closing cycle.
 
 ### AI-001 Pass cycle candles and setup summary to Hermes trade advisor
 

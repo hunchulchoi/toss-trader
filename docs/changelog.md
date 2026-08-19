@@ -29,6 +29,10 @@
   Gemini 3.7 Flash의 실제 read-only JSON/token 응답 성공. Cursor CLI의 동시
   프로세스 경합을 피하도록 각 round 내부 호출은 순차 실행하고, round 사이의
   독립 분석→상호검토 경계는 유지
+- 추가 기록: 2026-08-19 20:11 KST. 오늘 Rule/Hermes 마감 cycle을 test
+  execution으로 다시 생성해 전체 panel을 수동 실행. 약 3분 18초에 7단계 완료,
+  panel `succeeded`, 의견 7건, provider-reported total token 268,376을 DB에서
+  확인. Hermes 최종 판정은 Alertmanager가 수락했고 runner exit 0
 
 ### Hermes 종목 판단에 cycle 시세·수급 스냅샷
 
