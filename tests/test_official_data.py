@@ -460,6 +460,88 @@ class OfficialDataTest(unittest.TestCase):
             )
             repository.close()
 
+    def test_event_collection_refreshes_current_day_without_checkpoint(self) -> None:
+        class FakeClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def dart_events(self, *, start, end, page=1, page_count=100):
+                del end, page, page_count
+                self.calls += 1
+                return {
+                    "status": "000",
+                    "total_page": 1,
+                    "list": [
+                        {
+                            "stock_code": "005930",
+                            "corp_code": "00126380",
+                            "rcept_no": start.strftime("%Y%m%d") + "000001",
+                            "rcept_dt": start.strftime("%Y%m%d"),
+                            "report_nm": "유상증자결정",
+                        }
+                    ],
+                }
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = OfficialDataRepository(str(Path(directory) / "market.db"))
+            client = FakeClient()
+            collector = OfficialDataCollector(client, repository)
+            sessions = [date(2026, 8, 19), date(2026, 8, 20), date(2026, 8, 21)]
+
+            first = collector.collect_events(
+                start=date(2026, 8, 19),
+                end=date(2026, 8, 19),
+                additional_sessions=sessions,
+                checkpoint_through=date(2026, 8, 18),
+            )
+            second = collector.collect_events(
+                start=date(2026, 8, 19),
+                end=date(2026, 8, 19),
+                additional_sessions=sessions,
+                checkpoint_through=date(2026, 8, 18),
+            )
+            covered = repository.covered_dates(
+                dataset="events",
+                start=date(2026, 8, 19),
+                end=date(2026, 8, 19),
+            )
+            repository.close()
+
+        self.assertEqual((first, second), (1, 1))
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(covered, set())
+
+    def test_event_collection_ignores_early_same_day_checkpoint(self) -> None:
+        class FakeClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def dart_events(self, *, start, end, page=1, page_count=100):
+                del end, page, page_count
+                self.calls += 1
+                return {"status": "013", "message": "조회된 데이타가 없습니다."}
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = OfficialDataRepository(str(Path(directory) / "market.db"))
+            repository.record_coverage(
+                dataset="events",
+                start=date(2026, 8, 19),
+                end=date(2026, 8, 19),
+                completed_at="2026-08-19T00:01:00+09:00",
+                source="opendart:list",
+                row_count=4,
+            )
+            client = FakeClient()
+            OfficialDataCollector(client, repository).collect_events(
+                start=date(2026, 8, 19),
+                end=date(2026, 8, 19),
+                additional_sessions=[date(2026, 8, 20)],
+                checkpoint_through=date(2026, 8, 19),
+            )
+            repository.close()
+
+        self.assertEqual(client.calls, 1)
+
     def test_next_session_skips_weekend_and_holiday_from_observed_sessions(
         self,
     ) -> None:

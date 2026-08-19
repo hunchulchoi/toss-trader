@@ -24,6 +24,17 @@ No tasks awaiting review.
 
 ## DONE
 
+### DATA-009 Finalize OpenDART coverage after the receipt date
+
+- Owner: codex
+- Status: DONE
+- Result: keep the current receipt date refreshable, ignore checkpoints completed
+  on or before their coverage date, and add a 00:10 KST finalization run before
+  the next market open while retaining the 18:30 KIS/event refresh
+- Checks: 332 unit tests; scoped Ruff and Git whitespace; live comparison found
+  329 OpenDART receipts versus 4 prematurely checkpointed database rows
+- Risks: production rollout and the 2026-08-19 event refresh remain pending
+
 ### DATA-008 Extend KIS sessions past the lagging price ledger
 
 - Owner: codex
