@@ -28,6 +28,7 @@ from .setup_screening import EntryGateDecision, SetupType
 from .strategy import MaCrossoverEvaluation, ma_trend_continuation_signal
 from .v2_engine import (
     ADVERSE_SLIPPAGE,
+    COMPLETED_ONE_MINUTE_OFFSET,
     ArmedTradePlan,
     DailySetupCandidate,
     arm_candidate,
@@ -441,6 +442,17 @@ class PaperCycleRunner:
                         v2_candidates[index] = self._v2_strategy.build_candidate(
                             symbol, now=now
                         )
+                    if (
+                        stored_plan is None
+                        and v2_candidates[index] is not None
+                        and not entry_blocked_by_legacy
+                    ):
+                        self._ensure_v2_opening_bar(
+                            symbol=symbol,
+                            session=session,
+                            now=now,
+                            collection=collections[index],
+                        )
                     signal, reason, plan = self._v2_runtime_signal(
                         symbol=symbol,
                         candidate=v2_candidates[index],
@@ -663,6 +675,44 @@ class PaperCycleRunner:
         except (TypeError, ValueError):
             return None
 
+    def _ensure_v2_opening_bar(
+        self,
+        *,
+        symbol: str,
+        session: MarketSession,
+        now: datetime,
+        collection: CollectionResult | None,
+    ) -> None:
+        assert self._v2_strategy is not None
+        if not session.is_business_day or session.market_open_at is None:
+            return
+        target = session.market_open_at + COMPLETED_ONE_MINUTE_OFFSET
+        bars = self._v2_strategy.completed_one_minute_bars(symbol, now=now)
+        if any(bar.timestamp == target for bar in bars):
+            return
+        if not any(
+            bar.timestamp.astimezone(target.tzinfo).date() == target.date()
+            for bar in bars
+        ):
+            return
+
+        cursor = collection.next_before if collection is not None else None
+        for _ in range(3):
+            if cursor is None:
+                return
+            page = self._collector.collect(
+                symbol=symbol,
+                interval="1m",
+                count=200,
+                before=cursor,
+            )
+            bars = self._v2_strategy.completed_one_minute_bars(symbol, now=now)
+            if any(bar.timestamp == target for bar in bars):
+                return
+            if page.next_before == cursor:
+                return
+            cursor = page.next_before
+
     def _v2_runtime_signal(
         self,
         *,
@@ -768,7 +818,13 @@ class PaperCycleRunner:
         if candidate is None:
             return None, "setup-v2:missing:daily-candidate", None
         first_bar = next(
-            (bar for bar in bars if bar.timestamp == session.market_open_at), None
+            (
+                bar
+                for bar in bars
+                if bar.timestamp
+                == session.market_open_at + COMPLETED_ONE_MINUTE_OFFSET
+            ),
+            None,
         )
         if first_bar is None:
             return None, "setup-v2:waiting:first-session-bar", None

@@ -366,7 +366,13 @@ class PaperCycleRunnerTest(unittest.TestCase):
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         strategy = FakeV2CycleStrategy(
             _v2_candidate(),
-            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="10",
+                    low_price="9.5",
+                )
+            ],
         )
         client = WatchlistCandleClient(
             {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
@@ -390,11 +396,95 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(plan.quantity, result.items[0].fill.quantity)
         self.assertEqual(plan.cluster_id, "UNKNOWN")
 
+    def test_v2_cycle_pages_back_to_toss_session_open_bar(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        opening_bar = _minute_bar(
+            market_open + timedelta(minutes=1),
+            open_price="10",
+            low_price="9.5",
+        )
+        strategy = FakeV2CycleStrategy(_v2_candidate(), [])
+
+        class PagingMinuteClient(WatchlistCandleClient):
+            def candles(
+                self,
+                symbol: str,
+                *,
+                interval: str,
+                count: int,
+                before: str | None,
+                adjusted: bool,
+            ) -> dict:
+                if interval != "1m":
+                    return super().candles(
+                        symbol,
+                        interval=interval,
+                        count=count,
+                        before=before,
+                        adjusted=adjusted,
+                    )
+                self.calls.append((symbol, count))
+                self.interval_calls.append((symbol, interval, count))
+                self.before_calls.append((symbol, interval, before))
+                if before is None:
+                    timestamp = market_open + timedelta(hours=3)
+                    next_before = "older-minute-page"
+                    strategy.bars.append(
+                        _minute_bar(
+                            timestamp,
+                            open_price="10",
+                            low_price="9.5",
+                        )
+                    )
+                else:
+                    timestamp = opening_bar.timestamp
+                    next_before = None
+                    strategy.bars.append(opening_bar)
+                return {
+                    "candles": [
+                        {
+                            "timestamp": timestamp.isoformat(),
+                            "openPrice": "10",
+                            "highPrice": "10.5",
+                            "lowPrice": "9.5",
+                            "closePrice": "10",
+                            "volume": "100",
+                            "currency": "KRW",
+                        }
+                    ],
+                    "nextBefore": next_before,
+                }
+
+        client = PagingMinuteClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.fill_count, 1)
+        self.assertIn(
+            ("005930", "1m", "older-minute-page"),
+            client.before_calls,
+        )
+
     def test_v2_cycle_ignores_ma_sell_and_exits_after_stop_touch(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         strategy = FakeV2CycleStrategy(
             _v2_candidate(),
-            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="10",
+                    low_price="9.5",
+                )
+            ],
         )
         client = WatchlistCandleClient(
             {"005930": [Decimal(10), Decimal(12), Decimal(13), Decimal(10)]}
@@ -405,14 +495,18 @@ class PaperCycleRunnerTest(unittest.TestCase):
             quantity=Decimal(1), now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
         )
         strategy.bars = [
-            _minute_bar(market_open, open_price="10", low_price="9.5"),
             _minute_bar(
                 market_open + timedelta(minutes=1),
+                open_price="10",
+                low_price="9.5",
+            ),
+            _minute_bar(
+                market_open + timedelta(minutes=2),
                 open_price="9.4",
                 low_price="8.9",
             ),
             _minute_bar(
-                market_open + timedelta(minutes=2),
+                market_open + timedelta(minutes=3),
                 open_price="8.8",
                 low_price="8.7",
             ),
@@ -436,7 +530,13 @@ class PaperCycleRunnerTest(unittest.TestCase):
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         strategy = FakeV2CycleStrategy(
             _v2_candidate(),
-            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="10",
+                    low_price="9.5",
+                )
+            ],
         )
         client = WatchlistCandleClient(
             {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
@@ -460,7 +560,13 @@ class PaperCycleRunnerTest(unittest.TestCase):
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         strategy = FakeV2CycleStrategy(
             _v2_candidate(),
-            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="10",
+                    low_price="9.5",
+                )
+            ],
         )
         client = WatchlistCandleClient(
             {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}

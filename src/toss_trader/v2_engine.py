@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from itertools import pairwise
 from zoneinfo import ZoneInfo
@@ -23,6 +23,9 @@ ADVERSE_SLIPPAGE = SlippageAssumption(
     exit_rate=Decimal("0.0005"),
 )
 ATR_PERIOD = 14
+# Toss labels minute candles by their completion time. The 09:00-09:01 bar is
+# therefore timestamped 09:01, not at the regular-session open.
+COMPLETED_ONE_MINUTE_OFFSET = timedelta(minutes=1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +90,8 @@ def arm_candidate(
 
     The caller must pass a completed 1m bar. This function cannot observe
     whether the bar is closed; it only checks interval, timezone, timestamp
-    identity, and that the KST session date is after ``signal_session``.
+    completion timestamp, and that the KST session date is after
+    ``signal_session``.
     """
     _require_session_open_bar(
         first_completed_bar,
@@ -201,8 +205,10 @@ def _require_session_open_bar(
         raise ValueError("completed bar symbol must match the candidate")
     if session_open_at.tzinfo is None or session_open_at.utcoffset() is None:
         raise ValueError("session_open_at must include a timezone offset")
-    if bar.timestamp != session_open_at:
-        raise ValueError("completed bar timestamp must equal session_open_at")
+    if bar.timestamp != session_open_at + COMPLETED_ONE_MINUTE_OFFSET:
+        raise ValueError(
+            "completed bar timestamp must equal one minute after session_open_at"
+        )
     if bar.timestamp.astimezone(SEOUL).date() <= signal_session:
         raise ValueError("session open must be after the setup signal session")
 

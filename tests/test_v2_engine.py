@@ -90,7 +90,7 @@ def minute_bar(
     return Candle(
         symbol="005930",
         interval=interval,
-        timestamp=timestamp or session_open_at,
+        timestamp=timestamp or session_open_at + timedelta(minutes=1),
         open_price=open_price,
         high_price=open_price + Decimal(1),
         low_price=open_price - Decimal(1),
@@ -218,7 +218,17 @@ class V2EngineTest(unittest.TestCase):
                 bar=minute_bar(
                     open_price=candidate.close_price,
                     session_open_at=opened_at,
-                    timestamp=opened_at + timedelta(minutes=1),
+                    timestamp=opened_at,
+                ),
+                session_open_at=opened_at,
+            )
+        with self.assertRaisesRegex(ValueError, "timestamp"):
+            arm(
+                candidate,
+                bar=minute_bar(
+                    open_price=candidate.close_price,
+                    session_open_at=opened_at,
+                    timestamp=opened_at + timedelta(minutes=2),
                 ),
                 session_open_at=opened_at,
             )
