@@ -73,6 +73,8 @@ button { color: inherit; }
 .brand small { color: var(--muted); font: 500 9px var(--mono); letter-spacing: .18em; margin-top: 3px; }
 
 .topbar-meta { display: flex; align-items: center; gap: 10px; color: var(--muted); font: 500 11px var(--mono); }
+.topbar-link { color: var(--mint); text-decoration: none; letter-spacing: .08em; }
+.topbar-link:hover { text-decoration: underline; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 12px var(--mint); }
 .readonly { padding: 6px 8px; border: 1px solid var(--line); color: var(--mint); letter-spacing: .08em; }
 

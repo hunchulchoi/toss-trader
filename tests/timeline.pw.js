@@ -5,6 +5,7 @@ test('Rule과 Hermes paper 장부를 독립 탐색한다', async ({ page }) => {
   expect(response.status()).toBe(200);
 
   await expect(page.getByTestId('timeline-app')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'CYCLES' })).toHaveAttribute('href', '/cycles');
   await expect(page.locator('.date-item')).toHaveCount(2);
   await expect(page.getByTestId('selected-date')).toContainText('8월 14일');
   await expect(page.getByTestId('equity-chart').locator('svg')).toBeVisible();
