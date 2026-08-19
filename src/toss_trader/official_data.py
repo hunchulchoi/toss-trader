@@ -450,7 +450,7 @@ class _PostgresConnectionAdapter:
 
 
 def _postgres_sql(sql: str) -> str:
-    translated = sql.replace("?", "%s")
+    translated = sql.replace("%", "%%").replace("?", "%s")
     marker = "INSERT OR IGNORE INTO"
     if marker in translated:
         translated = translated.replace(marker, "INSERT INTO", 1).rstrip()

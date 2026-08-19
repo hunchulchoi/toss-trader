@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from toss_trader.official_data import OfficialDataRepository
+from toss_trader.official_data import OfficialDataRepository, _postgres_sql
 
 
 class FakeCursor:
@@ -45,6 +45,16 @@ class FakeConnection:
 
 
 class PostgresOfficialDataRepositoryTest(unittest.TestCase):
+    def test_sql_translation_escapes_literal_percent(self) -> None:
+        translated = _postgres_sql(
+            "SELECT 1 WHERE source LIKE 'krx:%' AND symbol=?"
+        )
+
+        self.assertEqual(
+            translated,
+            "SELECT 1 WHERE source LIKE 'krx:%%' AND symbol=%s",
+        )
+
     def test_flow_insert_creates_month_partition_and_is_idempotent(self) -> None:
         connection = FakeConnection()
         parameters: dict[str, str | int] = {
