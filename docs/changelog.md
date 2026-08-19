@@ -15,7 +15,11 @@
   거래일 동안 고정하며 부족분을 급등 종목으로 채우지 않음. 0종도 정상 cycle
 - 추적: 기존 보유 종목은 선정 밖이어도 SELL 경로 유지. 후보별 가격 setup
   부족·평가 실패 사유를 `dynamic_universe_decisions`에 기록
-- 운영: 코드만 변경. 배포·운영 DB 변경 없음
+- 배포 시각: 2026-08-19 13:51 KST
+- 운영: `main` `5bf0f24`로 `automation`만 재빌드·재생성. health `healthy`,
+  restart 0, `TRADING_ENABLED=false`, `/healthz` 200. 13:55 Rule/Hermes 1m은
+  둘 다 succeeded, 실패·API 오류 0. 당일 기존 성공 universe cache는 보존해
+  새 가격 필터의 첫 운영 선정은 다음 서울 거래일에 실행
 
 ### changelog 시각 기록 규칙
 
