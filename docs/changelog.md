@@ -11,7 +11,8 @@
 Tailscale 19094가 502였다.
 
 - 동작: 체결 없으면 오늘(또는 cycle 날짜) 초기현금 하루. 페이지 유지
-- 운영: 코드만, 배포 대기
+- 운영: 09:49 KST `9a0812e` `timeline` 재빌드·재기동. health `healthy`,
+  restart 0, `TRADING_ENABLED=false`, `/healthz` 200, days 1.
 
 ### 1m v2 일봉 미달을 skip으로 유지
 
