@@ -88,11 +88,13 @@ function setFilters() {
   if (current) select.value = current;
 }
 
-function metric(label, value) {
-  const node = document.createElement("div");
+function metric(label, value, kind) {
+  const node = document.createElement("span");
+  node.className = "cycle-metric";
+  if (kind && Number(value) > 0) node.classList.add(kind);
   const name = document.createElement("span"); name.textContent = label;
-  const count = document.createElement("strong"); count.textContent = value;
-  node.append(name, count);
+  const count = document.createElement("b"); count.textContent = String(value ?? 0);
+  node.append(name, " ", count);
   return node;
 }
 
@@ -123,20 +125,20 @@ function universeForPair(pair) {
 }
 
 function universeTrend(points, selectedAt) {
-  const svg = svgElement("svg", { viewBox: "0 0 220 64", role: "img", "aria-label": "전체 일봉 종가 추세" });
+  const svg = svgElement("svg", { viewBox: "0 0 180 28", role: "img", "aria-label": "전체 일봉 종가 추세" });
   svg.classList.add("universe-trend");
   if (!points.length) return svg;
   const values = points.map((point) => Number(point.close));
   const min = Math.min(...values), max = Math.max(...values), range = Math.max(max - min, 1);
-  const x = (index) => (index / Math.max(points.length - 1, 1)) * 216 + 2;
-  const y = (value) => 60 - ((value - min) / range) * 56;
+  const x = (index) => (index / Math.max(points.length - 1, 1)) * 176 + 2;
+  const y = (value) => 26 - ((value - min) / range) * 24;
   svg.append(svgElement("polyline", {
     points: values.map((value, index) => `${x(index)},${y(value)}`).join(" "),
   }));
   const selectedTime = new Date(selectedAt).getTime();
   let selectedIndex = points.findLastIndex((point) => new Date(point.timestamp).getTime() <= selectedTime);
   if (selectedIndex < 0) selectedIndex = 0;
-  const marker = svgElement("line", { x1: x(selectedIndex), x2: x(selectedIndex), y1: 2, y2: 62 });
+  const marker = svgElement("line", { x1: x(selectedIndex), x2: x(selectedIndex), y1: 1, y2: 27 });
   marker.classList.add("universe-marker");
   const title = svgElement("title"); title.textContent = `Universe 선정 시점 ${selectedAt}`;
   marker.append(title); svg.append(marker);
@@ -209,15 +211,23 @@ function renderCard(run, portfolioId) {
   head.append(identity, elapsed); card.append(head);
 
   const metrics = document.createElement("div"); metrics.className = "cycle-metrics";
-  metrics.append(metric("종목", run.symbolCount), metric("신호", run.signalCount), metric("체결", run.fillCount), metric("실패", run.failedCount));
+  metrics.append(
+    metric("종목", run.symbolCount),
+    metric("신호", run.signalCount, "signal"),
+    metric("체결", run.fillCount, "fill"),
+    metric("실패", run.failedCount, "fail"),
+  );
   card.append(metrics);
 
-  const summary = document.createElement("div"); summary.className = `cycle-summary${run.error ? " error" : ""}`;
-  summary.textContent = run.error || translateReason(run.idleReason);
-  card.append(summary);
-
   const details = document.createElement("details"); details.className = "cycle-details";
-  const detailSummary = document.createElement("summary"); detailSummary.textContent = `퍼널 · 종목별 사유 ${run.symbolStates?.length || 0}건`;
+  const detailSummary = document.createElement("summary");
+  const reason = document.createElement("span");
+  reason.className = `cycle-summary${run.error ? " error" : ""}`;
+  reason.textContent = run.error || translateReason(run.idleReason);
+  const funnelN = document.createElement("span");
+  funnelN.className = "cycle-funnel-n";
+  funnelN.textContent = `퍼널 · ${run.symbolStates?.length || 0}건`;
+  detailSummary.append(reason, funnelN);
   details.append(detailSummary);
   const funnel = document.createElement("div"); funnel.className = "funnel";
   Object.entries(run.funnel || {}).forEach(([key, value]) => {

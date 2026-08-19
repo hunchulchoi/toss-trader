@@ -22,7 +22,26 @@
 - 추가 기록: 2026-08-19 15:44 KST. 최대 100회의 순차 n8n 호출을 피하도록
   universe 정적 membership은 로컬 검증으로 고정. 실제 BUY·SELL만 n8n Risk를
   사용하며 trade는 기존 policy v1, 선택적 universe 호환 계약은 v2로 분리
-- 운영: 코드·workflow export만 변경. DB migration·n8n publish·서비스 배포 대기
+- 배포 시각: 2026-08-19 16:04 KST
+- 운영: `main` `bea6203`까지 푸시하고 automation을 재빌드·재생성. health
+  `healthy`, restart 0, `TRADING_ENABLED=false`; 실행 이미지에서 로컬 universe
+  Risk와 원격 trade Risk 경계를 확인. PostgreSQL `eligible_rank` migration 및
+  컬럼 확인 완료. 당일 기존 성공 cache는 유지해 새 선정은 다음 서울 거래일 적용
+
+### Cycle 카드 메트릭·사유 한 줄
+
+- 기록 시각: 2026-08-19 14:56 KST
+- 동작: 종목/신호/체결/실패를 한 줄. 신호 mint·체결 amber·실패 red는 0 초과만.
+  idle 사유와 퍼널 건수를 details summary 한 줄에 합침
+- 운영: 코드만, 배포 대기
+
+### Cycle/장부 타임라인 compact UI
+
+- 기록 시각: 2026-08-19 14:40 KST
+- 동작: 실행흐름 row·KPI·히어로 높이 축소. 배경 그리드·ambient 제거.
+  universe 스파크라인 28px
+- 운영: 반영함. 2026-08-19 14:50 KST `timeline` recreate. `/healthz` 200,
+  restart 0, healthy. Tailscale `100.74.208.69:19094` `/cycles` 200
 
 ### 동적 universe vs setup-v2 교차토론
 
