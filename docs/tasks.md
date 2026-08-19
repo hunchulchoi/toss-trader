@@ -35,7 +35,8 @@ No tasks awaiting review.
 - Checks: 330 unit tests; scoped Ruff and Git whitespace; live KIS/Toss smoke
   stored 2026-08-14, 2026-08-18, and 2026-08-19 as consecutive temporary rows
   with zero failures; live `0004V0` returned 30 rows through 2026-08-19
-- Risks: production rollout and an idempotent operational backfill remain pending
+- Risks: KIS first-observed history remains unavailable before its actual
+  retrieval time; no backdating is permitted
 
 ### STRAT-009 Harden setup-v2 universe membership
 
