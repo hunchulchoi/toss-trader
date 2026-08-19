@@ -12,7 +12,7 @@ SQLite 개발 모드에서도 같은 인터페이스와 필드를 제공한다.
 | `paper_portfolio_daily_baselines` | 포트폴리오별 UTC 일자 시작 총자산 | 해당 일자 첫 손익 계산 시 | `daily_return_rate` 분모 고정 |
 | `paper_portfolio_snapshots` | 총자산, 실현손익, 미실현손익, 누적 수수료·세금 | cycle 손익 계산 시. 체결 후 같은 시각 값 갱신 | cycle별 순손익·비용 추이 확인 |
 | `dynamic_universe_runs` | 거래일 단위 종목군 생성 성공·실패, 후보·승인·선정 수 | 거래일 첫 universe 생성 시 | 후보 발굴 정상 여부와 규모 확인 |
-| `dynamic_universe_decisions` | 후보별 랭킹 점수, 가격, RiskManager 승인·거부, 위반 규칙, 최종 선정 여부 | 각 universe 후보 평가 시 | 왜 특정 종목이 선정/제외됐는지 추적 |
+| `dynamic_universe_decisions` | 거래대금 raw rank·정적 필터 뒤 eligible rank, 가격, membership 승인·거부, 위반 규칙, 최종 선정 여부 | 각 universe 후보 평가 시 | 왜 특정 종목이 선정/제외됐는지와 당시 순서 확인. metadata/config/candle snapshot이 없어 exact replay에는 사용 불가 |
 
 RiskManager 판단은 paper fill보다 먼저 기록한다. 판단 기록에 실패하면 해당
 paper fill도 실행하지 않는다. 실제 주문은 지원하지 않으며

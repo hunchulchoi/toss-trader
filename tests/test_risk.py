@@ -1,8 +1,10 @@
 import json
+import subprocess
 import unittest
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
 
 from toss_trader.models import Side, TradeSignal
@@ -16,6 +18,7 @@ from toss_trader.risk import (
 )
 
 NOW = datetime(2026, 8, 12, 5, 0, tzinfo=UTC)
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def signal(**overrides: object) -> TradeSignal:
@@ -172,12 +175,86 @@ class RiskManagerTest(unittest.TestCase):
                 "unsupported-security-type",
                 "not-common-share",
                 "trading-suspended",
-                "max-order-notional",
-                "insufficient-paper-cash",
-                "daily-loss-limit",
-                "api-error-kill-switch",
             },
         )
+
+    def test_universe_membership_ignores_mutable_account_state(self) -> None:
+        decision = self.manager.evaluate_universe_candidate(
+            UniverseCandidateRisk(
+                symbol="000660",
+                reference_price=Decimal(1500000),
+                security_type="STOCK",
+                is_common_share=True,
+                status="ACTIVE",
+                trading_suspended=False,
+            ),
+            UniverseRiskContext(
+                quantity=Decimal(100),
+                available_cash=Decimal(0),
+                daily_return_rate=Decimal("-0.50"),
+                consecutive_api_errors=100,
+            ),
+        )
+
+        self.assertTrue(decision.approved)
+        self.assertEqual(decision.violations, ())
+
+    def test_python_and_n8n_universe_policy_v2_are_equivalent(self) -> None:
+        candidate = UniverseCandidateRisk(
+            symbol="005930",
+            reference_price=Decimal(71000),
+            security_type="STOCK",
+            is_common_share=True,
+            status="ACTIVE",
+            trading_suspended=False,
+        )
+        context = UniverseRiskContext(
+            quantity=Decimal(1000),
+            available_cash=Decimal(0),
+            daily_return_rate=Decimal("-0.50"),
+            consecutive_api_errors=100,
+        )
+        expected = self.manager.evaluate_universe_candidate(candidate, context)
+        workflow = json.loads(
+            (ROOT / "automation" / "n8n" / "toss-trader-risk-manager.json").read_text()
+        )
+        code = next(
+            node["parameters"]["jsCode"]
+            for node in workflow["nodes"]
+            if node["name"] == "Universe 정책 계산"
+        )
+        payload = {
+            "candidate": {
+                "symbol": candidate.symbol,
+                "referencePrice": str(candidate.reference_price),
+                "securityType": candidate.security_type,
+                "isCommonShare": candidate.is_common_share,
+                "status": candidate.status,
+                "tradingSuspended": candidate.trading_suspended,
+            },
+            "context": {
+                "quantity": str(context.quantity),
+                "availableCash": str(context.available_cash),
+                "dailyReturnRate": str(context.daily_return_rate),
+                "consecutiveApiErrors": context.consecutive_api_errors,
+            },
+            "limits": {"policyVersion": 2},
+        }
+        script = (
+            "const $json=JSON.parse(process.argv[1]);"
+            f"const result=(()=>{{{code}}})();"
+            "process.stdout.write(JSON.stringify(result[0].json));"
+        )
+        completed = subprocess.run(
+            ["node", "-e", script, json.dumps(payload)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        actual = json.loads(completed.stdout)
+
+        self.assertEqual(actual["approved"], expected.approved)
+        self.assertEqual(tuple(actual["violations"]), expected.violations)
 
     def test_universe_failure_blocks_buy_but_not_sell(self) -> None:
         buy = self.manager.evaluate(
@@ -225,7 +302,7 @@ class N8nRiskManagerTest(unittest.TestCase):
         self.assertEqual(
             payload["limits"],
             {
-                "policyVersion": 1,
+                "policyVersion": 2,
                 "maxOrderNotional": "300000",
                 "maxPositionNotional": "1000000",
                 "maxDailyBuyCount": 5,

@@ -27,6 +27,7 @@ class Settings:
     discovery_symbols: tuple[str, ...] = ("005930",)
     discovery_top_n: int = 10
     dynamic_universe_candidate_count: int = 30
+    dynamic_universe_ranking_fetch_count: int = 100
     dynamic_universe_size: int = 15
     strategy_interval: str = "1d"
     strategy_short_window: int = 20
@@ -78,14 +79,26 @@ class Settings:
             "DYNAMIC_UNIVERSE_CANDIDATE_COUNT",
             values.get("DYNAMIC_UNIVERSE_CANDIDATE_COUNT", "30"),
         )
+        universe_fetch_count = _positive_int(
+            "DYNAMIC_UNIVERSE_RANKING_FETCH_COUNT",
+            values.get("DYNAMIC_UNIVERSE_RANKING_FETCH_COUNT", "100"),
+        )
         universe_size = _positive_int(
             "DYNAMIC_UNIVERSE_SIZE", values.get("DYNAMIC_UNIVERSE_SIZE", "15")
         )
         if universe_candidates > 100:
             raise ValueError("DYNAMIC_UNIVERSE_CANDIDATE_COUNT must not exceed 100")
-        if universe_size > universe_candidates * 2:
+        if universe_fetch_count > 100:
             raise ValueError(
-                "DYNAMIC_UNIVERSE_SIZE must not exceed twice candidate count"
+                "DYNAMIC_UNIVERSE_RANKING_FETCH_COUNT must not exceed 100"
+            )
+        if universe_fetch_count < universe_candidates:
+            raise ValueError(
+                "DYNAMIC_UNIVERSE_RANKING_FETCH_COUNT must be at least candidate count"
+            )
+        if universe_size > universe_candidates:
+            raise ValueError(
+                "DYNAMIC_UNIVERSE_SIZE must not exceed candidate count"
             )
         return cls(
             client_id=values.get("TOSS_CLIENT_ID") or values.get("TOSS_API_KEY"),
@@ -116,6 +129,7 @@ class Settings:
             ),
             discovery_top_n=discovery_top_n,
             dynamic_universe_candidate_count=universe_candidates,
+            dynamic_universe_ranking_fetch_count=universe_fetch_count,
             dynamic_universe_size=universe_size,
             strategy_interval=interval,
             strategy_short_window=short_window,

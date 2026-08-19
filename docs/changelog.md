@@ -7,6 +7,19 @@
 
 ## 2026-08-19
 
+### setup-v2 universe membership 강화
+
+- 기록 시각: 2026-08-19 15:15 KST
+- 동작: 거래대금 최대 100개를 정적 적격 보통주 Top 30으로 재랭크하고
+  `TOP_GAINERS` 선정 영향을 제거. 가변 계좌 Risk는 BUY 실행 단계에만 유지
+- 장애 계약: 랭킹·metadata·가격 데이터 오류는 성공 0종과 분리해 실패·재시도.
+  정상 이력 부족·가격 setup 불일치만 정상 탈락 및 0종 cache 허용
+- 추적: `dynamic_universe_decisions.eligible_rank`를 idempotent migration으로
+  추가. raw amount rank와 함께 순서 감사 provenance로 보존. metadata/config/
+  candle snapshot이 없으므로 exact replay는 아직 지원하지 않음
+- Risk 계약: Python과 n8n을 policy v2로 맞추고, 기존 BUY 실행 차단 규칙은 유지
+- 운영: 코드·workflow export만 변경. DB migration·n8n publish·서비스 배포 대기
+
 ### Cycle 카드 메트릭·사유 한 줄
 
 - 기록 시각: 2026-08-19 14:56 KST

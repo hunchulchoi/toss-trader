@@ -1,12 +1,13 @@
 # 2026-08-19 동적 universe vs setup-v2 교차토론
 
-매매 권고 아님. `TRADING_ENABLED=false`. 장중 파라미터 변경 없음.
+매매 권고 아님. `TRADING_ENABLED=false`. 아래 agy·Cursor 1차 토론은 당시
+시점의 기록이며, 현재 계약은 마지막 `후속 3자 합의`를 따른다.
 
 | 문서 | 역할 |
 |---|---|
 | 이 문서 | Cursor가 agy 연구 반론을 받아 수정채택 |
-| `docs/changelog.md` 13:48 항목 | HEAD에 이미 있는 미배포 universe 필터(당일 고정, 눌림/RSI, 미충원) |
-| 라이브 13:25 선정 | 배포 전 경로. 대금+급등 점수, Risk만으로 15 패딩 |
+| `docs/changelog.md` 13:48 항목 | 13:51 배포된 universe 필터(당일 고정, 눌림/RSI, 미충원) |
+| 라이브 13:25 선정 | 배포 전 경로. 대금+급등 점수와 가변 Risk로 선정된 15종 |
 
 agy는 이 턴에서 DB·Infisical·시장 API를 조회하지 않았다. 장부 수치는
 Cursor가 이미 수집한 2026-08-19 내부 사실만 사용했다.
@@ -54,9 +55,11 @@ Cursor가 이미 수집한 2026-08-19 내부 사실만 사용했다.
 2. **고정 시각.** Cursor 수정: 서울 거래일 **첫 성공 universe**(보통 09:00 첫 1m). 08:30 아님. HEAD와 같음.
 3. **대금 `realtime` look-ahead.** agy 경고는 맞다. 지금은 전일 duration 미검증이므로 첫 성공 스냅샷을 하루 고정하는 것으로 완화한다. duration이 전일 확정임이 로그의 `rankedAt`으로 확인되면 그때 교체. 확인 전 전일 TopN을 지어내지 않는다.
 
-## 합의 (수정채택)
+## 1차 합의 (당시 수정채택)
 
-장중 반영하지 않는다. 마감 후 또는 익일 08:30 전 배포.
+당시에는 장중 반영하지 않기로 했으나 실제 코드는 사용자 승인 뒤 13:51
+배포됐다. 이미 성공한 당일 universe cache를 보존했으므로 8월 19일 선정은
+바뀌지 않았고 새 가격 필터의 첫 선정은 다음 서울 거래일로 이월됐다.
 
 1. 서울일 첫 성공 유니버스를 그날 고정. 재기동해도 같은 store에서 재로드. 부족분 미충원. 0종 허용. 보유 합집합은 SELL만.
 2. `TOP_GAINERS` 호출 삭제.
@@ -64,8 +67,37 @@ Cursor가 이미 수집한 2026-08-19 내부 사실만 사용했다.
 4. 전일 완결 200봉의 pullback **또는** oversold reversal만 멤버십. 당일 미완결 1d 금지.
 5. `max-order-notional`·`insufficient-paper-cash`는 유니버스 멤버십에서 제거. arm/주문 Risk만.
 6. 수급 6세션·이벤트는 계속 게이트. 멤버십 아님.
-7. Toss 대금 duration의 전일 확정 여부는 배포 전 `rankedAt` 한 줄로만 확인. 네이버·미검증 URL 없음.
+7. `rankedAt`은 provider provenance 시각일 뿐 duration이나 전일 확정 여부를
+   증명하지 않는다. 공식 계약 또는 별도 통제 검증 전에는 전일 대금으로 부르지 않는다.
 
-HEAD 13:48은 1·4·미충원만 있음. 2·3·5는 아직 없다. 라이브는 1~7 전부 없음.
+13:51 배포본은 1·4·미충원만 포함했다. 2·3·5와 데이터 오류 재시도 계약은
+후속 STRAT-009에서 구현한다.
 
 성과 개선을 이 합의의 근거로 쓰지 않는다. 오늘 증거는 15/15 `missing-price-setup`과 대금 통과 주식 5~8/30뿐이다.
+
+## 후속 3자 합의
+
+Codex·Cursor·agy는 구현 전 다시 교차검토해 다음으로 수렴했다.
+
+1. authoritative source는 `MARKET_TRADING_AMOUNT duration=realtime` 하나다.
+   최대 100개를 조회하고 `TOP_GAINERS`는 선정에서 제거한다.
+2. raw rank 순으로 metadata를 확인한 뒤 STOCK·보통주·ACTIVE·거래정상·유효
+   가격만 `eligible_rank`를 다시 매긴다. 상위 30개만 가격 setup을 평가한다.
+3. 직전 완결 일봉 200개의 pullback 또는 oversold reversal 통과 종목을
+   최대 15개 선정한다. 부족분은 채우지 않는다.
+4. 현금·수량·notional·일일 손실·API 오류 등 가변 계좌/시스템 상태는
+   membership에서 제거하고 BUY arm·주문 Risk에서 다시 검사한다.
+5. 랭킹·metadata·가격 transport/parse 오류가 하나라도 있으면 run을 실패로
+   기록하고 성공 cache를 만들지 않는다. 200봉 정상 수집 뒤 이력 부족 또는
+   setup 불일치는 정상 탈락이며, 모든 정상 평가가 탈락한 0종은 성공이다.
+6. 성공 universe는 서울 거래일 동안 재사용하고 보유 종목은 SELL 관찰을 위해
+   합집합한다. 실패 뒤에는 다음 cycle에서 다시 수집한다.
+7. `raw_rank`, `eligible_rank`, provider `rankedAt`을 감사 provenance로 저장한다.
+   `rankedAt`을 PIT cutoff나 전일 duration 증거로 사용하지 않는다.
+8. 과거 raw ranking·당시 metadata·6세션 수급 snapshot이 없는 날짜는 exact
+   setup-v2 백테스트가 불가능하다. 이번 저장값도 rank-order 감사용이며
+   metadata/config/candle evidence가 없어 exact forward engine replay는 아직
+   지원하지 않는다. 기존 일봉 price-only diagnostic과 성과를 섞지 않는다.
+
+`TOP_GAINERS` shadow 연구는 운영 selector와 분리된 비차단 수집기로만 허용한다.
+이번 작업에는 포함하지 않는다.

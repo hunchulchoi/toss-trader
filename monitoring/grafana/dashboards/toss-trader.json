@@ -1788,7 +1788,7 @@
               {
                 "matcher": {
                   "id": "byRegexp",
-                  "options": "/^(amount_rank|gainer_rank|trading_amount|reference_price)$/"
+                  "options": "/^(amount_rank|gainer_rank|eligible_rank|trading_amount|reference_price)$/"
                 },
                 "properties": [
                   {
@@ -1849,7 +1849,7 @@
               "editorMode": "code",
               "format": "table",
               "rawQuery": true,
-              "rawSql": "SELECT d.evaluated_at AS time, COALESCE(s.display_name || ' (' || d.symbol || ')', d.symbol) AS security, d.score, d.amount_rank, d.gainer_rank, d.change_rate, d.trading_amount, d.reference_price, d.risk_approved, d.selected, d.violations::text AS violations, r.status AS refresh_status, d.run_id FROM dynamic_universe_decisions d JOIN dynamic_universe_runs r ON r.run_id = d.run_id LEFT JOIN market_symbols s ON s.symbol = d.symbol WHERE $__timeFilter(d.evaluated_at) ORDER BY d.evaluated_at DESC, d.score DESC LIMIT 500",
+              "rawSql": "SELECT d.evaluated_at AS time, COALESCE(s.display_name || ' (' || d.symbol || ')', d.symbol) AS security, d.score, d.amount_rank, d.gainer_rank, d.eligible_rank, d.change_rate, d.trading_amount, d.reference_price, d.risk_approved, d.selected, d.violations::text AS violations, r.status AS refresh_status, d.run_id FROM dynamic_universe_decisions d JOIN dynamic_universe_runs r ON r.run_id = d.run_id LEFT JOIN market_symbols s ON s.symbol = d.symbol WHERE $__timeFilter(d.evaluated_at) ORDER BY d.evaluated_at DESC, d.eligible_rank NULLS LAST, d.amount_rank, d.symbol LIMIT 500",
               "refId": "A",
               "sql": {
                 "columns": [
