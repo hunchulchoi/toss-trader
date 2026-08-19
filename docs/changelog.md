@@ -9,7 +9,7 @@
 
 ### 한국장 11:50 중간 paper 브리핑
 
-- 기록 시각: 2026-08-19 20:45 KST
+- 기록 시각: 2026-08-19 21:05 KST
 - 동작: 기존 다중분석 panel을 평일 11:50에도 실행. 예약·수동·인증 webhook 모두
   Toss 한국장 calendar를 먼저 확인하므로 휴장·calendar 장애에는 실행하지 않음
 - 구분: queue context에 `midday`/`close`와 관측 시각을 저장. 중간 분석 prompt와
