@@ -7,6 +7,20 @@
 
 ## 2026-08-19
 
+### 마감 paper 다중 분석 패널
+
+- 기록 시각: 2026-08-19 18:40 KST
+- 동작: 단일 Hermes 마감 분석을 GPT quant, Grok 4.6 Fast skeptic,
+  Gemini 3.7 Flash Risk의 독립 분석·상호검토와 Hermes 최종 판정으로 교체.
+  n8n은 cycle JSON을 DB queue에 넣고, Cursor 인증이 있는 main Hermes cron이
+  read-only 모델 호출을 실행
+- 감사: `daily_analysis_panels`와 `daily_analysis_opinions`에 panel 상태, 의견
+  7건, 모델/provider, input/output/cache token을 idempotent 저장. 완성된 Hermes
+  판정만 기존 Alertmanager→Telegram 경로로 전송
+- 보안: n8n·terminal child에 Docker socket/Cursor credential/임의 shell 권한을
+  추가하지 않음. `TRADING_ENABLED=false` 유지
+- 운영: 코드·로컬 n8n asset만 반영. 배포·n8n publish·Hermes cron 설치 전
+
 ### Hermes 종목 판단에 cycle 시세·수급 스냅샷
 
 - 기록 시각: 2026-08-19 17:25 KST

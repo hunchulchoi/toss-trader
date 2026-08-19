@@ -1,5 +1,6 @@
 import json
 import subprocess
+import tempfile
 import unittest
 from datetime import UTC, datetime
 from typing import Self
@@ -22,9 +23,97 @@ from toss_trader.automation import (
     paper_cycle_notice,
 )
 from toss_trader.calendar import MarketSession
+from toss_trader.paper import PaperLedger
 
 
 class WorkflowTaskServiceTest(unittest.TestCase):
+    def test_daily_panel_queues_records_seven_opinions_and_reports_judge(self) -> None:
+        now = datetime(2026, 8, 19, 6, 40, tzinfo=UTC)
+        reports: list[dict[str, object]] = []
+
+        class StubReporter:
+            def report(self, value: dict[str, object]) -> dict[str, object]:
+                reports.append(value)
+                return {"accepted": True}
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = f"{directory}/paper.db"
+            service = WorkflowTaskService(
+                paper=None,  # type: ignore[arg-type]
+                market_scan=None,  # type: ignore[arg-type]
+                market_analyzer=None,  # type: ignore[arg-type]
+                daily_analyzer=None,  # type: ignore[arg-type]
+                market_reporter=StubReporter(),
+                paper_reporter=StubReporter(),
+                daily_reporter=StubReporter(),
+                failure_reporter=StubReporter(),
+                panel_ledger=lambda: PaperLedger(path),
+                clock=lambda: now,
+            )
+            queued = service.run(
+                "/workflow/daily-panel-enqueue",
+                {
+                    "_workflow": {"executionId": "n8n-900"},
+                    "rule": {"exitCode": 0, "cycle": {"summary": {"fills": 1}}},
+                    "hermes": {
+                        "exitCode": 0,
+                        "cycle": {"summary": {"fills": 0}},
+                    },
+                },
+            )
+            claimed = service.run("/workflow/daily-panel-claim", {})
+            self.assertEqual(claimed["panelId"], queued["panelId"])
+
+            stages = (
+                "independent:gpt",
+                "independent:grok",
+                "independent:gemini",
+                "review:gpt",
+                "review:grok",
+                "review:gemini",
+                "judge:hermes",
+            )
+            opinions = [
+                {
+                    "stage": stage,
+                    "role": "final judge" if stage == "judge:hermes" else "analyst",
+                    "provider": "hermes" if stage == "judge:hermes" else "cursor-agent",
+                    "model": "hermes-default" if stage == "judge:hermes" else "model",
+                    "content": "최종 판정" if stage == "judge:hermes" else stage,
+                    "startedAt": now.isoformat(),
+                    "finishedAt": now.isoformat(),
+                    "promptTokens": 10,
+                    "completionTokens": 2,
+                    "totalTokens": 12,
+                    "cacheReadTokens": 0,
+                    "cacheWriteTokens": 0,
+                }
+                for stage in stages
+            ]
+            for opinion in opinions:
+                service.run(
+                    "/workflow/daily-panel-opinion",
+                    {"panelId": queued["panelId"], "opinion": opinion},
+                )
+            completed = service.run(
+                "/workflow/daily-panel-complete",
+                {"panelId": queued["panelId"], "opinions": opinions},
+            )
+
+            ledger = PaperLedger(path)
+            try:
+                rows = ledger._connection.execute(
+                    "SELECT stage, total_tokens FROM daily_analysis_opinions "
+                    "WHERE panel_id = ? ORDER BY stage",
+                    (queued["panelId"],),
+                ).fetchall()
+            finally:
+                ledger.close()
+        self.assertTrue(completed["reported"]["accepted"])
+        self.assertEqual(len(rows), 7)
+        self.assertTrue(all(row[1] == 12 for row in rows))
+        self.assertEqual(reports[-1]["analysis"], "최종 판정")
+
     def test_market_session_uses_toss_calendar_for_schedule_gate(self) -> None:
         checked_at: list[datetime] = []
         now = datetime(2026, 8, 15, 0, 0, tzinfo=UTC)

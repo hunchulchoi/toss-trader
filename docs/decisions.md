@@ -1,5 +1,40 @@
 # Architecture Decisions
 
+## ADR-006 Daily analysis runs in the main Hermes container
+
+- Status: accepted
+- Date: 2026-08-19
+
+### Decision
+
+The n8n closing workflow persists a daily panel job after both paper portfolios
+finish. A no-agent Hermes cron script claims the job and invokes three fixed,
+read-only Cursor models in two parallel rounds:
+
+- GPT `gpt-5.6-sol-medium`: quant analyst
+- Grok `cursor-grok-4.6-high-fast`: skeptic / anomaly detector
+- Gemini `gemini-3.7-flash-high`: Risk Manager
+
+Hermes `openai-codex/gpt-5.6-terra` judges the six labeled responses. Every
+opinion and provider-reported token count is persisted before the final judge
+text is sent through the existing Alertmanager-to-Telegram path.
+
+### Reason
+
+Hermes `terminal` runs in a separate Python container without Cursor binaries.
+The authenticated `cursor-agent` exists only in the main Hermes container.
+Running the fixed script there preserves that boundary and avoids exposing the
+Docker socket, Cursor credentials, or arbitrary shell execution to n8n.
+
+### Failure contract
+
+- Any missing model round fails the panel and suppresses the final report.
+- Opinions completed before a peer failure remain stored with token usage.
+- A running job may be reclaimed after 30 minutes; opinion writes are
+  idempotent by `(panel_id, stage)`.
+- The closing cycle queue and panel execution are separate. n8n never waits for
+  model latency.
+
 ## ADR-005 Official PIT inputs remain fail-closed
 
 Status: accepted 2026-08-15

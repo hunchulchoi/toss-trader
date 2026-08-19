@@ -16,7 +16,16 @@ agents must sync from `main` before claiming or handing off work.
 
 ## IN PROGRESS
 
-No tasks in progress.
+### AI-002 Multi-agent daily paper review panel
+
+- Owner: codex
+- Status: IN PROGRESS
+- Goal: replace the single-model closing analysis with independent GPT quant,
+  Grok anomaly, and Gemini risk opinions, cross-review, and a Hermes final judge;
+  persist every opinion and exact reported token count before Telegram delivery
+- Started: 2026-08-19 18:19 KST
+- Safety: Cursor models run read-only in the main Hermes container; n8n and its
+  child terminal receive neither Docker access nor Cursor credentials
 
 ## REVIEW
 

@@ -16,13 +16,14 @@ from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from .calendar import MarketCalendarService, MarketSession
 from .client import TossClient
 from .config import Settings
 from .cycle_funnel import REVIEW_PURPOSE, format_intraday_review_lines
 from .models import Side, TradeSignal
-from .paper import open_paper_ledger
+from .paper import PaperLedgerStore, open_paper_ledger
 from .risk import (
     RiskContext,
     RiskLimits,
@@ -915,6 +916,7 @@ class WorkflowTaskService:
         paper_reporter: AlertmanagerReporter,
         daily_reporter: AlertmanagerReporter,
         failure_reporter: AlertmanagerReporter,
+        panel_ledger: Callable[[], PaperLedgerStore] | None = None,
         audit: Callable[[AutomationRunLog], str] | None = None,
         market_session: Callable[[datetime], MarketSession] | None = None,
         clock: Callable[[], datetime] | None = None,
@@ -927,6 +929,7 @@ class WorkflowTaskService:
         self._paper_reporter = paper_reporter
         self._daily_reporter = daily_reporter
         self._failure_reporter = failure_reporter
+        self._panel_ledger = panel_ledger
         self._audit = audit
         self._market_session = market_session
         self._clock = clock or (lambda: datetime.now(UTC))
@@ -938,7 +941,8 @@ class WorkflowTaskService:
         except Exception as error:
             self._audit_flow(path, payload, started_at, error=error)
             raise
-        self._audit_flow(path, payload, started_at, result=result)
+        if path != "/workflow/daily-panel-claim":
+            self._audit_flow(path, payload, started_at, result=result)
         return result
 
     def _dispatch(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -982,6 +986,16 @@ class WorkflowTaskService:
             return self._complete_market(payload)
         if path == "/workflow/hermes-daily-result":
             return self._complete_daily(payload)
+        if path == "/workflow/daily-panel-enqueue":
+            return self._enqueue_daily_panel(payload)
+        if path == "/workflow/daily-panel-claim":
+            return self._claim_daily_panel()
+        if path == "/workflow/daily-panel-opinion":
+            return self._record_daily_panel_opinion(payload)
+        if path == "/workflow/daily-panel-complete":
+            return self._complete_daily_panel(payload)
+        if path == "/workflow/daily-panel-fail":
+            return self._fail_daily_panel(payload)
         if path == "/workflow/report-market":
             return self._market_reporter.report(_required_result(payload))
         if path == "/workflow/report-paper":
@@ -1116,6 +1130,103 @@ class WorkflowTaskService:
         self._audit_usage("daily", started_at, usage, result)
         return result
 
+    def _enqueue_daily_panel(self, payload: dict[str, Any]) -> dict[str, Any]:
+        context = _comparison_payload(payload)
+        workflow = payload.get("_workflow")
+        workflow = workflow if isinstance(workflow, dict) else {}
+        execution_id = _required_panel_text(workflow.get("executionId"), "executionId")
+        panel_id = str(uuid4())
+        ledger = self._required_panel_ledger()
+        try:
+            panel_id = ledger.enqueue_daily_panel(
+                panel_id=panel_id,
+                execution_id=execution_id,
+                context=context,
+                queued_at=self._clock(),
+            )
+        finally:
+            ledger.close()
+        return {"ok": True, "queued": True, "panelId": panel_id}
+
+    def _claim_daily_panel(self) -> dict[str, Any]:
+        now = self._clock()
+        ledger = self._required_panel_ledger()
+        try:
+            panel = ledger.claim_daily_panel(
+                claimed_at=now,
+                stale_before=now - timedelta(minutes=30),
+            )
+        finally:
+            ledger.close()
+        if panel is None:
+            return {"ok": True, "claimed": False}
+        return {"ok": True, "claimed": True, **panel}
+
+    def _complete_daily_panel(self, payload: dict[str, Any]) -> dict[str, Any]:
+        panel_id = _required_panel_text(payload.get("panelId"), "panelId")
+        opinions = _daily_panel_opinions(payload.get("opinions"))
+        judge = next(item for item in opinions if item["stage"] == "judge:hermes")
+        ledger = self._required_panel_ledger()
+        try:
+            for opinion in opinions:
+                ledger.record_daily_panel_opinion(panel_id=panel_id, **opinion)
+            report = self._daily_reporter.report(
+                {
+                    "ok": True,
+                    "cycle": {"exitCode": 0},
+                    "analysis": judge["content"],
+                }
+            )
+            ledger.finish_daily_panel(
+                panel_id=panel_id,
+                status="succeeded",
+                finished_at=self._clock(),
+            )
+        finally:
+            ledger.close()
+        return {"ok": True, "panelId": panel_id, "reported": report}
+
+    def _record_daily_panel_opinion(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        panel_id = _required_panel_text(payload.get("panelId"), "panelId")
+        opinion = _daily_panel_opinion(payload.get("opinion"))
+        ledger = self._required_panel_ledger()
+        try:
+            ledger.record_daily_panel_opinion(panel_id=panel_id, **opinion)
+        finally:
+            ledger.close()
+        return {"ok": True, "panelId": panel_id, "stage": opinion["stage"]}
+
+    def _fail_daily_panel(self, payload: dict[str, Any]) -> dict[str, Any]:
+        panel_id = _required_panel_text(payload.get("panelId"), "panelId")
+        error = _required_panel_text(payload.get("error"), "error")[:1000]
+        ledger = self._required_panel_ledger()
+        try:
+            ledger.finish_daily_panel(
+                panel_id=panel_id,
+                status="failed",
+                finished_at=self._clock(),
+                error=error,
+            )
+        finally:
+            ledger.close()
+        reported = self._failure_reporter.report(
+            {
+                "ok": False,
+                "stage": "daily-panel",
+                "error": error,
+                "analysis": f"마감 다중 분석 실패\n{error}",
+                "severity": "critical",
+            }
+        )
+        return {"ok": False, "panelId": panel_id, "reported": reported}
+
+    def _required_panel_ledger(self) -> PaperLedgerStore:
+        if self._panel_ledger is None:
+            raise RuntimeError("daily panel ledger is not configured")
+        return self._panel_ledger()
+
     def _report_paper(self, payload: dict[str, Any]) -> dict[str, Any]:
         comparison = _comparison_payload(payload)
         notice = paper_cycle_notice(comparison)
@@ -1211,6 +1322,7 @@ def create_workflow_task_service_from_env() -> WorkflowTaskService:
             alert_name="TossTraderWorkflowFailure",
             summary="Toss Trader n8n workflow 실패",
         ),
+        panel_ledger=_open_panel_ledger_from_env,
         audit=_record_automation_run_from_env,
         market_session=_market_session_lookup_from_env(),
     )
@@ -1289,6 +1401,62 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 for key in ("symbols", "signals", "fills", "skipped", "failed")
             },
         },
+    }
+
+
+_DAILY_PANEL_STAGES = {
+    "independent:gpt",
+    "independent:grok",
+    "independent:gemini",
+    "review:gpt",
+    "review:grok",
+    "review:gemini",
+    "judge:hermes",
+}
+
+
+def _required_panel_text(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise TypeError(f"daily panel {field} must be non-empty text")
+    return value.strip()
+
+
+def _daily_panel_opinions(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise TypeError("daily panel opinions must be a list")
+    opinions: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in value:
+        opinion = _daily_panel_opinion(item)
+        stage = str(opinion["stage"])
+        if stage not in _DAILY_PANEL_STAGES or stage in seen:
+            raise ValueError("daily panel stages must be complete and unique")
+        seen.add(stage)
+        opinions.append(opinion)
+    if seen != _DAILY_PANEL_STAGES:
+        raise ValueError("daily panel requires seven complete opinions")
+    return opinions
+
+
+def _daily_panel_opinion(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise TypeError("daily panel opinion must be an object")
+    stage = _required_panel_text(value.get("stage"), "stage")
+    if stage not in _DAILY_PANEL_STAGES:
+        raise ValueError("unknown daily panel stage")
+    return {
+        "stage": stage,
+        "role": _required_panel_text(value.get("role"), "role"),
+        "provider": _required_panel_text(value.get("provider"), "provider"),
+        "model": _required_panel_text(value.get("model"), "model"),
+        "content": _required_panel_text(value.get("content"), "content")[:12000],
+        "started_at": _required_datetime(value, "startedAt"),
+        "finished_at": _required_datetime(value, "finishedAt"),
+        "prompt_tokens": _required_int(value, "promptTokens"),
+        "completion_tokens": _required_int(value, "completionTokens"),
+        "total_tokens": _required_int(value, "totalTokens"),
+        "cache_read_tokens": _required_int(value, "cacheReadTokens"),
+        "cache_write_tokens": _required_int(value, "cacheWriteTokens"),
     }
 
 
@@ -1581,6 +1749,15 @@ def _record_automation_run_from_env(run: AutomationRunLog) -> str:
         )
     finally:
         ledger.close()
+
+
+def _open_panel_ledger_from_env() -> PaperLedgerStore:
+    settings = Settings.from_env()
+    return open_paper_ledger(
+        postgres_parameters=settings.postgres_connection_parameters(),
+        sqlite_path=settings.paper_db_path,
+        initialize_schema=False,
+    )
 
 
 def _hermes_analysis(value: str | HermesAnalysis) -> HermesAnalysis:

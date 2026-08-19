@@ -14,6 +14,65 @@ class PaperLedgerTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.ledger.close()
 
+    def test_daily_panel_queue_and_opinion_tokens_are_idempotent(self) -> None:
+        now = datetime(2026, 8, 19, 6, 40, tzinfo=UTC)
+        panel_id = self.ledger.enqueue_daily_panel(
+            panel_id="11111111-1111-1111-1111-111111111111",
+            execution_id="n8n-42",
+            context={"cycle": {"summary": {"fills": 1}}},
+            queued_at=now,
+        )
+        duplicate = self.ledger.enqueue_daily_panel(
+            panel_id="22222222-2222-2222-2222-222222222222",
+            execution_id="n8n-42",
+            context={"ignored": True},
+            queued_at=now,
+        )
+
+        claimed = self.ledger.claim_daily_panel(
+            claimed_at=now,
+            stale_before=datetime(2026, 8, 19, 6, 10, tzinfo=UTC),
+        )
+        assert claimed is not None
+        self.assertEqual(duplicate, panel_id)
+        self.assertEqual(claimed["panelId"], panel_id)
+        self.assertEqual(claimed["context"]["cycle"]["summary"]["fills"], 1)  # type: ignore[index]
+
+        opinion = {
+            "panel_id": panel_id,
+            "stage": "independent:gpt",
+            "role": "quant analyst",
+            "provider": "cursor-agent",
+            "model": "gpt-5.6-sol-medium",
+            "content": "정량 의견",
+            "started_at": now,
+            "finished_at": now,
+            "prompt_tokens": 100,
+            "completion_tokens": 20,
+            "total_tokens": 120,
+            "cache_read_tokens": 3,
+            "cache_write_tokens": 4,
+        }
+        self.ledger.record_daily_panel_opinion(**opinion)
+        self.ledger.record_daily_panel_opinion(**opinion)
+        count = self.ledger._connection.execute(
+            "SELECT COUNT(*) FROM daily_analysis_opinions WHERE panel_id = ?",
+            (panel_id,),
+        ).fetchone()
+        self.assertEqual(count[0], 1)
+
+        self.ledger.finish_daily_panel(
+            panel_id=panel_id,
+            status="succeeded",
+            finished_at=now,
+        )
+        self.assertIsNone(
+            self.ledger.claim_daily_panel(
+                claimed_at=now,
+                stale_before=datetime(2026, 8, 19, 6, 10, tzinfo=UTC),
+            )
+        )
+
     def test_records_fill_and_rejects_duplicate_signal(self) -> None:
         trade_signal = TradeSignal(
             signal_id="signal-1",

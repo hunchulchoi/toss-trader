@@ -305,10 +305,11 @@ class MonitoringAssetsTest(unittest.TestCase):
         encoded = json.dumps(workflow, ensure_ascii=False)
         self.assertIn("/workflow/paper-rule-1d", encoded)
         self.assertIn("/workflow/paper-hermes-1d", encoded)
-        self.assertIn("/workflow/hermes-daily-result", encoded)
-        self.assertIn("/workflow/report-daily", encoded)
-        self.assertIn("http://hermes-analysis:8642/v1/chat/completions", encoded)
-        self.assertIn("toss-trader-hermes-auth", encoded)
+        self.assertIn("/workflow/daily-panel-enqueue", encoded)
+        self.assertNotIn("/workflow/hermes-daily-result", encoded)
+        self.assertNotIn("/workflow/report-daily", encoded)
+        self.assertNotIn("http://hermes-analysis:8642/v1/chat/completions", encoded)
+        self.assertNotIn("toss-trader-hermes-auth", encoded)
         self.assertIn("n8n-nodes-base.webhook", encoded)
         self.assertIn('"path": "toss-trader-daily-run"', encoded)
         self.assertIn('"authentication": "headerAuth"', encoded)
@@ -320,10 +321,20 @@ class MonitoringAssetsTest(unittest.TestCase):
             "Rule 일봉 체결 있음?",
             "Hermes 일봉 정상?",
             "Hermes 일봉 체결 있음?",
-            "Hermes 마감 분석 정상?",
-            "마감 Telegram 정상?",
+            "다중분석 Queue 정상?",
         ):
             self.assertIn(branch, nodes)
+
+    def test_hermes_panel_runner_uses_read_only_fixed_models(self) -> None:
+        source = (ROOT / "automation" / "hermes-panel-runner.py").read_text()
+
+        self.assertIn('"gpt-5.6-sol-medium"', source)
+        self.assertIn('"cursor-grok-4.6-high-fast"', source)
+        self.assertIn('"gemini-3.7-flash-high"', source)
+        self.assertIn('"--mode",\n            "ask"', source)
+        self.assertNotIn('"--sandbox"', source)
+        self.assertNotIn("docker exec", source)
+        self.assertIn("/workflow/daily-panel-complete", source)
 
     def test_n8n_workflow_runs_intraday_paper_every_five_minutes(self) -> None:
         workflow = json.loads(

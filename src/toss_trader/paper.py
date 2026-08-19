@@ -131,6 +131,46 @@ class PaperLedgerStore(Protocol):
         status: str | None = None,
     ) -> list[dict[str, object]]: ...
 
+    def enqueue_daily_panel(
+        self,
+        *,
+        panel_id: str,
+        execution_id: str,
+        context: Mapping[str, object],
+        queued_at: datetime,
+    ) -> str: ...
+
+    def claim_daily_panel(
+        self, *, claimed_at: datetime, stale_before: datetime
+    ) -> dict[str, object] | None: ...
+
+    def finish_daily_panel(
+        self,
+        *,
+        panel_id: str,
+        status: str,
+        finished_at: datetime,
+        error: str | None = None,
+    ) -> None: ...
+
+    def record_daily_panel_opinion(
+        self,
+        *,
+        panel_id: str,
+        stage: str,
+        role: str,
+        provider: str,
+        model: str,
+        content: str,
+        started_at: datetime,
+        finished_at: datetime,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+    ) -> None: ...
+
     def daily_buy_count(self, day: date) -> int: ...
 
     def position_notional(
@@ -335,6 +375,41 @@ class PaperLedger:
                 total_tokens INTEGER NOT NULL,
                 error TEXT,
                 details TEXT NOT NULL
+            )
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_analysis_panels (
+                panel_id TEXT PRIMARY KEY,
+                execution_id TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                context TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                claimed_at TEXT,
+                finished_at TEXT,
+                error TEXT
+            )
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_analysis_opinions (
+                panel_id TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                role TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                content TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT NOT NULL,
+                prompt_tokens INTEGER NOT NULL,
+                completion_tokens INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL,
+                cache_write_tokens INTEGER NOT NULL,
+                PRIMARY KEY (panel_id, stage),
+                FOREIGN KEY (panel_id) REFERENCES daily_analysis_panels(panel_id)
             )
             """
         )
@@ -551,6 +626,139 @@ class PaperLedger:
             (*parameters, limit),
         ).fetchall()
         return [_automation_run_row(row) for row in rows]
+
+    def enqueue_daily_panel(
+        self,
+        *,
+        panel_id: str,
+        execution_id: str,
+        context: Mapping[str, object],
+        queued_at: datetime,
+    ) -> str:
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT OR IGNORE INTO daily_analysis_panels (
+                    panel_id, execution_id, status, context, created_at
+                ) VALUES (?, ?, 'queued', ?, ?)
+                """,
+                (
+                    panel_id,
+                    execution_id,
+                    json.dumps(context, ensure_ascii=False, default=str),
+                    queued_at.isoformat(),
+                ),
+            )
+            row = self._connection.execute(
+                "SELECT panel_id FROM daily_analysis_panels WHERE execution_id = ?",
+                (execution_id,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("daily panel enqueue failed")
+        return str(row[0])
+
+    def claim_daily_panel(
+        self, *, claimed_at: datetime, stale_before: datetime
+    ) -> dict[str, object] | None:
+        with self._connection:
+            row = self._connection.execute(
+                """
+                SELECT panel_id, execution_id, context
+                FROM daily_analysis_panels
+                WHERE status = 'queued'
+                   OR (status = 'running' AND claimed_at < ?)
+                ORDER BY created_at, panel_id
+                LIMIT 1
+                """,
+                (stale_before.isoformat(),),
+            ).fetchone()
+            if row is None:
+                return None
+            updated = self._connection.execute(
+                """
+                UPDATE daily_analysis_panels
+                SET status = 'running', claimed_at = ?, error = NULL
+                WHERE panel_id = ?
+                  AND (status = 'queued' OR (status = 'running' AND claimed_at < ?))
+                """,
+                (claimed_at.isoformat(), str(row[0]), stale_before.isoformat()),
+            )
+            if updated.rowcount != 1:
+                return None
+        context = json.loads(str(row[2]))
+        if not isinstance(context, dict):
+            raise TypeError("daily panel context is invalid")
+        return {
+            "panelId": str(row[0]),
+            "executionId": str(row[1]),
+            "context": context,
+        }
+
+    def finish_daily_panel(
+        self,
+        *,
+        panel_id: str,
+        status: str,
+        finished_at: datetime,
+        error: str | None = None,
+    ) -> None:
+        if status not in {"succeeded", "failed"}:
+            raise ValueError("invalid daily panel status")
+        with self._connection:
+            updated = self._connection.execute(
+                """
+                UPDATE daily_analysis_panels
+                SET status = ?, finished_at = ?, error = ?
+                WHERE panel_id = ? AND status = 'running'
+                """,
+                (status, finished_at.isoformat(), error, panel_id),
+            )
+        if updated.rowcount != 1:
+            raise RuntimeError("daily panel is not running")
+
+    def record_daily_panel_opinion(
+        self,
+        *,
+        panel_id: str,
+        stage: str,
+        role: str,
+        provider: str,
+        model: str,
+        content: str,
+        started_at: datetime,
+        finished_at: datetime,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+    ) -> None:
+        values = _daily_panel_opinion_values(
+            panel_id=panel_id,
+            stage=stage,
+            role=role,
+            provider=provider,
+            model=model,
+            content=content,
+            started_at=started_at,
+            finished_at=finished_at,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
+        )
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT OR IGNORE INTO daily_analysis_opinions (
+                    panel_id, stage, role, provider, model, content,
+                    started_at, finished_at, prompt_tokens, completion_tokens,
+                    total_tokens, cache_read_tokens, cache_write_tokens
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                tuple(_sqlite_audit_value(value) for value in values),
+            )
 
     def daily_buy_count(self, day: date) -> int:
         row = self._connection.execute(
@@ -909,6 +1117,38 @@ CREATE INDEX IF NOT EXISTS automation_run_logs_time_idx
 ON automation_run_logs (finished_at DESC)
 """
 
+POSTGRES_DAILY_PANEL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS daily_analysis_panels (
+    panel_id UUID PRIMARY KEY,
+    execution_id TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL,
+    context JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    claimed_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    error TEXT
+)
+"""
+
+POSTGRES_DAILY_PANEL_OPINION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS daily_analysis_opinions (
+    panel_id UUID NOT NULL REFERENCES daily_analysis_panels(panel_id),
+    stage TEXT NOT NULL,
+    role TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    content TEXT NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL,
+    finished_at TIMESTAMPTZ NOT NULL,
+    prompt_tokens BIGINT NOT NULL,
+    completion_tokens BIGINT NOT NULL,
+    total_tokens BIGINT NOT NULL,
+    cache_read_tokens BIGINT NOT NULL,
+    cache_write_tokens BIGINT NOT NULL,
+    PRIMARY KEY (panel_id, stage)
+)
+"""
+
 
 class PostgresPaperLedger:
     def __init__(
@@ -964,6 +1204,8 @@ class PostgresPaperLedger:
                 )
                 cursor.execute(POSTGRES_AUTOMATION_RUN_SCHEMA)
                 cursor.execute(POSTGRES_AUTOMATION_RUN_INDEX)
+                cursor.execute(POSTGRES_DAILY_PANEL_SCHEMA)
+                cursor.execute(POSTGRES_DAILY_PANEL_OPINION_SCHEMA)
                 cursor.execute(POSTGRES_PORTFOLIO_SCHEMA)
                 cursor.execute(POSTGRES_PORTFOLIO_SNAPSHOT_SCHEMA)
                 cursor.execute(POSTGRES_PORTFOLIO_DAILY_BASELINE_SCHEMA)
@@ -1203,6 +1445,164 @@ class PostgresPaperLedger:
             )
             rows = cursor.fetchall()
         return [_automation_run_row(row) for row in rows]
+
+    def enqueue_daily_panel(
+        self,
+        *,
+        panel_id: str,
+        execution_id: str,
+        context: Mapping[str, object],
+        queued_at: datetime,
+    ) -> str:
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO daily_analysis_panels (
+                        panel_id, execution_id, status, context, created_at
+                    ) VALUES (%s, %s, 'queued', %s::jsonb, %s)
+                    ON CONFLICT (execution_id) DO NOTHING
+                    """,
+                    (
+                        panel_id,
+                        execution_id,
+                        json.dumps(context, ensure_ascii=False, default=str),
+                        queued_at,
+                    ),
+                )
+                cursor.execute(
+                    "SELECT panel_id FROM daily_analysis_panels WHERE execution_id = %s",
+                    (execution_id,),
+                )
+                row = cursor.fetchone()
+            self._connection.commit()
+        except self._database_error:
+            self._connection.rollback()
+            raise
+        if row is None:
+            raise RuntimeError("daily panel enqueue failed")
+        return str(row[0])
+
+    def claim_daily_panel(
+        self, *, claimed_at: datetime, stale_before: datetime
+    ) -> dict[str, object] | None:
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT panel_id, execution_id, context
+                    FROM daily_analysis_panels
+                    WHERE status = 'queued'
+                       OR (status = 'running' AND claimed_at < %s)
+                    ORDER BY created_at, panel_id
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                    """,
+                    (stale_before,),
+                )
+                row = cursor.fetchone()
+                if row is not None:
+                    cursor.execute(
+                        """
+                        UPDATE daily_analysis_panels
+                        SET status = 'running', claimed_at = %s, error = NULL
+                        WHERE panel_id = %s
+                        """,
+                        (claimed_at, row[0]),
+                    )
+            self._connection.commit()
+        except self._database_error:
+            self._connection.rollback()
+            raise
+        if row is None:
+            return None
+        raw_context = row[2]
+        context = (
+            json.loads(raw_context) if isinstance(raw_context, str) else dict(raw_context)
+        )
+        return {
+            "panelId": str(row[0]),
+            "executionId": str(row[1]),
+            "context": context,
+        }
+
+    def finish_daily_panel(
+        self,
+        *,
+        panel_id: str,
+        status: str,
+        finished_at: datetime,
+        error: str | None = None,
+    ) -> None:
+        if status not in {"succeeded", "failed"}:
+            raise ValueError("invalid daily panel status")
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE daily_analysis_panels
+                    SET status = %s, finished_at = %s, error = %s
+                    WHERE panel_id = %s AND status = 'running'
+                    """,
+                    (status, finished_at, error, panel_id),
+                )
+                updated = cursor.rowcount
+            self._connection.commit()
+        except self._database_error:
+            self._connection.rollback()
+            raise
+        if updated != 1:
+            raise RuntimeError("daily panel is not running")
+
+    def record_daily_panel_opinion(
+        self,
+        *,
+        panel_id: str,
+        stage: str,
+        role: str,
+        provider: str,
+        model: str,
+        content: str,
+        started_at: datetime,
+        finished_at: datetime,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+    ) -> None:
+        values = _daily_panel_opinion_values(
+            panel_id=panel_id,
+            stage=stage,
+            role=role,
+            provider=provider,
+            model=model,
+            content=content,
+            started_at=started_at,
+            finished_at=finished_at,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
+        )
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO daily_analysis_opinions (
+                        panel_id, stage, role, provider, model, content,
+                        started_at, finished_at, prompt_tokens, completion_tokens,
+                        total_tokens, cache_read_tokens, cache_write_tokens
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (panel_id, stage) DO NOTHING
+                    """,
+                    values,
+                )
+            self._connection.commit()
+        except self._database_error:
+            self._connection.rollback()
+            raise
 
     def daily_buy_count(self, day: date) -> int:
         with self._connection.cursor() as cursor:
@@ -1580,7 +1980,13 @@ def _automation_run_values(
     error: str | None,
     details: Mapping[str, object] | None,
 ) -> tuple[object, ...]:
-    if run_type not in {"daily", "market_scan", "hermes_trade", "n8n_flow"}:
+    if run_type not in {
+        "daily",
+        "daily_panel",
+        "market_scan",
+        "hermes_trade",
+        "n8n_flow",
+    }:
         raise ValueError("unknown automation run type")
     if status not in {"succeeded", "failed", "skipped"}:
         raise ValueError("unknown automation run status")
@@ -1615,6 +2021,60 @@ def _automation_run_values(
     )
 
 
+def _daily_panel_opinion_values(
+    *,
+    panel_id: str,
+    stage: str,
+    role: str,
+    provider: str,
+    model: str,
+    content: str,
+    started_at: datetime,
+    finished_at: datetime,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    cache_read_tokens: int,
+    cache_write_tokens: int,
+) -> tuple[object, ...]:
+    text_values = (panel_id, stage, role, provider, model, content)
+    if any(not isinstance(value, str) or not value.strip() for value in text_values):
+        raise ValueError("daily panel opinion text fields must not be empty")
+    if any(
+        value.tzinfo is None or value.utcoffset() is None
+        for value in (started_at, finished_at)
+    ):
+        raise ValueError("daily panel opinion timestamps must include timezone")
+    if finished_at < started_at:
+        raise ValueError("daily panel opinion cannot finish before it starts")
+    tokens = (
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+    )
+    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in tokens):
+        raise ValueError("daily panel token counts must be non-negative integers")
+    if prompt_tokens + completion_tokens > total_tokens:
+        raise ValueError("daily panel total tokens are inconsistent")
+    return (
+        panel_id,
+        stage,
+        role,
+        provider,
+        model,
+        content,
+        started_at,
+        finished_at,
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+    )
+
+
 def _validate_audit_query(limit: int, symbol: str | None) -> None:
     if not 1 <= limit <= 1000:
         raise ValueError("risk decision limit must be between 1 and 1000")
@@ -1629,6 +2089,7 @@ def _validate_automation_query(
         raise ValueError("automation run limit must be between 1 and 1000")
     if run_type is not None and run_type not in {
         "daily",
+        "daily_panel",
         "market_scan",
         "hermes_trade",
         "n8n_flow",
