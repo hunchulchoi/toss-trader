@@ -12,7 +12,8 @@ Hermes shared snapshot이 v2 후보를 다시 만들 때 완결 일봉 200 미�
 안 넣어서 0/60행이 나왔다.
 
 - 동작: 재생성도 `setup-v2:missing:`은 skip. 1m v2 prepare가 일봉 200 수집
-- 운영: 코드만, 배포 대기
+- 운영: 09:31 KST `e9898e5` `automation` 재빌드·재기동. health `healthy`,
+  restart 0, `TRADING_ENABLED=false`, healthz 200. n8n daily webhook은 안 침.
 
 ## 2026-08-18
 
