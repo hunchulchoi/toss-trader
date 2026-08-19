@@ -158,6 +158,7 @@ def _parse_net_purchase_csv(raw: bytes) -> dict[str, Decimal]:
         normalized,
         "순매수거래대금",
         "순매수대금",
+        "거래대금순매수",
         "netpurchaseamount",
         "netbuyamount",
     )

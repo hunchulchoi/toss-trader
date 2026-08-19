@@ -41,7 +41,7 @@ class KrxFlowImportTest(unittest.TestCase):
             foreign = root / "foreign.csv"
             institutional = root / "institutional.csv"
             foreign.write_text(
-                "종목코드,종목명,순매수거래대금\n005930,삼성전자,100\n000660,SK하이닉스,-20\n",
+                "종목코드,종목명,거래대금_순매수\n005930,삼성전자,100\n000660,SK하이닉스,-20\n",
                 encoding="utf-8-sig",
             )
             institutional.write_text(
