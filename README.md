@@ -204,7 +204,7 @@ DYNAMIC_UNIVERSE_SIZE=15
 `/run-paper-cycle` endpoint는 환경값과 관계없이 `--interval 1m`을 강제한다.
 현재 신호 상태기계의 기준 문서는
 [`docs/paper-cycle-flow.md`](docs/paper-cycle-flow.md)다. 1m v2 cycle은 분봉과
-함께 일봉 201개를 요청해 오늘 미완결봉을 제외한 200개를 확보한다. 완결 일봉이
+함께 오늘 00:00 KST 이전 일봉 200개를 요청해 미완결봉을 제외한다. 완결 일봉이
 부족하면 skip한다.
 종목은 고정 watchlist가 아니라 30분마다 Toss 시장 거래대금 상위 30개와
 1일 상승률 상위 30개를 합산 점수화해 RiskManager가 승인한 상위 15개를 쓴다.

@@ -35,6 +35,7 @@ class WatchlistCandleClient:
         self.closes = closes
         self.calls: list[tuple[str, int]] = []
         self.interval_calls: list[tuple[str, str, int]] = []
+        self.before_calls: list[tuple[str, str, str | None]] = []
         self.calendar_calls: list[str] = []
         self.closed_countries = closed_countries
 
@@ -50,9 +51,10 @@ class WatchlistCandleClient:
         before: str | None,
         adjusted: bool,
     ) -> dict:
-        del before, adjusted
+        del adjusted
         self.calls.append((symbol, count))
         self.interval_calls.append((symbol, interval, count))
+        self.before_calls.append((symbol, interval, before))
         if symbol not in self.closes:
             raise ValueError("simulated-symbol-error")
         start = datetime(2026, 8, 9, tzinfo=UTC)
@@ -673,7 +675,11 @@ class PaperCycleRunnerTest(unittest.TestCase):
         )
 
         self.assertIn(("005930", "1m", 4), client.interval_calls)
-        self.assertIn(("005930", "1d", 201), client.interval_calls)
+        self.assertIn(("005930", "1d", 200), client.interval_calls)
+        self.assertIn(
+            ("005930", "1d", "2026-08-12T00:00:00+09:00"),
+            client.before_calls,
+        )
 
     def test_1m_continuation_skips_when_daily_trend_is_not_risk_on(self) -> None:
         self.market_repository.upsert_candles(_daily_trend("005930", rising=False))

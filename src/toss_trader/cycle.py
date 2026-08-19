@@ -182,7 +182,8 @@ class PaperCycleRunner:
                     self._collector.collect(
                         symbol=symbol,
                         interval="1d",
-                        count=201,
+                        count=200,
+                        before=_completed_daily_before(now),
                     )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)
@@ -800,6 +801,11 @@ class PaperCycleRunner:
     def _finished_at(self, started_at: datetime) -> datetime:
         finished_at = self._clock()
         return max(started_at, finished_at)
+
+
+def _completed_daily_before(now: datetime) -> str:
+    local = now.astimezone(ZoneInfo("Asia/Seoul"))
+    return local.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
 
 def _status(result: PaperCycleResult) -> str:
