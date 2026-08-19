@@ -1,8 +1,10 @@
-# Daily paper analysis panel
+# Midday and closing paper analysis panel
 
-The 15:40 KST n8n workflow runs the Rule and Hermes paper closing cycles, then
-queues their shared comparison snapshot in `daily_analysis_panels`. It no longer
-calls the single Hermes analysis sidecar or sends the closing report itself.
+The n8n workflow runs at 11:50 and 15:40 KST on Korean market days, then queues
+the Rule and Hermes shared comparison snapshot in `daily_analysis_panels`. Both
+schedules pass the Toss market-calendar gate first. The 11:50 context is marked
+`midday` and non-final; 15:40 is marked `close`. The workflow no longer calls the
+single Hermes analysis sidecar or sends the report itself.
 
 The main Hermes container polls that queue with
 `automation/hermes-panel-runner.py`. The script is intentionally fixed-purpose:
@@ -14,8 +16,9 @@ neither Docker access nor Cursor authentication.
 1. GPT quant, Grok skeptic, and Gemini Risk analyze the same JSON independently.
 2. Each model receives all three labeled independent opinions and reviews their
    agreement, conflicts, and overclaims.
-3. Hermes receives the daily JSON plus all six responses and produces the final
-   Telegram report.
+3. Hermes receives the briefing JSON plus all six responses and produces the
+   Telegram report. Midday output must not claim a closing price or final daily
+   performance.
 
 Full model text and exact reported input, output, cache-read, and cache-write
 tokens are stored in `daily_analysis_opinions`. Telegram receives only the

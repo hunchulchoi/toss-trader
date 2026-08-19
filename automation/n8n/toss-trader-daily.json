@@ -1,9 +1,9 @@
 {
   "id": "toss-trader-daily-paper-hermes",
-  "name": "Toss Trader Daily n8n Orchestration",
+  "name": "Toss Trader Midday and Closing n8n Orchestration",
   "active": false,
   "nodes": [
-    {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "40 15 * * 1-5"}]}}, "id": "schedule", "name": "평일 15:40 KST", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0]},
+    {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "50 11 * * 1-5"}, {"field": "cronExpression", "expression": "40 15 * * 1-5"}]}}, "id": "schedule", "name": "평일 11:50·15:40 KST", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0]},
     {"parameters": {}, "id": "manual", "name": "수동 테스트", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 180]},
     {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/market-session", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-daily\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"market-session\" } } }}", "options": {"timeout": 15000}}, "id": "market-session", "name": "Toss 한국장 일정 확인", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [280, -100], "retryOnFail": true, "maxTries": 3, "waitBetweenTries": 5000},
     {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "market-business-day-condition", "leftValue": "={{ $('Toss 한국장 일정 확인').item.json.isBusinessDay }}", "rightValue": true, "operator": {"type": "boolean", "operation": "true", "singleValue": true}}], "combinator": "and"}, "options": {}}, "id": "market-business-day", "name": "한국장 영업일?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [520, -100]},
@@ -17,13 +17,13 @@
     {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "hermes-fill-condition", "leftValue": "={{ $json.cycle?.summary?.fills ?? 0 }}", "rightValue": 0, "operator": {"type": "number", "operation": "gt"}}], "combinator": "and"}, "options": {}}, "id": "hermes-fills", "name": "Hermes 일봉 체결 있음?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [1480, -40]},
     {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/report-failure", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-daily\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"hermes-cycle\", \"status\": \"failed\", \"portfolioId\": \"hermes\", \"interval\": \"1d\" }, \"response\": $json } }}", "options": {"timeout": 30000}}, "id": "hermes-failure", "name": "Hermes 일봉 실패 Telegram", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1480, 180]},
     {"parameters": {"jsCode": "const rule = $('시장 Snapshot + Rule 일봉').first().json; const hermes = $('공유 Snapshot + Hermes 일봉').first().json; return [{ json: { rule, hermes } }];"}, "id": "combine", "name": "일일 비교 결과 병합", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1720, -40]},
-    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/daily-panel-enqueue", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-daily\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"daily-panel-enqueue\", \"interval\": \"1d\" }, \"rule\": $('시장 Snapshot + Rule 일봉').first().json, \"hermes\": $('공유 Snapshot + Hermes 일봉').first().json } }}", "options": {"response": {"response": {"neverError": true}}, "timeout": 30000}}, "id": "panel-enqueue", "name": "마감 다중분석 Queue", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1960, -40], "retryOnFail": true, "maxTries": 3, "waitBetweenTries": 5000},
+    {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/daily-panel-enqueue", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-daily\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"daily-panel-enqueue\", \"interval\": \"1d\" }, \"briefingKind\": $execution.mode === \"trigger\" && $now.setZone(\"Asia/Seoul\").hour < 15 ? \"midday\" : \"close\", \"briefingObservedAt\": $now.setZone(\"Asia/Seoul\").toISO(), \"rule\": $('시장 Snapshot + Rule 일봉').first().json, \"hermes\": $('공유 Snapshot + Hermes 일봉').first().json } }}", "options": {"response": {"response": {"neverError": true}}, "timeout": 30000}}, "id": "panel-enqueue", "name": "브리핑 다중분석 Queue", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1960, -40], "retryOnFail": true, "maxTries": 3, "waitBetweenTries": 5000},
     {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "panel-queued-condition", "leftValue": "={{ $json.queued ? 1 : 0 }}", "rightValue": 1, "operator": {"type": "number", "operation": "equals"}}], "combinator": "and"}, "options": {}}, "id": "panel-queued", "name": "다중분석 Queue 정상?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [2200, -40]},
-    {"parameters": {"jsCode": "return items;"}, "id": "done", "name": "마감 workflow 완료", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2440, -100]},
+    {"parameters": {"jsCode": "return items;"}, "id": "done", "name": "브리핑 workflow 완료", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2440, -100]},
     {"parameters": {"method": "POST", "url": "http://toss-trader-automation:8088/workflow/report-failure", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-daily\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"daily-panel-enqueue\", \"status\": \"failed\", \"interval\": \"1d\" }, \"response\": $json } }}", "options": {"timeout": 30000}}, "id": "panel-failure", "name": "다중분석 Queue 실패 Telegram", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [2440, 100]}
   ],
   "connections": {
-    "평일 15:40 KST": {"main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]},
+    "평일 11:50·15:40 KST": {"main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]},
     "수동 테스트": {"main": [[{"node": "시장 Snapshot + Rule 일봉", "type": "main", "index": 0}]]},
     "인증된 마감 리뷰 요청": {"main": [[{"node": "시장 Snapshot + Rule 일봉", "type": "main", "index": 0}]]},
     "Toss 한국장 일정 확인": {"main": [[{"node": "한국장 영업일?", "type": "main", "index": 0}]]},
@@ -34,9 +34,9 @@
     "공유 Snapshot + Hermes 일봉": {"main": [[{"node": "Hermes 일봉 정상?", "type": "main", "index": 0}]]},
     "Hermes 일봉 정상?": {"main": [[{"node": "Hermes 일봉 체결 있음?", "type": "main", "index": 0}], [{"node": "Hermes 일봉 실패 Telegram", "type": "main", "index": 0}]]},
     "Hermes 일봉 체결 있음?": {"main": [[{"node": "일일 비교 결과 병합", "type": "main", "index": 0}], [{"node": "일일 비교 결과 병합", "type": "main", "index": 0}]]},
-    "일일 비교 결과 병합": {"main": [[{"node": "마감 다중분석 Queue", "type": "main", "index": 0}]]},
-    "마감 다중분석 Queue": {"main": [[{"node": "다중분석 Queue 정상?", "type": "main", "index": 0}]]},
-    "다중분석 Queue 정상?": {"main": [[{"node": "마감 workflow 완료", "type": "main", "index": 0}], [{"node": "다중분석 Queue 실패 Telegram", "type": "main", "index": 0}]]}
+    "일일 비교 결과 병합": {"main": [[{"node": "브리핑 다중분석 Queue", "type": "main", "index": 0}]]},
+    "브리핑 다중분석 Queue": {"main": [[{"node": "다중분석 Queue 정상?", "type": "main", "index": 0}]]},
+    "다중분석 Queue 정상?": {"main": [[{"node": "브리핑 workflow 완료", "type": "main", "index": 0}], [{"node": "다중분석 Queue 실패 Telegram", "type": "main", "index": 0}]]}
   },
   "settings": {"executionOrder": "v1", "timezone": "Asia/Seoul", "errorWorkflow": "toss-trader-workflow-error"},
   "pinData": {},

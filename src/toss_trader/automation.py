@@ -1367,6 +1367,14 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
     hermes = payload.get("hermes")
     if not isinstance(rule, dict) or not isinstance(hermes, dict):
         raise TypeError("comparison workflow requires rule and hermes JSON")
+    briefing_kind = payload.get("briefingKind", "close")
+    if briefing_kind not in {"midday", "close"}:
+        raise ValueError("briefingKind must be midday or close")
+    briefing_observed_at = payload.get("briefingObservedAt")
+    if briefing_observed_at is not None and not isinstance(
+        briefing_observed_at, str
+    ):
+        raise TypeError("briefingObservedAt must be text")
     portfolios = {
         "rule": rule.get("cycle", rule),
         "hermes": hermes.get("cycle", hermes),
@@ -1378,6 +1386,11 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
     ]
     return {
         "exitCode": max(int(rule.get("exitCode", 1)), int(hermes.get("exitCode", 1))),
+        "briefing": {
+            "kind": briefing_kind,
+            "observedAt": briefing_observed_at,
+            "isFinal": briefing_kind == "close",
+        },
         "cycle": {
             "comparison": True,
             "portfolios": portfolios,

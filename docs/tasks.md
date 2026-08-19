@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### AI-003 Add a market-day midday paper briefing
+
+- Owner: codex
+- Status: DONE
+- Result: the shared daily panel now runs at 11:50 and 15:40 KST after the
+  Toss Korean-market calendar gate. The 11:50 snapshot is labeled non-final in
+  DB context, model prompts, and Telegram output so no analyst can describe it
+  as a closing result.
+- Checks: targeted automation and monitoring asset tests; JSON and Git
+  whitespace validation
+- Risks: each briefing invokes the full seven-opinion panel, so weekday model
+  usage increases by one panel. Calendar lookup failure remains fail-closed.
+
 ### AI-002 Multi-agent daily paper review panel
 
 - Owner: codex

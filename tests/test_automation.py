@@ -54,6 +54,8 @@ class WorkflowTaskServiceTest(unittest.TestCase):
                 "/workflow/daily-panel-enqueue",
                 {
                     "_workflow": {"executionId": "n8n-900"},
+                    "briefingKind": "midday",
+                    "briefingObservedAt": "2026-08-19T11:50:00+09:00",
                     "rule": {"exitCode": 0, "cycle": {"summary": {"fills": 1}}},
                     "hermes": {
                         "exitCode": 0,
@@ -63,6 +65,12 @@ class WorkflowTaskServiceTest(unittest.TestCase):
             )
             claimed = service.run("/workflow/daily-panel-claim", {})
             self.assertEqual(claimed["panelId"], queued["panelId"])
+            self.assertEqual(claimed["context"]["briefing"]["kind"], "midday")
+            self.assertFalse(claimed["context"]["briefing"]["isFinal"])
+            self.assertEqual(
+                claimed["context"]["briefing"]["observedAt"],
+                "2026-08-19T11:50:00+09:00",
+            )
 
             stages = (
                 "independent:gpt",
@@ -875,6 +883,18 @@ class PaperCycleNoticeTest(unittest.TestCase):
             payload["cycle"]["dailyReview"]["portfolios"]["hermes"]["buyFills"],
             0,
         )
+        self.assertEqual(payload["briefing"]["kind"], "close")
+        self.assertTrue(payload["briefing"]["isFinal"])
+
+    def test_comparison_payload_rejects_unknown_briefing_kind(self) -> None:
+        with self.assertRaisesRegex(ValueError, "briefingKind"):
+            _comparison_payload(
+                {
+                    "briefingKind": "opening",
+                    "rule": {"exitCode": 0},
+                    "hermes": {"exitCode": 0},
+                }
+            )
 
 
 class MarketScanAutomationTest(unittest.TestCase):

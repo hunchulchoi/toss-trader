@@ -141,7 +141,8 @@
 - **주요 워크플로우**:
   1. `toss-trader-market-scan`: 평일 08:30 KST 장전 시장 레짐 분석 및 종목 발굴.
   2. `toss-trader-intraday-paper`: 평일 09:00~15:20 KST (5분 간격) Rule/Hermes 장중 사이클 실행.
-  3. `toss-trader-daily`: 평일 15:40 KST 일봉 마감 분석 및 일일 성과 요약.
+  3. `toss-trader-daily`: 한국장 영업일 11:50 KST 비확정 중간 분석과
+     15:40 KST 일봉 마감 분석 및 일일 성과 요약.
   4. `toss-trader-error`: 장애 발생 시 Alertmanager 즉시 통보.
 - **관련 문서**: [automatic-trading-scenario.md](automatic-trading-scenario.md), [system-workflow.md](system-workflow.md)
 

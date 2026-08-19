@@ -45,14 +45,16 @@ flowchart TB
         NOTICE_CHK -->|아니오| QUIET_INTRA["무알림 정상 종료"]
     end
 
-    subgraph POST["3. 장 마감 일봉 리뷰 (평일 15:40 KST)"]
+    subgraph POST["3. 장중·장마감 일봉 리뷰 (평일 11:50·15:40 KST)"]
         direction TB
-        N_POST["n8n 스케줄 Trigger (15:40)"] --> RULE_1D["Rule 일봉 사이클 (/workflow/paper-rule-1d)"]
+        N_POST["n8n 스케줄 Trigger (11:50·15:40)"] --> CAL_POST{"Toss 한국장 영업일?"}
+        CAL_POST -->|예| RULE_1D["Rule 일봉 사이클 (/workflow/paper-rule-1d)"]
+        CAL_POST -->|아니오·조회 실패| STOP_POST["브리핑 생략"]
         RULE_1D --> HERMES_1D["Hermes 일봉 사이클 (/workflow/paper-hermes-1d)"]
         HERMES_1D --> COMBINE["일일 비교 결과 병합"]
-        COMBINE --> H_POST["Hermes 마감 분석 (/v1/chat/completions)"]
-        H_POST --> REPORT_POST["마감 결과 검증 및 감사 원장 기록"]
-        REPORT_POST --> TG_POST["Alertmanager → Telegram 마감 리포트"]
+        COMBINE --> QUEUE_POST["다중분석 DB Queue"]
+        QUEUE_POST --> PANEL_POST["GPT·Grok·Gemini 분석·교차검토 → Hermes 판정"]
+        PANEL_POST --> TG_POST["Alertmanager → Telegram 중간/마감 브리핑"]
     end
 ```
 
@@ -72,7 +74,7 @@ n8n encrypted credential DB에는 Hermes bearer·RiskManager bearer·수동 webh
 
 - 장전: `market-scan` → Hermes 직접 호출 → `hermes-market-result` → `report-market`
 - 장중: `paper-rule-1m` → `paper-hermes-1m` → 병합 → `report-paper`
-- 마감: `paper-rule-1d` → `paper-hermes-1d` → Hermes 직접 호출 → `hermes-daily-result` → `report-daily`
+- 중간·마감: `paper-rule-1d` → `paper-hermes-1d` → `daily-panel-enqueue` → 다중분석 panel → Telegram
 - 실패: Error Trigger → `report-failure`
 
 Toss·Alertmanager credential은 automation의 Infisical 주입값을 사용한다. Hermes
@@ -118,15 +120,16 @@ discovery universe 안에서 발굴한다.
 장 마감 10분 전부터 신규 매수는 RiskManager가 거부한다. 매도는 허용하지만
 휴장일에는 stale candle 체결을 방지하기 위해 양 방향 모두 거부한다.
 
-### 3. 마감 n8n 실행
+### 3. 중간·마감 n8n 실행
 
-- 평일 `15:40 KST` 실행
+- 한국장 영업일 `11:50`, `15:40 KST` 실행. 휴장·calendar 오류에는 생략
 - HTTP timeout: 10분
 - 같은 작업이 이미 실행 중이면 automation API가 `409` 반환
 - endpoint는 host port로 공개하지 않고 `openclaw-net`에만 노출
-- 마감 Hermes는 1d cycle 수익률만 보지 않는다. 같은 서울 일자 `1m`
+- 분석 panel은 1d cycle 수익률만 보지 않는다. 같은 서울 일자 `1m`
   `cycle_insight`를 모아 `intradayReview`/`dailyReview`로 넘긴다. 판단 기준은
   규칙 준수(setup 차단, 시가 대기, 보유 idle, 체결)이지 당일 플러스가 아니다.
+  11:50 결과는 `midday` 비확정 관측으로 표시하며 종가·일일 성과를 확정하지 않는다.
   뉴스·사후 해석으로 놓친 매수를 지어내지 않는다.
 
 ### 4. Toss paper cycle

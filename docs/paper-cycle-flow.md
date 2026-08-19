@@ -10,6 +10,7 @@
 |---|---|---|
 | 평일 08:30 | market scan | 장전 후보 분석·Telegram 리포트. 체결 없음 |
 | 평일 09:00~15:20, 5분 간격 | Rule 1m → Hermes 1m | 같은 시장 snapshot으로 독립 paper 장부 비교 |
+| 평일 11:50 | Rule 1d → Hermes 1d → midday review | 현재까지의 1m 퍼널·체결·위험 중간 브리핑. 마감 확정 아님 |
 | 평일 15:40 | Rule 1d → Hermes 1d → daily review | 당일 1m cycle 퍼널·체결·규칙 준수 마감 리뷰 |
 
 모든 schedule은 먼저 Toss 한국장 calendar를 확인한다. 휴장 또는 calendar 조회

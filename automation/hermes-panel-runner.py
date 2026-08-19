@@ -126,11 +126,29 @@ def _token(usage: dict[str, Any], *keys: str) -> int:
     return 0
 
 
+def _briefing(context: dict[str, Any]) -> tuple[str, str, str]:
+    value = context.get("briefing")
+    kind = value.get("kind") if isinstance(value, dict) else "close"
+    if kind == "midday":
+        return (
+            "장중 중간 브리핑",
+            "현재까지의 관측치다. 종가·일일 수익·장 마감 결과로 확정하지 마라.",
+            "[중간 결론], [합의], [이견/이상], [Risk], [오후 확인]",
+        )
+    return (
+        "장마감 브리핑",
+        "마감 시점 자료이지만 제공 JSON 밖의 종가나 성과를 추정하지 마라.",
+        "[오늘 결론], [합의], [이견/이상], [Risk], [내일 확인]",
+    )
+
+
 def _independent_prompt(name: str, context: dict[str, Any]) -> str:
     spec = ROLES[name]
+    title, timing_guard, _ = _briefing(context)
     return (
-        "너는 Toss Trader paper 마감 패널의 "
+        f"너는 Toss Trader paper {title} 패널의 "
         f"{spec['role']}다. {spec['instruction']} "
+        f"{timing_guard} "
         "제공 JSON만 사용하고 도구를 호출하지 마라. 다른 분석가 의견은 아직 없다. "
         "매매 지시·수익 보장 금지. 핵심 근거와 불확실성을 한국어 1200자 이내로 작성.\n"
         f"TODAY_JSON={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}"
@@ -141,10 +159,12 @@ def _review_prompt(
     name: str, context: dict[str, Any], independent: dict[str, dict[str, Any]]
 ) -> str:
     spec = ROLES[name]
+    title, timing_guard, _ = _briefing(context)
     opinions = {key: value["content"] for key, value in independent.items()}
     return (
-        "너는 Toss Trader paper 마감 패널의 "
+        f"너는 Toss Trader paper {title} 패널의 "
         f"{spec['role']}다. 세 독립 의견을 모두 검토하라. "
+        f"{timing_guard} "
         "합의점, 충돌, 틀린 주장/과잉해석, 최종 judge가 남겨야 할 불확실성을 "
         "제공 JSON만으로 한국어 900자 이내 작성. 매매 지시 금지.\n"
         f"TODAY_JSON={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}\n"
@@ -157,16 +177,17 @@ def _hermes_call(
     independent: dict[str, dict[str, Any]],
     reviews: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
+    title, timing_guard, sections = _briefing(context)
     evidence = {
         "today": context,
         "independent": {key: value["content"] for key, value in independent.items()},
         "reviews": {key: value["content"] for key, value in reviews.items()},
     }
     prompt = (
-        "너는 Toss Trader paper 마감 패널의 최종 judge Hermes다. GPT quant, "
+        f"너는 Toss Trader paper {title} 패널의 최종 judge Hermes다. GPT quant, "
         "Grok skeptic, Gemini Risk의 독립 의견과 상호검토를 판정하라. 제공된 "
-        "evidence 밖의 사실을 만들지 마라. 텔레그램용 한국어 평문으로 [오늘 결론], "
-        "[합의], [이견/이상], [Risk], [내일 확인]을 포함해 2800자 이내 작성하라. "
+        f"evidence 밖의 사실을 만들지 마라. {timing_guard} "
+        f"텔레그램용 한국어 평문으로 {sections}을 포함해 2800자 이내 작성하라. "
         "매매 지시·수익 보장 금지.\n"
         f"EVIDENCE={json.dumps(evidence, ensure_ascii=False, separators=(',', ':'))}"
     )

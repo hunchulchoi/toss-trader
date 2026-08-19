@@ -1,4 +1,5 @@
 import json
+import runpy
 import subprocess
 import unittest
 from pathlib import Path
@@ -293,7 +294,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("context:\n  engine: compressor", hermes_config)
         self.assertIn("memory_enabled: false", hermes_config)
 
-    def test_n8n_workflow_runs_weekdays_after_market_close(self) -> None:
+    def test_n8n_workflow_runs_midday_and_closing_briefings(self) -> None:
         workflow = json.loads(
             (ROOT / "automation" / "n8n" / "toss-trader-daily.json").read_text()
         )
@@ -301,7 +302,9 @@ class MonitoringAssetsTest(unittest.TestCase):
 
         self.assertFalse(workflow["active"])
         self.assertEqual(workflow["settings"]["timezone"], "Asia/Seoul")
-        self.assertIn("40 15 * * 1-5", json.dumps(nodes["평일 15:40 KST"]))
+        schedule = json.dumps(nodes["평일 11:50·15:40 KST"])
+        self.assertIn("50 11 * * 1-5", schedule)
+        self.assertIn("40 15 * * 1-5", schedule)
         encoded = json.dumps(workflow, ensure_ascii=False)
         self.assertIn("/workflow/paper-rule-1d", encoded)
         self.assertIn("/workflow/paper-hermes-1d", encoded)
@@ -315,6 +318,9 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn('"authentication": "headerAuth"', encoded)
         self.assertIn('"responseMode": "onReceived"', encoded)
         self.assertIn("toss-trader-manual-trigger-auth", encoded)
+        self.assertIn("briefingKind", encoded)
+        self.assertIn("midday", encoded)
+        self.assertIn("close", encoded)
         self._assert_scheduled_runs_use_toss_market_calendar(workflow)
         for branch in (
             "Rule 일봉 정상?",
@@ -335,6 +341,21 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertNotIn('"--sandbox"', source)
         self.assertNotIn("docker exec", source)
         self.assertIn("/workflow/daily-panel-complete", source)
+
+    def test_hermes_panel_runner_distinguishes_midday_from_close(self) -> None:
+        namespace = runpy.run_path(
+            str(ROOT / "automation" / "hermes-panel-runner.py")
+        )
+        briefing = namespace["_briefing"]
+
+        midday = briefing({"briefing": {"kind": "midday"}})
+        close = briefing({"briefing": {"kind": "close"}})
+
+        self.assertEqual(midday[0], "장중 중간 브리핑")
+        self.assertIn("확정하지 마라", midday[1])
+        self.assertIn("[오후 확인]", midday[2])
+        self.assertEqual(close[0], "장마감 브리핑")
+        self.assertIn("[내일 확인]", close[2])
 
     def test_n8n_workflow_runs_intraday_paper_every_five_minutes(self) -> None:
         workflow = json.loads(
