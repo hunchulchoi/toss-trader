@@ -330,17 +330,18 @@ N8N_MANUAL_TRIGGER_TOKEN=
 MARKET_BENCHMARK_SYMBOLS=069500,229200
 DISCOVERY_SYMBOLS=005930,000660,373220,207940,005380,000270,068270,105560,055550,035420,035720,006400,051910,028260,012330
 DISCOVERY_TOP_N=10
-DYNAMIC_UNIVERSE_REFRESH_MINUTES=30
 DYNAMIC_UNIVERSE_CANDIDATE_COUNT=30
 DYNAMIC_UNIVERSE_SIZE=15
 CANDLE_REQUEST_INTERVAL_SECONDS=0.25
 ```
 
-장중 paper cycle은 고정 watchlist를 사용하지 않는다. 30분마다 한국 시장의
-거래대금 상위 30개와 1일 상승률 상위 30개를 조회하고, 거래대금 순위에 2배
-가중치를 둬 합산한다. 투자유의 종목은 Toss 랭킹 요청에서 제외한다.
-RiskManager가 보통주·거래 상태·거래정지·가격·주문 한도·가용 현금·일일 손실·
-API 오류 streak를 검사한 뒤 승인 상위 15개와 기존 보유 종목을 추적한다.
+장중 paper cycle은 고정 watchlist를 사용하지 않는다. 서울 거래일 첫 cycle에서
+한국 시장 거래대금 상위 30개와 1일 상승률 상위 30개를 조회하고, 거래대금
+순위에 2배 가중치를 둬 합산한다. 투자유의 종목은 Toss 랭킹 요청에서 제외한다.
+직전 완결 일봉 200개의 setup-v2.2 가격 조건 통과가 필수다. 그 뒤 RiskManager가
+보통주·거래 상태·거래정지·가격·주문 한도·가용 현금·일일 손실·API 오류 streak를
+검사한다. 승인 상위 15개까지 당일 고정하며 부족분을 급등 종목으로 채우지 않는다.
+0종도 정상이다. 기존 보유 종목은 별도로 계속 추적한다.
 판단은 `dynamic_universe_runs`, `dynamic_universe_decisions`에 저장한다.
 universe가 갱신된 시점에는 선정 종목 중 `MA20 > MA60`인 기존 상승 추세도
 최초 BUY 신호를 만들 수 있다. 같은 universe run의 신호 ID는 고정해 중복 체결을

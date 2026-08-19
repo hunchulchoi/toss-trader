@@ -154,8 +154,6 @@ class PaperCycleRunner:
         trend_entry_key: str | None = None,
         new_buys_allowed: bool = True,
     ) -> PaperCycleSnapshot:
-        if not symbols:
-            raise ValueError("watchlist must not be empty")
         size = len(symbols)
         collections: list[CollectionResult | None] = [None] * size
         signals: list[TradeSignal | None] = [None] * size
@@ -307,8 +305,6 @@ class PaperCycleRunner:
         signal_namespace: str | None = None,
         snapshot: PaperCycleSnapshot | None = None,
     ) -> PaperCycleResult:
-        if not symbols:
-            raise ValueError("watchlist must not be empty")
         previous_api_errors = self._state.latest_consecutive_api_errors()
         run_id = self._state.start_run(
             started_at=now,

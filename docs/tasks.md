@@ -20,7 +20,16 @@ No active tasks.
 
 ## REVIEW
 
-No tasks awaiting review.
+### STRAT-008 Align universe with setup-v2 price candidates
+
+- Owner: codex
+- Status: REVIEW
+- Result: gated ranked symbols with completed-daily setup-v2 price rules before
+  RiskManager, froze each successful selection for the Seoul trading date, kept
+  held symbols for exits, and made an empty candidate set a successful no-BUY cycle
+- Checks: 312 unit tests; scoped Ruff and Git whitespace checks
+- Risks: first cycle may fetch daily history for every ranked symbol; production
+  dry-run and deployment remain pending explicit operational authorization
 
 ## DONE
 

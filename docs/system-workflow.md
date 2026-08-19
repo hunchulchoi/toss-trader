@@ -306,16 +306,17 @@ Hermes 한도 거부는 webhook 전 로컬 preflight. n8n 없음. Rule·universe
 flowchart TD
     S[n8n 5분 trigger] --> API[POST /workflow/paper-rule-1m]
     API --> HAPI[POST /workflow/paper-hermes-1m]
-    API --> U{최근 universe가\n30분 이내인가?}
-    U -->|예| UC[선정 15종목 cache 사용]
+    API --> U{오늘 성공한\nuniverse가 있는가?}
+    U -->|예| UC[당일 선정 종목 cache 사용]
     U -->|아니오| R1[거래대금 상위 30]
     U -->|아니오| R2[상승률 상위 30]
     R1 --> SCORE[거래대금 2배 + 상승률 1배 점수]
     R2 --> SCORE
     SCORE --> META[/stocks 회사·거래상태 batch 조회]
-    META --> UR[RiskManager 후보 승인·거부]
+    META --> PRICE[직전 완결 일봉 200개\n가격 setup 필터]
+    PRICE --> UR[RiskManager 후보 승인·거부]
     UR --> UL[(dynamic_universe_runs\ndynamic_universe_decisions)]
-    UR --> PICK[승인 상위 15 + 보유 종목]
+    UR --> PICK[승인 상위 15까지 + 보유 종목\n부족분 채움 없음]
     UC --> C
     PICK --> C[종목별 1m + 완결 일봉 200개 순차 조회]
     C -->|최소 0.25초 + rate-limit 대기| MC[(market_candles)]

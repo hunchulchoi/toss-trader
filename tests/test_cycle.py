@@ -278,6 +278,24 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(latest.status, "succeeded")
         self.assertEqual(latest.fill_count, 1)
 
+    def test_empty_price_candidate_universe_is_successful(self) -> None:
+        result = self._runner(WatchlistCandleClient({})).run(
+            symbols=(),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(result.symbol_count, 0)
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(result.insight["idleReason"], "ok")
+        latest = self.cycle_state.latest_run()
+        assert latest is not None
+        self.assertEqual(latest.status, "succeeded")
+
     def test_setup_v2_gate_blocks_buy_before_risk_and_advisor(self) -> None:
         client = WatchlistCandleClient(
             {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
