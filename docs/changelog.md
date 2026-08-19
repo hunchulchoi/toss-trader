@@ -14,7 +14,8 @@
   읽는다. 종목 판단은 기존 `rationale`. 장전/마감은 이제 `details.assistant`에
   응답 본문(최대 4000자). 요청 JSON·secret은 계속 안 넣음. 과거 장전/마감은
   token만 있어 본문 없음으로 표시
-- 운영: 코드만, 배포 대기
+- 운영: 반영함. 2026-08-19 17:05 KST `timeline` recreate. `/healthz` 200,
+  restart 0, healthy. `/hermes` 200. API `hermesConversations` 58건
 
 ### KIS 최신 세션 원장 지연 보완
 
