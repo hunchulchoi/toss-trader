@@ -9,11 +9,13 @@
 
 ### 한국장 11:50 중간 paper 브리핑
 
-- 기록 시각: 2026-08-19 21:05 KST
+- 기록 시각: 2026-08-19 21:09 KST
 - 동작: 기존 다중분석 panel을 평일 11:50에도 실행. 예약·수동·인증 webhook 모두
   Toss 한국장 calendar를 먼저 확인하므로 휴장·calendar 장애에는 실행하지 않음
 - 구분: queue context에 `midday`/`close`와 관측 시각을 저장. 중간 분석 prompt와
   Telegram은 미완결 장중 관측임을 명시하고 종가·일일 성과 확정을 금지
+- 실행: Hermes no-agent poll을 11:50~11:59와 15:00~17:59 KST로 분리해
+  중간 queue가 마감까지 지연되지 않도록 함
 - 운영: 아직 미배포. n8n workflow와 automation/Hermes runner 반영 필요
 
 ### 마감 paper 다중 분석 패널
