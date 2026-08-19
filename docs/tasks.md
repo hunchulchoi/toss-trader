@@ -16,7 +16,14 @@ agents must sync from `main` before claiming or handing off work.
 
 ## IN PROGRESS
 
-No active tasks.
+### DATA-007 Align flow coverage with dynamic universe
+
+- Owner: codex
+- Status: IN PROGRESS
+- Goal: import all valid KRX CSV symbols, include the latest dynamic universe in
+  KIS collection, and keep 200 completed daily candles during intraday cycles
+- Acceptance: regression tests, full 2026-08-18 KRX re-import, deployed dynamic
+  symbols with flow rows, 200 completed daily candles, and healthy paper services
 
 ## REVIEW
 

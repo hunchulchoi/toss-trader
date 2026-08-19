@@ -182,7 +182,7 @@ class PaperCycleRunner:
                     self._collector.collect(
                         symbol=symbol,
                         interval="1d",
-                        count=200,
+                        count=201,
                     )
             except HANDLED_CYCLE_ERRORS as error:
                 errors[index] = str(error)

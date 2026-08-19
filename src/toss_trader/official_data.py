@@ -939,6 +939,24 @@ class OfficialDataRepository:
             return []
         return [str(row[0]) for row in rows]
 
+    def latest_dynamic_symbols(self) -> list[str]:
+        try:
+            rows = self._connection.execute(
+                """SELECT symbol FROM dynamic_universe_decisions
+                WHERE run_id = (
+                    SELECT run_id FROM dynamic_universe_runs
+                    WHERE status='succeeded'
+                    ORDER BY evaluated_at DESC LIMIT 1
+                ) AND selected
+                ORDER BY score DESC, symbol"""
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        return [str(row[0]) for row in rows]
+
+    def flow_collection_symbols(self) -> list[str]:
+        return list(dict.fromkeys((*self.symbols(), *self.latest_dynamic_symbols())))
+
     def session_indexes(self) -> dict[date, int]:
         rows = self._connection.execute(
             "SELECT DISTINCT session_date FROM market_universe_raw_v2 ORDER BY 1"

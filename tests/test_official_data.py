@@ -524,6 +524,44 @@ class OfficialDataTest(unittest.TestCase):
             connection.close()
             self.assertEqual(row, ("120",))
 
+    def test_flow_collection_symbols_include_latest_dynamic_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "market.db"
+            repository = OfficialDataRepository(str(path))
+            connection = sqlite3.connect(path)
+            connection.executescript(
+                """
+                CREATE TABLE market_symbols (symbol TEXT PRIMARY KEY);
+                INSERT INTO market_symbols VALUES ('005930');
+                CREATE TABLE dynamic_universe_runs (
+                    run_id TEXT PRIMARY KEY,
+                    evaluated_at TEXT NOT NULL,
+                    status TEXT NOT NULL
+                );
+                CREATE TABLE dynamic_universe_decisions (
+                    run_id TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    score TEXT NOT NULL,
+                    selected INTEGER NOT NULL
+                );
+                INSERT INTO dynamic_universe_runs VALUES
+                    ('old', '2026-08-19T00:00:00+00:00', 'succeeded'),
+                    ('new', '2026-08-19T01:00:00+00:00', 'succeeded');
+                INSERT INTO dynamic_universe_decisions VALUES
+                    ('old', '000660', '100', 1),
+                    ('new', '035420', '200', 1),
+                    ('new', '005930', '100', 1),
+                    ('new', '999999', '300', 0);
+                """
+            )
+            connection.commit()
+            connection.close()
+
+            symbols = repository.flow_collection_symbols()
+            repository.close()
+
+        self.assertEqual(symbols, ["005930", "035420"])
+
 
 if __name__ == "__main__":
     unittest.main()

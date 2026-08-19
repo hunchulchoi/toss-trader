@@ -50,23 +50,28 @@ class KrxInvestorFlowCsvImporter:
         foreign_csv: str | Path,
         institutional_csv: str | Path,
         trading_csv: str | Path | None = None,
-        target_symbols: list[str] | tuple[str, ...],
+        target_symbols: list[str] | tuple[str, ...] | None = None,
         retrieved_at: datetime | None = None,
         session_index: int | None = None,
     ) -> KrxFlowImportResult:
         observed_at = retrieved_at or datetime.now(UTC)
         if observed_at.tzinfo is None or observed_at.utcoffset() is None:
             raise ValueError("retrieved_at must include a timezone offset")
-        targets = tuple(sorted({symbol for symbol in target_symbols if _SYMBOL.fullmatch(symbol)}))
-        if not targets:
-            raise ValueError("KRX flow import needs at least one six-digit target symbol")
-
         foreign_bytes = Path(foreign_csv).read_bytes()
         institutional_bytes = Path(institutional_csv).read_bytes()
         trading_bytes = Path(trading_csv).read_bytes() if trading_csv else None
         foreign = _parse_net_purchase_csv(foreign_bytes)
         institutional = _parse_net_purchase_csv(institutional_bytes)
-        target_set = set(targets)
+        target_set = (
+            set(foreign) | set(institutional)
+            if target_symbols is None
+            else {
+                symbol for symbol in target_symbols if _SYMBOL.fullmatch(symbol)
+            }
+        )
+        targets = tuple(sorted(target_set))
+        if not targets:
+            raise ValueError("KRX flow import needs at least one six-digit target symbol")
         missing_foreign = tuple(sorted(target_set - foreign.keys()))
         missing_institutional = tuple(sorted(target_set - institutional.keys()))
         investor_symbols = tuple(

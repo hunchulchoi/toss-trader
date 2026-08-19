@@ -134,6 +134,46 @@ class KrxFlowImportTest(unittest.TestCase):
             ],
         )
 
+    def test_imports_all_csv_symbols_when_targets_are_omitted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = OfficialDataRepository(str(root / "market.db"))
+            foreign = root / "foreign.csv"
+            institutional = root / "institutional.csv"
+            trading = root / "trading.csv"
+            foreign.write_text(
+                "종목코드,거래대금_순매수\n005930,100\n000660,-20\n",
+                encoding="utf-8",
+            )
+            institutional.write_text(
+                "종목코드,거래대금_순매수\n"
+                "005930,-50\n000660,30\n035420,10\n",
+                encoding="utf-8",
+            )
+            trading.write_text(
+                "종목코드,거래대금\n005930,1000\n000660,2000\n035420,3000\n",
+                encoding="utf-8",
+            )
+
+            result = KrxInvestorFlowCsvImporter(repository).import_files(
+                session_date=date(2026, 8, 18),
+                foreign_csv=foreign,
+                institutional_csv=institutional,
+                trading_csv=trading,
+                session_index=10,
+                retrieved_at=datetime(2026, 8, 19, 0, tzinfo=UTC),
+            )
+            rows = repository.flow_symbols(
+                session=date(2026, 8, 18), source="krx:manual-csv"
+            )
+            repository.close()
+
+        self.assertEqual(rows, {"000660", "005930"})
+        self.assertEqual(result.target_symbols, 3)
+        self.assertEqual(result.imported_symbols, 2)
+        self.assertEqual(result.missing_foreign, ("035420",))
+        self.assertFalse(result.complete)
+
     def test_imports_common_symbols_and_keeps_missing_symbols_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

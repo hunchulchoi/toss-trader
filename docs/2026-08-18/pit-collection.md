@@ -37,6 +37,9 @@ Naver values are not promoted.
   timestamp. It is never backdated for a historical decision.
 - Each symbol commits independently and first observations are immutable, so a
   later failure can resume without losing earlier progress.
+- The default KIS target is the union of `market_symbols` and the latest
+  successful dynamic-universe selection. A changing intraday universe is not
+  limited to the original static symbol list.
 
 Six completed PIT sessions are still required by setup-v2. First-observed
 collection starting 2026-08-18 makes the first strict window available at the

@@ -673,7 +673,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
         )
 
         self.assertIn(("005930", "1m", 4), client.interval_calls)
-        self.assertIn(("005930", "1d", 200), client.interval_calls)
+        self.assertIn(("005930", "1d", 201), client.interval_calls)
 
     def test_1m_continuation_skips_when_daily_trend_is_not_risk_on(self) -> None:
         self.market_repository.upsert_candles(_daily_trend("005930", rising=False))

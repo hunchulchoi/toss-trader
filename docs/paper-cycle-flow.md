@@ -63,7 +63,8 @@ symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트�
 3. 거래 가능 상태와 RiskManager 후보 검사를 통과한 상위 15개를 선택한다.
 4. 순위 밖이어도 현재 보유 종목은 추적 대상에 포함한다.
 5. universe 갱신 실패면 신규 BUY를 막고 기존 보유의 SELL 경로만 유지한다.
-6. 종목별 1분봉과 완결 일봉 200개를 수집한다. 완결 일봉 부족은 오류가 아닌
+6. 종목별 1분봉과 일봉 201개를 요청해 오늘 미완결봉을 제외한 200개를 확보한다.
+   완결 일봉 부족은 오류가 아닌
    `setup-v2:missing:completed-daily-candles(n/200)` skip이다.
 
 ## Setup-v2.2 candidate

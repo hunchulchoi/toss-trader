@@ -512,7 +512,7 @@ def _serve_pit_collector(settings: Settings, args: argparse.Namespace) -> int:
                 now=now,
                 lookback_days=args.lookback_days,
                 flow_collector=flow_collector,
-                flow_symbols=repository.symbols(),
+                flow_symbols=repository.flow_collection_symbols(),
             ),
             once=args.once,
             report_failure=lambda result: failure_reporter.report(
@@ -534,7 +534,7 @@ def _collect_kis_flow(settings: Settings, args: argparse.Namespace) -> int:
     key, secret = _kis_credentials()
     repository = _official_repository(settings)
     try:
-        symbols = args.symbols or repository.symbols()
+        symbols = args.symbols or repository.flow_collection_symbols()
         if not symbols:
             raise ValueError("KIS flow collection needs --symbols or market_symbols")
         now = datetime.now(UTC)
@@ -582,7 +582,6 @@ def _import_krx_flow_csv(settings: Settings, args: argparse.Namespace) -> int:
             foreign_csv=args.foreign_csv,
             institutional_csv=args.institutional_csv,
             trading_csv=args.trading_csv,
-            target_symbols=repository.symbols(),
             session_index=session_index,
         )
         return _emit({**asdict(result), "tradingEnabled": False})
