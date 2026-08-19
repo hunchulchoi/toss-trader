@@ -22,6 +22,10 @@
 
 - Task ownership and handoff state live in `docs/tasks.md` on `main`.
 - Architectural decisions live in `docs/decisions.md`.
+- Every new changelog entry, or update to an existing entry, must include
+  `- 기록 시각: YYYY-MM-DD HH:MM KST`. Use the actual event or observation time;
+  do not infer an unknown time. If deployment happened separately, record its
+  actual time independently from the changelog edit time.
 - A branch copy of these files is a snapshot. Fetch or rebase from `main` before
   claiming a task; do not assume another worktree's unmerged edits are visible.
 - On completion report: result, changed files, tests, risks, and commit hash.
