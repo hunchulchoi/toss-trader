@@ -741,17 +741,37 @@ class OfficialDataRepository:
                 ),
             )
 
-    def covered_dates(self, *, dataset: str, start: date, end: date) -> set[date]:
+    def covered_dates(
+        self,
+        *,
+        dataset: str,
+        start: date,
+        end: date,
+        finalized_only: bool = False,
+    ) -> set[date]:
         rows = self._connection.execute(
-            """SELECT coverage_start, coverage_end FROM market_pit_coverage
+            """SELECT coverage_start, coverage_end, completed_at
+            FROM market_pit_coverage
             WHERE dataset=? AND status='SUCCESS'
               AND coverage_end>=? AND coverage_start<=?""",
             (dataset, start.isoformat(), end.isoformat()),
         ).fetchall()
         covered: set[date] = set()
-        for raw_start, raw_end in rows:
+        for raw_start, raw_end, raw_completed in rows:
+            coverage_end = date.fromisoformat(str(raw_end))
+            if finalized_only:
+                try:
+                    completed_at = datetime.fromisoformat(str(raw_completed))
+                except ValueError:
+                    continue
+                if (
+                    completed_at.tzinfo is None
+                    or completed_at.utcoffset() is None
+                    or completed_at.astimezone(SEOUL).date() <= coverage_end
+                ):
+                    continue
             current = max(start, date.fromisoformat(str(raw_start)))
-            final = min(end, date.fromisoformat(str(raw_end)))
+            final = min(end, coverage_end)
             while current <= final:
                 covered.add(current)
                 current += timedelta(days=1)
@@ -1264,6 +1284,7 @@ class OfficialDataCollector:
         start: date,
         end: date,
         additional_sessions: Sequence[date] = (),
+        checkpoint_through: date | None = None,
     ) -> int:
         sessions = sorted(
             set(self._repository.observed_sessions()).union(additional_sessions)
@@ -1272,7 +1293,13 @@ class OfficialDataCollector:
             raise RuntimeError("official market sessions must be collected first")
         retrieved_at = datetime.now(UTC).isoformat()
         stored = 0
-        covered = self._repository.covered_dates(dataset="events", start=start, end=end)
+        finalizable = min(end, checkpoint_through or end)
+        covered = self._repository.covered_dates(
+            dataset="events",
+            start=start,
+            end=finalizable,
+            finalized_only=True,
+        )
         chunk_start = start
         while chunk_start <= end:
             if chunk_start in covered:
@@ -1349,14 +1376,15 @@ class OfficialDataCollector:
                 if page >= total_pages:
                     break
                 page += 1
-            self._repository.record_coverage(
-                dataset="events",
-                start=chunk_start,
-                end=chunk_start,
-                completed_at=datetime.now(UTC).isoformat(),
-                source="opendart:list",
-                row_count=day_stored,
-            )
+            if chunk_start <= finalizable:
+                self._repository.record_coverage(
+                    dataset="events",
+                    start=chunk_start,
+                    end=chunk_start,
+                    completed_at=datetime.now(UTC).isoformat(),
+                    source="opendart:list",
+                    row_count=day_stored,
+                )
             stored += day_stored
             chunk_start += timedelta(days=1)
         return stored

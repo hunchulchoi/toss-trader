@@ -70,11 +70,12 @@ def run_pit_collection(
     local_day = now.astimezone(SEOUL).date()
     start = local_day - timedelta(days=lookback_days)
     universe_rows = collector.collect_universe(start=start, end=local_day)
-    sessions = future_kr_sessions(calendar, start=local_day + timedelta(days=1))
+    sessions = future_kr_sessions(calendar, start=local_day, count=4)
     event_rows = collector.collect_events(
         start=start,
         end=local_day,
         additional_sessions=sessions,
+        checkpoint_through=local_day - timedelta(days=1),
     )
     flow_rows = 0
     flow_status = "UNKNOWN_NO_AUTHORIZED_SOURCE"
@@ -110,14 +111,20 @@ def run_pit_collection(
 def seconds_until_next_run(
     now: datetime,
     *,
-    run_at: time = time(18, 30),
+    run_times: tuple[time, ...] = (time(0, 10), time(18, 30)),
 ) -> float:
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must include a timezone offset")
+    if not run_times:
+        raise ValueError("run_times must not be empty")
     local = now.astimezone(SEOUL)
-    target = datetime.combine(local.date(), run_at, tzinfo=SEOUL)
-    if target <= local:
-        target += timedelta(days=1)
+    targets = sorted(
+        datetime.combine(local.date(), run_at, tzinfo=SEOUL)
+        for run_at in set(run_times)
+    )
+    target = next((candidate for candidate in targets if candidate > local), None)
+    if target is None:
+        target = targets[0] + timedelta(days=1)
     return (target - local).total_seconds()
 
 

@@ -3,12 +3,16 @@
 ## Active contract
 
 - OpenDART events are collected idempotently from `list.json`.
-- Each calendar date has a success checkpoint in `market_pit_coverage`.
+- Each completed calendar date has a success checkpoint in `market_pit_coverage`.
+  The current receipt date remains refreshable and is finalized only on the
+  following calendar date.
 - Provider resets leave completed dates intact; restart resumes at the first
   uncovered date.
 - `available_at` and `blocked_through` use observed DataGo sessions plus future
   sessions verified by the Toss KR market calendar.
-- The daemon runs immediately at startup and then daily at 18:30 KST.
+- The daemon runs immediately at startup and then at 00:10 and 18:30 KST. The
+  00:10 run finalizes the prior OpenDART date before the next market open; the
+  18:30 run captures KIS flow and refreshes same-day disclosures.
 - Trading remains disabled.
 
 ## Runtime tables

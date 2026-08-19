@@ -36,8 +36,20 @@ class FakeCollector:
         self.universe_call = (start, end)
         return 42
 
-    def collect_events(self, *, start: date, end: date, additional_sessions=()) -> int:
-        self.event_call = (start, end, tuple(additional_sessions))
+    def collect_events(
+        self,
+        *,
+        start: date,
+        end: date,
+        additional_sessions=(),
+        checkpoint_through=None,
+    ) -> int:
+        self.event_call = (
+            start,
+            end,
+            tuple(additional_sessions),
+            checkpoint_through,
+        )
         return 7
 
 
@@ -77,6 +89,7 @@ class PitCollectorTest(unittest.TestCase):
     def test_collection_uses_recent_window_and_future_sessions(self) -> None:
         collector = FakeCollector()
         open_days = {
+            date(2026, 8, 18),
             date(2026, 8, 19),
             date(2026, 8, 20),
             date(2026, 8, 21),
@@ -95,25 +108,36 @@ class PitCollectorTest(unittest.TestCase):
                 date(2026, 8, 4),
                 date(2026, 8, 18),
                 tuple(sorted(open_days)),
+                date(2026, 8, 17),
             ),
         )
         self.assertEqual(result.universe_rows, 42)
         self.assertEqual(result.event_rows, 7)
         self.assertEqual(result.flow_status, "UNKNOWN_NO_AUTHORIZED_SOURCE")
 
-    def test_next_run_is_next_day_after_cutoff(self) -> None:
+    def test_next_run_includes_after_midnight_event_finalization(self) -> None:
         before = datetime(2026, 8, 18, 18, 0, tzinfo=SEOUL)
         after = datetime(2026, 8, 18, 19, 0, tzinfo=SEOUL)
+        after_midnight = datetime(2026, 8, 19, 0, 11, tzinfo=SEOUL)
 
         self.assertEqual(seconds_until_next_run(before), 30 * 60)
-        self.assertEqual(seconds_until_next_run(after), 23.5 * 60 * 60)
+        self.assertEqual(seconds_until_next_run(after), 5 * 60 * 60 + 10 * 60)
+        self.assertEqual(
+            seconds_until_next_run(after_midnight),
+            18 * 60 * 60 + 19 * 60,
+        )
 
     def test_kis_flow_waits_until_provider_window(self) -> None:
         flow = FakeFlowCollector()
         result = run_pit_collection(
             FakeCollector(),
             FakeCalendar(
-                {date(2026, 8, 19), date(2026, 8, 20), date(2026, 8, 21)}
+                {
+                    date(2026, 8, 18),
+                    date(2026, 8, 19),
+                    date(2026, 8, 20),
+                    date(2026, 8, 21),
+                }
             ),
             now=datetime(2026, 8, 18, 11, 45, tzinfo=SEOUL),
             flow_collector=flow,
@@ -128,7 +152,12 @@ class PitCollectorTest(unittest.TestCase):
         result = run_pit_collection(
             FakeCollector(),
             FakeCalendar(
-                {date(2026, 8, 19), date(2026, 8, 20), date(2026, 8, 21)}
+                {
+                    date(2026, 8, 18),
+                    date(2026, 8, 19),
+                    date(2026, 8, 20),
+                    date(2026, 8, 21),
+                }
             ),
             now=datetime(2026, 8, 18, 18, 30, tzinfo=SEOUL),
             flow_collector=flow,
@@ -144,7 +173,12 @@ class PitCollectorTest(unittest.TestCase):
         result = run_pit_collection(
             FakeCollector(),
             FakeCalendar(
-                {date(2026, 8, 19), date(2026, 8, 20), date(2026, 8, 21)}
+                {
+                    date(2026, 8, 18),
+                    date(2026, 8, 19),
+                    date(2026, 8, 20),
+                    date(2026, 8, 21),
+                }
             ),
             now=datetime(2026, 8, 18, 18, 30, tzinfo=SEOUL),
             flow_collector=flow,
