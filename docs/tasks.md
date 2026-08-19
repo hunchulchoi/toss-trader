@@ -16,20 +16,27 @@ agents must sync from `main` before claiming or handing off work.
 
 ## IN PROGRESS
 
-### DATA-007 Align flow coverage with dynamic universe
-
-- Owner: codex
-- Status: IN PROGRESS
-- Goal: import all valid KRX CSV symbols, include the latest dynamic universe in
-  KIS collection, and keep 200 completed daily candles during intraday cycles
-- Acceptance: regression tests, full 2026-08-18 KRX re-import, deployed dynamic
-  symbols with flow rows, 200 completed daily candles, and healthy paper services
+No active tasks.
 
 ## REVIEW
 
 No tasks awaiting review.
 
 ## DONE
+
+### DATA-007 Align flow coverage with dynamic universe
+
+- Owner: codex
+- Status: DONE
+- Result: changed KRX import from the static symbol list to every common valid
+  CSV symbol, added the latest dynamic selection to default KIS targets, and
+  paged one older daily candle with Toss `nextBefore`
+- Checks: 308 tests and scoped Ruff; 2,407 KRX rows for 2026-08-18 including
+  all 15 current dynamic symbols; 10:45 Rule/Hermes cycles succeeded with zero
+  failures, zero API count errors, and zero `199/200` skips; services restart 0
+- Risks: only one first-observed flow session exists, so strict setup-v2 BUY
+  remains blocked until six consecutive sessions are available; symbols missing
+  from either investor CSV remain individually fail-closed
 
 ### DATA-006 Move official PIT storage to PostgreSQL partitions
 

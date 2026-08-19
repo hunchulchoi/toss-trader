@@ -46,3 +46,12 @@ toss-trader import-krx-flow-csv \
 KIS와 KRX가 같은 종목·세션에 공존하면 setup-v2 조회는 KRX를 우선하되,
 의사결정 시점보다 늦게 관측된 KRX 행은 보이지 않아 당시 사용 가능했던 KIS로
 fail-safe하게 돌아간다. 한 세션은 소스 수와 무관하게 한 번만 센다.
+
+## 2026-08-19 production re-import
+
+- CSV 전체 6자리 대상: 2,562
+- 양쪽 투자자 CSV와 거래대금이 모두 있는 종목: 2,407
+- 기존 최초 관측 행 보존: 190
+- 신규 적재: 2,217
+- 당시 동적 universe coverage: 15/15
+- 한쪽 투자자 CSV에 없는 종목은 적재하지 않고 fail-closed 유지
