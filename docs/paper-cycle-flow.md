@@ -21,7 +21,7 @@
 flowchart TD
     N[n8n 5분 trigger] --> CAL{한국 정규장인가?}
     CAL -->|아니오·조회 실패| STOP[전체 작업 중단]
-    CAL -->|예| U[동적 universe 갱신 또는 30분 cache]
+    CAL -->|예| U[거래일 universe 생성 또는 당일 cache]
     U --> S[Rule: 1m + 완결 일봉 200개 수집]
     S --> PIT[PostgreSQL PIT 조회]
     PIT --> C{전일 setup-v2.2 후보 승인?}
@@ -58,12 +58,14 @@ symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트�
 
 ## Universe and market snapshot
 
-1. 동적 universe가 30분 이내면 cache를 사용한다.
-2. 만료됐으면 Toss 거래대금 상위 30개와 상승률 상위 30개를 합쳐 점수화한다.
-3. 거래 가능 상태와 RiskManager 후보 검사를 통과한 상위 15개를 선택한다.
-4. 순위 밖이어도 현재 보유 종목은 추적 대상에 포함한다.
-5. universe 갱신 실패면 신규 BUY를 막고 기존 보유의 SELL 경로만 유지한다.
-6. 종목별 1분봉과 일봉 200개를 받고 `nextBefore`로 오래된 1개를 추가 수집한다.
+1. 서울 거래일에 성공한 universe가 있으면 장중 같은 선택을 사용한다.
+2. 첫 cycle은 Toss 거래대금 상위 30개와 상승률 상위 30개를 합쳐 점수화한다.
+3. 직전 완결 일봉 200개의 pullback 또는 oversold reversal을 먼저 요구한다.
+4. 가격 setup 통과 종목만 거래 가능 상태와 RiskManager 후보 검사를 거쳐
+   상위 15개까지 선택한다. 부족분을 채우지 않으며 0종도 성공이다.
+5. 순위 밖이어도 현재 보유 종목은 추적 대상에 포함한다.
+6. universe 생성 실패면 신규 BUY를 막고 기존 보유의 SELL 경로만 유지한다.
+7. 종목별 1분봉과 일봉 200개를 받고 `nextBefore`로 오래된 1개를 추가 수집한다.
    오늘 미완결봉을 제외해도 완결 이력 200개를 유지한다.
    완결 일봉 부족은 오류가 아닌
    `setup-v2:missing:completed-daily-candles(n/200)` skip이다.

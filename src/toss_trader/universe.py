@@ -4,12 +4,15 @@ import json
 import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
+from .market_data import MarketCollector
+from .models import Candle
 from .repository import MarketRepository
 from .risk import (
     RiskDecision,
@@ -17,6 +20,9 @@ from .risk import (
     UniverseCandidateRisk,
     UniverseRiskContext,
 )
+from .setup_screening import evaluate_price_setups
+
+SEOUL = ZoneInfo("Asia/Seoul")
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,18 +150,18 @@ class DynamicUniverseSelector:
         self,
         *,
         client: RankingClient,
+        collector: MarketCollector,
         repository: MarketRepository,
         store: UniverseStore,
         risk_manager: RiskManager,
-        refresh_interval: timedelta,
         candidate_count: int,
         universe_size: int,
     ) -> None:
         self._client = client
+        self._collector = collector
         self._repository = repository
         self._store = store
         self._risk_manager = risk_manager
-        self._refresh_interval = refresh_interval
         self._candidate_count = candidate_count
         self._universe_size = universe_size
 
@@ -166,7 +172,9 @@ class DynamicUniverseSelector:
         held_symbols: tuple[str, ...],
         risk_context: UniverseRiskContext,
     ) -> UniverseRefreshResult:
-        cached = self._store.latest_selected_since(now - self._refresh_interval)
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("universe decision time must include a timezone offset")
+        cached = self._store.latest_selected_since(_seoul_day_start(now))
         if cached is not None:
             return UniverseRefreshResult(
                 run_id=None,
@@ -179,8 +187,6 @@ class DynamicUniverseSelector:
         try:
             decisions, ranked_at = self._refresh(now, risk_context)
             selected = tuple(item.symbol for item in decisions if item.selected)
-            if not selected:
-                raise RuntimeError("RiskManager rejected every dynamic universe candidate")
             self._store.record_success(
                 run_id=run_id,
                 evaluated_at=now,
@@ -240,6 +246,56 @@ class DynamicUniverseSelector:
         for item in combined:
             symbol = item["symbol"]
             stock = stock_by_symbol[symbol]
+            try:
+                completed = self._completed_daily(symbol, now=now)
+            except (OSError, RuntimeError, TypeError, ValueError):
+                provisional.append(
+                    (
+                        item,
+                        RiskDecision(
+                            approved=False,
+                            violations=("price-setup-unavailable",),
+                        ),
+                    )
+                )
+                continue
+            if len(completed) < 200:
+                provisional.append(
+                    (
+                        item,
+                        RiskDecision(
+                            approved=False,
+                            violations=(
+                                f"completed-daily-candles({len(completed)}/200)",
+                            ),
+                        ),
+                    )
+                )
+                continue
+            try:
+                price = evaluate_price_setups(completed[-200:])
+            except (TypeError, ValueError):
+                provisional.append(
+                    (
+                        item,
+                        RiskDecision(
+                            approved=False,
+                            violations=("price-setup-unavailable",),
+                        ),
+                    )
+                )
+                continue
+            if not price.setups:
+                provisional.append(
+                    (
+                        item,
+                        RiskDecision(
+                            approved=False,
+                            violations=("missing-price-setup",),
+                        ),
+                    )
+                )
+                continue
             kr_detail = stock.get("koreanMarketDetail")
             kr_detail = kr_detail if isinstance(kr_detail, Mapping) else {}
             risk = self._risk_manager.evaluate_universe_candidate(
@@ -283,6 +339,31 @@ class DynamicUniverseSelector:
             default=now,
         )
         return decisions, ranked_at
+
+    def _completed_daily(self, symbol: str, *, now: datetime) -> list[Candle]:
+        today = now.astimezone(SEOUL).date()
+        candles = self._repository.latest_candles(symbol, "1d", limit=400)
+        completed = [
+            candle
+            for candle in candles
+            if candle.timestamp.astimezone(SEOUL).date() < today
+        ]
+        if len(completed) >= 200:
+            return completed
+        collection = self._collector.collect(symbol=symbol, interval="1d", count=200)
+        if collection.next_before is not None:
+            self._collector.collect(
+                symbol=symbol,
+                interval="1d",
+                count=1,
+                before=collection.next_before,
+            )
+        candles = self._repository.latest_candles(symbol, "1d", limit=400)
+        return [
+            candle
+            for candle in candles
+            if candle.timestamp.astimezone(SEOUL).date() < today
+        ]
 
 
 class SqliteUniverseStore:
@@ -546,6 +627,11 @@ def _with_held(
     selected: tuple[str, ...], held_symbols: tuple[str, ...]
 ) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*selected, *held_symbols)))
+
+
+def _seoul_day_start(now: datetime) -> datetime:
+    local_date = now.astimezone(SEOUL).date()
+    return datetime.combine(local_date, time.min, tzinfo=SEOUL).astimezone(UTC)
 
 
 def _decimal(value: object) -> Decimal:

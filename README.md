@@ -195,7 +195,6 @@ STRATEGY_LONG_WINDOW=60
 PAPER_ORDER_QUANTITY=1
 PAPER_INITIAL_CASH=1000000
 CANDLE_REQUEST_INTERVAL_SECONDS=0.25
-DYNAMIC_UNIVERSE_REFRESH_MINUTES=30
 DYNAMIC_UNIVERSE_CANDIDATE_COUNT=30
 DYNAMIC_UNIVERSE_SIZE=15
 ```
@@ -206,8 +205,10 @@ DYNAMIC_UNIVERSE_SIZE=15
 [`docs/paper-cycle-flow.md`](docs/paper-cycle-flow.md)다. 1m v2 cycle은 분봉과
 함께 일봉 200개를 요청하고 `nextBefore` cursor로 오래된 1개를 추가 수집한다.
 오늘 미완결봉을 제외한 완결 일봉이 200개보다 적으면 skip한다.
-종목은 고정 watchlist가 아니라 30분마다 Toss 시장 거래대금 상위 30개와
-1일 상승률 상위 30개를 합산 점수화해 RiskManager가 승인한 상위 15개를 쓴다.
+종목은 고정 watchlist가 아니다. 서울 거래일 첫 cycle에서 Toss 시장 거래대금
+상위 30개와 1일 상승률 상위 30개를 합산 점수화한다. 직전 완결 일봉 200개의
+setup-v2.2 가격 조건을 통과한 종목만 RiskManager가 검사하고 상위 15개까지
+고정한다. 통과 종목이 부족해도 급등 종목으로 채우지 않으며 0종도 정상이다.
 BUY 후보는 MA 교차가 아니라 직전 완결 일봉의 setup-v2.2 가격 조건과 PIT
 수급·이벤트에서 직접 만든다. D+1 첫 완결 1분봉에서 3% 갭과 위험 수량을 다시
 검사하며, 누락은 `setup-v2-block`으로 차단한다. 이벤트는 OpenDART, 수급은

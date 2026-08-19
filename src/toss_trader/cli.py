@@ -1073,6 +1073,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             market_repository=market_repository,
             initial_cash=settings.paper_initial_cash,
         )
+        collector = MarketCollector(client=client, repository=market_repository)
         universe_result = None
         if explicit_symbols is not None:
             symbols = explicit_symbols
@@ -1085,12 +1086,10 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             latest_cycle = cycle_state.latest_run()
             universe_result = DynamicUniverseSelector(
                 client=client,
+                collector=collector,
                 repository=market_repository,
                 store=universe_store,
                 risk_manager=_cycle_risk_manager(),
-                refresh_interval=timedelta(
-                    minutes=settings.dynamic_universe_refresh_minutes
-                ),
                 candidate_count=settings.dynamic_universe_candidate_count,
                 universe_size=settings.dynamic_universe_size,
             ).resolve(
@@ -1114,8 +1113,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 ),
             )
             symbols = universe_result.symbols
-        collector = MarketCollector(client=client, repository=market_repository)
-        symbol_names = collector.resolve_symbol_names(symbols)
+        symbol_names = collector.resolve_symbol_names(symbols) if symbols else {}
         result = PaperCycleRunner(
             collector=collector,
             strategy=StoredMaStrategy(market_repository),

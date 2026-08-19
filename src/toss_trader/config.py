@@ -26,7 +26,6 @@ class Settings:
     market_benchmark_symbols: tuple[str, ...] = ("069500",)
     discovery_symbols: tuple[str, ...] = ("005930",)
     discovery_top_n: int = 10
-    dynamic_universe_refresh_minutes: int = 30
     dynamic_universe_candidate_count: int = 30
     dynamic_universe_size: int = 15
     strategy_interval: str = "1d"
@@ -75,10 +74,6 @@ class Settings:
         )
         if discovery_top_n > 50:
             raise ValueError("DISCOVERY_TOP_N must not exceed 50")
-        universe_refresh = _positive_int(
-            "DYNAMIC_UNIVERSE_REFRESH_MINUTES",
-            values.get("DYNAMIC_UNIVERSE_REFRESH_MINUTES", "30"),
-        )
         universe_candidates = _positive_int(
             "DYNAMIC_UNIVERSE_CANDIDATE_COUNT",
             values.get("DYNAMIC_UNIVERSE_CANDIDATE_COUNT", "30"),
@@ -120,7 +115,6 @@ class Settings:
                 or ",".join(watchlist_symbols),
             ),
             discovery_top_n=discovery_top_n,
-            dynamic_universe_refresh_minutes=universe_refresh,
             dynamic_universe_candidate_count=universe_candidates,
             dynamic_universe_size=universe_size,
             strategy_interval=interval,

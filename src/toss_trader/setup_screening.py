@@ -95,6 +95,15 @@ class SetupDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class PriceSetupEvidence:
+    setups: tuple[SetupType, ...]
+    rsi14: Decimal
+    ma50: Decimal
+    ma200: Decimal
+    ma50_distance: Decimal
+
+
+@dataclass(frozen=True, slots=True)
 class EntryGateDecision:
     approved: bool
     reason: str | None = None
@@ -376,28 +385,15 @@ def summarize_flow(
 def evaluate_setup(
     candles: list[Candle], *, context: SetupContext
 ) -> SetupDecision:
-    _validate_candles(candles)
     if context.decision_at.tzinfo is None or context.decision_at.utcoffset() is None:
         raise ValueError("decision_at must include a timezone offset")
+    price = evaluate_price_setups(candles)
     latest = candles[-200:]
     closes = [item.close_price for item in latest]
     current = closes[-1]
     previous = latest[-2]
     candle = latest[-1]
-    ma50 = _average(closes[-50:])
-    ma200 = _average(closes)
-    distance = current / ma50 - Decimal(1)
-    rsi14 = _rsi(closes, 14)
-
-    setups: list[SetupType] = []
-    if current > ma50 > ma200 and Decimal(0) <= distance <= Decimal("0.04"):
-        setups.append(SetupType.PULLBACK)
-    if (
-        rsi14 <= 35
-        and candle.close_price > candle.open_price
-        and current > previous.high_price
-    ):
-        setups.append(SetupType.OVERSOLD_REVERSAL)
+    setups = list(price.setups)
 
     flow = summarize_flow(
         context.flow_observations,
@@ -418,7 +414,7 @@ def evaluate_setup(
         violations.append("missing-price-setup")
     if flow is not None and not flow.foreign_reversal:
         violations.append("flow-not-confirmed")
-    if rsi14 >= 70:
+    if price.rsi14 >= 70:
         violations.append("rsi-chase")
     if current / previous.close_price - Decimal(1) <= Decimal("-0.03"):
         violations.append("falling-knife")
@@ -449,15 +445,44 @@ def evaluate_setup(
         setups=tuple(setups),
         violations=tuple(violations),
         missing_checks=tuple(missing_checks),
-        rsi14=_rounded(rsi14),
-        ma50=_rounded(ma50),
-        ma200=_rounded(ma200),
-        ma50_distance=_rounded(distance),
+        rsi14=price.rsi14,
+        ma50=price.ma50,
+        ma200=price.ma200,
+        ma50_distance=price.ma50_distance,
         flow_stars=flow_stars,
         flow_summary=flow,
         valuation_tier=tier,
         confidence_multiplier=Decimal("1.0"),
         proposed_confidence_multiplier=tier.proposed_multiplier,
+    )
+
+
+def evaluate_price_setups(candles: list[Candle]) -> PriceSetupEvidence:
+    _validate_candles(candles)
+    latest = candles[-200:]
+    closes = [item.close_price for item in latest]
+    current = closes[-1]
+    previous = latest[-2]
+    candle = latest[-1]
+    ma50 = _average(closes[-50:])
+    ma200 = _average(closes)
+    distance = current / ma50 - Decimal(1)
+    rsi14 = _rsi(closes, 14)
+    setups: list[SetupType] = []
+    if current > ma50 > ma200 and Decimal(0) <= distance <= Decimal("0.04"):
+        setups.append(SetupType.PULLBACK)
+    if (
+        rsi14 <= 35
+        and candle.close_price > candle.open_price
+        and current > previous.high_price
+    ):
+        setups.append(SetupType.OVERSOLD_REVERSAL)
+    return PriceSetupEvidence(
+        setups=tuple(setups),
+        rsi14=_rounded(rsi14),
+        ma50=_rounded(ma50),
+        ma200=_rounded(ma200),
+        ma50_distance=_rounded(distance),
     )
 
 

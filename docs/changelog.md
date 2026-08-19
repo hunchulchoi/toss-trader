@@ -7,6 +7,16 @@
 
 ## 2026-08-19
 
+### setup-v2 가격 후보 기반 장중 universe
+
+- 기록 시각: 2026-08-19 13:48 KST
+- 동작: 거래대금·상승률 랭킹 종목 중 직전 완결 일봉 200개의 pullback 또는
+  oversold reversal 통과 종목만 RiskManager 후보로 사용. 최대 15종을 서울
+  거래일 동안 고정하며 부족분을 급등 종목으로 채우지 않음. 0종도 정상 cycle
+- 추적: 기존 보유 종목은 선정 밖이어도 SELL 경로 유지. 후보별 가격 setup
+  부족·평가 실패 사유를 `dynamic_universe_decisions`에 기록
+- 운영: 코드만 변경. 배포·운영 DB 변경 없음
+
 ### changelog 시각 기록 규칙
 
 - 기록 시각: 2026-08-19 13:30 KST

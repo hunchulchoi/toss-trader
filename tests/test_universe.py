@@ -2,11 +2,36 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from toss_trader.models import Candle
 from toss_trader.repository import SqliteMarketRepository
 from toss_trader.risk import RiskLimits, RiskManager, UniverseRiskContext
 from toss_trader.universe import DynamicUniverseSelector, SqliteUniverseStore
 
 NOW = datetime(2026, 8, 13, 1, 0, tzinfo=UTC)
+
+
+def daily_history(symbol: str, *, price_setup: bool) -> list[Candle]:
+    closes = ([100] * 150 + [120] * 49 + [121]) if price_setup else [200] * 200
+    started_at = NOW - timedelta(days=200)
+    return [
+        Candle(
+            symbol=symbol,
+            interval="1d",
+            timestamp=started_at + timedelta(days=index),
+            open_price=Decimal(close),
+            high_price=Decimal(close + 1),
+            low_price=Decimal(close - 1),
+            close_price=Decimal(close),
+            volume=Decimal(1000),
+            currency="KRW",
+        )
+        for index, close in enumerate(closes)
+    ]
+
+
+class FakeDailyCollector:
+    def collect(self, **_kwargs: object):
+        raise AssertionError("stored 200-day history should be reused")
 
 
 class FakeRankingClient:
@@ -60,6 +85,9 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
     def setUp(self) -> None:
         self.repository = SqliteMarketRepository(":memory:")
         self.store = SqliteUniverseStore(":memory:")
+        self.repository.upsert_candles(daily_history("005930", price_setup=True))
+        self.repository.upsert_candles(daily_history("000660", price_setup=False))
+        self.repository.upsert_candles(daily_history("207940", price_setup=True))
 
     def tearDown(self) -> None:
         self.store.close()
@@ -68,10 +96,10 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
     def _selector(self, client: FakeRankingClient) -> DynamicUniverseSelector:
         return DynamicUniverseSelector(
             client=client,
+            collector=FakeDailyCollector(),
             repository=self.repository,
             store=self.store,
             risk_manager=RiskManager(RiskLimits()),
-            refresh_interval=timedelta(minutes=30),
             candidate_count=3,
             universe_size=2,
         )
@@ -89,19 +117,26 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             now=NOW, held_symbols=(), risk_context=context
         )
         second = self._selector(client).resolve(
-            now=NOW + timedelta(minutes=5),
+            now=NOW + timedelta(hours=2),
             held_symbols=("035420",),
+            risk_context=context,
+        )
+        third = self._selector(client).resolve(
+            now=NOW + timedelta(days=1),
+            held_symbols=(),
             risk_context=context,
         )
 
         self.assertTrue(first.refreshed)
         self.assertTrue(first.new_buys_allowed)
-        self.assertEqual(first.symbols, ("005930", "000660"))
-        self.assertEqual(first.entry_symbols, ("005930", "000660"))
+        self.assertEqual(first.symbols, ("005930",))
+        self.assertEqual(first.entry_symbols, ("005930",))
         self.assertFalse(second.refreshed)
         self.assertEqual(second.entry_symbols, ())
-        self.assertEqual(second.symbols, ("005930", "000660", "035420"))
-        self.assertEqual(len(client.ranking_calls), 2)
+        self.assertEqual(second.symbols, ("005930", "035420"))
+        self.assertTrue(third.refreshed)
+        self.assertEqual(third.symbols, ("005930",))
+        self.assertEqual(len(client.ranking_calls), 4)
         rows = self.store._connection.execute(
             """
             SELECT symbol, risk_approved, selected, violations
@@ -112,6 +147,45 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         expensive = next(row for row in rows if row[0] == "207940")
         self.assertEqual(expensive[1:3], (0, 0))
         self.assertIn("max-order-notional", expensive[3])
+        no_setup = next(row for row in rows if row[0] == "000660")
+        self.assertEqual(no_setup[1:3], (0, 0))
+        self.assertIn("missing-price-setup", no_setup[3])
+
+    def test_empty_price_setup_pool_is_successful_without_fillers(self) -> None:
+        self.repository.upsert_candles(daily_history("005930", price_setup=False))
+        self.repository.upsert_candles(daily_history("207940", price_setup=False))
+        client = FakeRankingClient()
+
+        result = self._selector(client).resolve(
+            now=NOW,
+            held_symbols=(),
+            risk_context=UniverseRiskContext(
+                quantity=Decimal(1),
+                available_cash=Decimal(1000000),
+                daily_return_rate=Decimal(0),
+                consecutive_api_errors=0,
+            ),
+        )
+
+        self.assertEqual(result.symbols, ())
+        self.assertTrue(result.new_buys_allowed)
+        row = self.store._connection.execute(
+            "SELECT status, selected_count FROM dynamic_universe_runs"
+        ).fetchone()
+        self.assertEqual(row, ("succeeded", 0))
+        cached = self._selector(client).resolve(
+            now=NOW + timedelta(hours=3),
+            held_symbols=(),
+            risk_context=UniverseRiskContext(
+                quantity=Decimal(1),
+                available_cash=Decimal(1000000),
+                daily_return_rate=Decimal(0),
+                consecutive_api_errors=0,
+            ),
+        )
+        self.assertFalse(cached.refreshed)
+        self.assertEqual(cached.symbols, ())
+        self.assertEqual(len(client.ranking_calls), 2)
 
     def test_ranking_failure_tracks_held_symbols_only(self) -> None:
         result = self._selector(FakeRankingClient(fail=True)).resolve(
