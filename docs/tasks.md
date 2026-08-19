@@ -30,11 +30,11 @@ No tasks awaiting review.
 - Status: DONE
 - Result: extend the repository session index through the KIS completion date
   only with Toss-confirmed Korean sessions, so delayed DataGo price rows no
-  longer discard newer KIS flow; holidays remain excluded and KRX shares the
-  same resolver
-- Checks: 328 unit tests; scoped Ruff and Git whitespace; live KIS/Toss smoke
+  longer discard newer KIS flow; accept six-character alphanumeric KRX stock
+  codes and isolate blank/malformed history without stopping the daemon
+- Checks: 330 unit tests; scoped Ruff and Git whitespace; live KIS/Toss smoke
   stored 2026-08-14, 2026-08-18, and 2026-08-19 as consecutive temporary rows
-  with zero failures and `TRADING_ENABLED=false`
+  with zero failures; live `0004V0` returned 30 rows through 2026-08-19
 - Risks: production rollout and an idempotent operational backfill remain pending
 
 ### STRAT-009 Harden setup-v2 universe membership
