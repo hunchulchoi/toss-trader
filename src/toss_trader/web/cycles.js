@@ -123,20 +123,20 @@ function universeForPair(pair) {
 }
 
 function universeTrend(points, selectedAt) {
-  const svg = svgElement("svg", { viewBox: "0 0 220 64", role: "img", "aria-label": "전체 일봉 종가 추세" });
+  const svg = svgElement("svg", { viewBox: "0 0 180 28", role: "img", "aria-label": "전체 일봉 종가 추세" });
   svg.classList.add("universe-trend");
   if (!points.length) return svg;
   const values = points.map((point) => Number(point.close));
   const min = Math.min(...values), max = Math.max(...values), range = Math.max(max - min, 1);
-  const x = (index) => (index / Math.max(points.length - 1, 1)) * 216 + 2;
-  const y = (value) => 60 - ((value - min) / range) * 56;
+  const x = (index) => (index / Math.max(points.length - 1, 1)) * 176 + 2;
+  const y = (value) => 26 - ((value - min) / range) * 24;
   svg.append(svgElement("polyline", {
     points: values.map((value, index) => `${x(index)},${y(value)}`).join(" "),
   }));
   const selectedTime = new Date(selectedAt).getTime();
   let selectedIndex = points.findLastIndex((point) => new Date(point.timestamp).getTime() <= selectedTime);
   if (selectedIndex < 0) selectedIndex = 0;
-  const marker = svgElement("line", { x1: x(selectedIndex), x2: x(selectedIndex), y1: 2, y2: 62 });
+  const marker = svgElement("line", { x1: x(selectedIndex), x2: x(selectedIndex), y1: 1, y2: 27 });
   marker.classList.add("universe-marker");
   const title = svgElement("title"); title.textContent = `Universe 선정 시점 ${selectedAt}`;
   marker.append(title); svg.append(marker);
