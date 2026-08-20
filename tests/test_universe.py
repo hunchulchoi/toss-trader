@@ -180,8 +180,14 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
 
         self.assertEqual(first.symbols, ("005930", "000660"))
         self.assertEqual(first.entry_symbols, ("005930", "000660"))
+        self.assertEqual(
+            first.collection_symbols, ("005930", "000660", "207940")
+        )
         self.assertFalse(second.refreshed)
         self.assertEqual(second.symbols, ("005930", "000660", "035420"))
+        self.assertEqual(
+            second.collection_symbols, ("005930", "000660", "207940")
+        )
         self.assertTrue(third.refreshed)
         self.assertEqual(client.ranking_calls, [("MARKET_TRADING_AMOUNT", 5)] * 2)
         rows = self.store._connection.execute(
@@ -227,6 +233,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
 
         self.assertEqual(result.symbols, ("005930", "207940"))
+        self.assertEqual(result.collection_symbols, ("005930", "207940"))
         self.assertEqual(collector.calls, [])
         rows = self.store._connection.execute(
             """

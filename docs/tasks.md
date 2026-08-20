@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### DATA-003 Expand intraday samples beyond the trading universe
+
+- Owner: codex
+- Status: DONE
+- Result: trading membership remains capped at 15 symbols, while the latest
+  static-eligible Top30 is preserved as the collection pool. Each 1m rule cycle
+  upserts 30 recent bars for non-trading candidates; cycle symbols retain their
+  existing strategy-sized collection.
+- Checks: universe/store cache coverage, background sampling failure isolation,
+  scoped Ruff, and full unit suite
+- Risks: forward collection only; historical gaps remain. Extra candidates add
+  at most 15 Toss candle requests per cycle under the current 15/30 limits.
+
 ### STRAT-012 Make observed flow reversal a setup-v2.3 bonus
 
 - Owner: codex

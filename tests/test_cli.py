@@ -8,13 +8,43 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
-from toss_trader.cli import build_parser, main
+from toss_trader.cli import _collect_intraday_sample, build_parser, main
 from toss_trader.cycle_state import SqliteCycleStateStore
 from toss_trader.execution import PaperTradingService
+from toss_trader.market_data import CollectionResult
 from toss_trader.models import Candle, Side, TradeSignal
 from toss_trader.paper import PaperLedger
 from toss_trader.repository import SqliteMarketRepository
 from toss_trader.risk import RiskLimits, RiskManager
+
+
+class IntradaySampleCollectionTest(unittest.TestCase):
+    def test_collects_thirty_bars_only_for_non_cycle_candidates(self) -> None:
+        class Collector:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str, int]] = []
+
+            def collect(self, *, symbol: str, interval: str, count: int):
+                self.calls.append((symbol, interval, count))
+                if symbol == "035420":
+                    raise OSError("temporary")
+                return CollectionResult(symbol, interval, count, count, None)
+
+        collector = Collector()
+
+        result = _collect_intraday_sample(
+            collector,  # type: ignore[arg-type]
+            cycle_symbols=("005930", "000660"),
+            collection_symbols=("005930", "000660", "207940", "035420"),
+        )
+
+        self.assertEqual(
+            collector.calls,
+            [("207940", "1m", 30), ("035420", "1m", 30)],
+        )
+        self.assertEqual(result["receivedCandles"], 30)
+        self.assertEqual(result["upsertedCandles"], 30)
+        self.assertEqual(result["failures"][0]["symbol"], "035420")
 
 
 class MetricsCliTest(unittest.TestCase):

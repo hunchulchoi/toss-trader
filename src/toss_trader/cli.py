@@ -60,6 +60,8 @@ from .v2_runtime import OfficialV2CycleStrategy
 from .v2_screening import V2MarketScanner, v2_market_scan_to_dict
 from .walk_forward import WalkForwardResult, run_ma_walk_forward
 
+INTRADAY_SAMPLE_CANDLE_COUNT = 30
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -1132,6 +1134,13 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 ),
             )
             symbols = universe_result.symbols
+        intraday_sample = None
+        if interval == "1m" and universe_result is not None:
+            intraday_sample = _collect_intraday_sample(
+                collector,
+                cycle_symbols=symbols,
+                collection_symbols=universe_result.collection_symbols,
+            )
         symbol_names = collector.resolve_symbol_names(symbols) if symbols else {}
         result = PaperCycleRunner(
             collector=collector,
@@ -1227,10 +1236,12 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                     "symbols": list(universe_result.symbols),
                     "newBuysAllowed": universe_result.new_buys_allowed,
                     "entrySymbols": list(universe_result.entry_symbols),
+                    "collectionSymbols": list(universe_result.collection_symbols),
                 }
                 if universe_result is not None
                 else {"source": "explicit", "symbols": list(symbols)}
             ),
+            "intradaySample": intraday_sample,
             "summary": {
                 "symbols": result.symbol_count,
                 "signals": result.signal_count,
@@ -1493,6 +1504,44 @@ def _render_metrics(settings: Settings) -> int:
     finally:
         store.close()
     return 0
+
+
+def _collect_intraday_sample(
+    collector: MarketCollector,
+    *,
+    cycle_symbols: tuple[str, ...],
+    collection_symbols: tuple[str, ...],
+) -> dict[str, Any]:
+    target_symbols = tuple(dict.fromkeys(collection_symbols))
+    cycle_set = frozenset(cycle_symbols)
+    background_symbols = tuple(
+        symbol for symbol in target_symbols if symbol not in cycle_set
+    )
+    received = 0
+    upserted = 0
+    failures: list[dict[str, str]] = []
+    for symbol in background_symbols:
+        try:
+            result = collector.collect(
+                symbol=symbol,
+                interval="1m",
+                count=INTRADAY_SAMPLE_CANDLE_COUNT,
+            )
+            received += result.received
+            upserted += result.upserted
+        except (OSError, RuntimeError, TossApiError, TypeError, ValueError) as error:
+            failures.append(
+                {"symbol": symbol, "error": f"{type(error).__name__}: {error}"}
+            )
+    return {
+        "targetSymbols": list(target_symbols),
+        "cycleSymbols": list(cycle_symbols),
+        "backgroundSymbols": list(background_symbols),
+        "requestedPerBackgroundSymbol": INTRADAY_SAMPLE_CANDLE_COUNT,
+        "receivedCandles": received,
+        "upsertedCandles": upserted,
+        "failures": failures,
+    }
 
 
 def _serve_metrics(settings: Settings, args: argparse.Namespace) -> int:

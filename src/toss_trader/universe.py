@@ -58,6 +58,7 @@ class UniverseRefreshResult:
     symbols: tuple[str, ...]
     new_buys_allowed: bool
     entry_symbols: tuple[str, ...] = ()
+    collection_symbols: tuple[str, ...] = ()
 
 
 class RankingClient(Protocol):
@@ -76,6 +77,14 @@ class RankingClient(Protocol):
 
 class UniverseStore(Protocol):
     def latest_selected_between(
+        self,
+        since: datetime,
+        until: datetime,
+        *,
+        ranking_source: str = RANKING_SOURCE_TOSS,
+    ) -> tuple[str, ...] | None: ...
+
+    def latest_candidates_between(
         self,
         since: datetime,
         until: datetime,
@@ -216,12 +225,18 @@ class DynamicUniverseSelector:
             _seoul_day_start(now), now, ranking_source=source
         )
         if cached is not None:
+            collection_symbols = self._store.latest_candidates_between(
+                _seoul_day_start(now), now, ranking_source=source
+            )
             return UniverseRefreshResult(
                 run_id=None,
                 refreshed=False,
                 symbols=_with_held(cached, held_symbols),
                 new_buys_allowed=True,
                 entry_symbols=(),
+                collection_symbols=(collection_symbols or cached)[
+                    : self._candidate_count
+                ],
             )
         run_id = str(uuid4())
         try:
@@ -240,6 +255,12 @@ class DynamicUniverseSelector:
                 symbols=_with_held(selected, held_symbols),
                 new_buys_allowed=True,
                 entry_symbols=selected,
+                collection_symbols=tuple(
+                    item.symbol
+                    for item in decisions
+                    if item.eligible_rank is not None
+                    and item.eligible_rank <= self._candidate_count
+                ),
             )
         except Exception as error:
             self._store.record_failure(
@@ -252,6 +273,7 @@ class DynamicUniverseSelector:
                     symbols=tuple(dict.fromkeys(held_symbols)),
                     new_buys_allowed=False,
                     entry_symbols=(),
+                    collection_symbols=tuple(dict.fromkeys(held_symbols)),
                 )
             raise
 
@@ -503,6 +525,40 @@ class SqliteUniverseStore:
         ).fetchall()
         return tuple(str(item[0]) for item in rows)
 
+    def latest_candidates_between(
+        self,
+        since: datetime,
+        until: datetime,
+        *,
+        ranking_source: str = RANKING_SOURCE_TOSS,
+    ) -> tuple[str, ...] | None:
+        row = self._connection.execute(
+            """
+            SELECT run_id FROM dynamic_universe_runs
+            WHERE status = 'succeeded' AND selected_count > 0
+              AND evaluated_at >= ? AND evaluated_at <= ?
+              AND COALESCE(ranking_source, ?) = ?
+            ORDER BY evaluated_at DESC LIMIT 1
+            """,
+            (
+                since.isoformat(),
+                until.isoformat(),
+                RANKING_SOURCE_TOSS,
+                ranking_source,
+            ),
+        ).fetchone()
+        if row is None:
+            return None
+        rows = self._connection.execute(
+            """
+            SELECT symbol FROM dynamic_universe_decisions
+            WHERE run_id = ? AND eligible_rank IS NOT NULL
+            ORDER BY eligible_rank, amount_rank, symbol
+            """,
+            (row[0],),
+        ).fetchall()
+        return tuple(str(item[0]) for item in rows)
+
     def record_success(
         self,
         *,
@@ -605,6 +661,38 @@ class PostgresUniverseStore:
                     eligible_rank,
                     amount_rank,
                     symbol
+                """,
+                (row[0],),
+            )
+            return tuple(str(item[0]) for item in cursor.fetchall())
+
+    def latest_candidates_between(
+        self,
+        since: datetime,
+        until: datetime,
+        *,
+        ranking_source: str = RANKING_SOURCE_TOSS,
+    ) -> tuple[str, ...] | None:
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT run_id FROM dynamic_universe_runs
+                WHERE status = 'succeeded'
+                  AND selected_count > 0
+                  AND evaluated_at >= %s AND evaluated_at <= %s
+                  AND COALESCE(ranking_source, %s) = %s
+                ORDER BY evaluated_at DESC LIMIT 1
+                """,
+                (since, until, RANKING_SOURCE_TOSS, ranking_source),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            cursor.execute(
+                """
+                SELECT symbol FROM dynamic_universe_decisions
+                WHERE run_id = %s AND eligible_rank IS NOT NULL
+                ORDER BY eligible_rank, amount_rank, symbol
                 """,
                 (row[0],),
             )
