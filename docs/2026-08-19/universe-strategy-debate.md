@@ -101,3 +101,17 @@ Codex·Cursor·agy는 구현 전 다시 교차검토해 다음으로 수렴했�
 
 `TOP_GAINERS` shadow 연구는 운영 selector와 분리된 비차단 수집기로만 허용한다.
 이번 작업에는 포함하지 않는다.
+
+## 2026-08-20 장중 수정 (0종 freeze)
+
+09:00 성공 run이 `selected_count=0`으로 서울일을 닫아 cycle 관측이 종일 0이었다.
+컬렉터 장애 아님. 가격 setup을 membership에 묶은 결과.
+
+합의 변경:
+
+1. membership = 적격 30 중 완결 200봉 있는 종목, 최대 15. 급등 패딩 없음.
+2. pullback/oversold는 BUY `setup-v2` 게이트. membership 탈락 아님.
+   감사에는 `missing-price-setup`을 `approved=True`로 남긴다.
+3. `selected_count=0` 성공은 cache로 쓰지 않는다. 다음 cycle 재시도.
+4. PIT·이벤트는 계속 게이트. 오늘 장중 automation 반영. 오전 0종 cycle은
+   당일 실험의 앞부분으로 남는다.

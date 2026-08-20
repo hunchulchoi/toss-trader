@@ -346,8 +346,9 @@ CANDLE_REQUEST_INTERVAL_SECONDS=0.25
 한국 시장 실시간 거래대금 랭킹을 최대 100개 조회한다. 투자유의 종목은 요청에서
 제외하고, metadata의 STOCK·보통주·ACTIVE·거래정상 종목만 `eligible_rank`를
 다시 매겨 상위 30개를 평가한다. `TOP_GAINERS`는 선정에 사용하지 않는다.
-직전 완결 일봉 200개의 setup-v2.2 가격 조건 통과 종목을 최대 15개까지 당일
-고정하며 부족분을 채우지 않는다. 정상 평가 0종도 성공이다. 랭킹·metadata·가격
+직전 완결 일봉 200개가 있는 적격 종목을 최대 15개까지 당일 고정한다. 가격
+setup 미달은 membership 탈락이 아니다. 선정 0종은 성공이지만 freeze하지 않고
+다음 cycle에서 다시 뽑는다. 랭킹·metadata·가격
 데이터 오류는 실패로 기록하고 성공 cache 없이 재시도한다. 주문 한도·가용 현금·
 일일 손실·API 오류 streak는 membership이 아니라 BUY 실행 Risk에서 검사한다.
 종목 유형·보통주·거래 상태·기준가 membership은 로컬 순수 검증으로 처리해

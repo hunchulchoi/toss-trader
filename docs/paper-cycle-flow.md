@@ -64,9 +64,11 @@ symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트�
    provider provenance 시각일 뿐 전일 확정 거래대금 근거가 아니다.
 3. STOCK·보통주·ACTIVE·거래정상·유효 가격만 `eligible_rank`를 다시 매기고
    상위 30개를 가격 평가 대상으로 삼는다. `TOP_GAINERS`는 선정에 쓰지 않는다.
-4. 직전 완결 일봉 200개의 pullback 또는 oversold reversal 통과 종목을
-   상위 15개까지 선택한다. 부족분을 채우지 않으며 정상 평가 0종도 성공이다.
-   현금·수량·주문 한도·일일 손실·API 오류는 BUY 실행 Risk에서만 검사한다.
+4. 직전 완결 일봉 200개가 있는 적격 종목을 상위 15개까지 선택한다. 가격
+   setup 미달은 감사 `missing-price-setup`만 남기고 membership에서 빼지 않는다.
+   BUY는 계속 setup-v2.2 게이트. 부족분을 채우지 않는다. 선정 0종은 성공이지만
+   당일 freeze하지 않는다. 현금·수량·주문 한도·일일 손실·API 오류는 BUY
+   실행 Risk에서만 검사한다.
 5. 순위 밖이어도 현재 보유 종목은 추적 대상에 포함한다.
 6. 랭킹·metadata·가격 데이터 오류면 성공 cache를 만들지 않고 다음 cycle에서
    재시도한다. 그동안 신규 BUY를 막고 기존 보유의 SELL 경로만 유지한다.

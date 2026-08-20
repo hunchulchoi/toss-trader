@@ -329,10 +329,7 @@ class DynamicUniverseSelector:
                 provisional.append(
                     (
                         item,
-                        RiskDecision(
-                            approved=False,
-                            violations=("missing-price-setup",),
-                        ),
+                        RiskDecision(True, ("missing-price-setup",)),
                     )
                 )
                 continue
@@ -437,7 +434,8 @@ class SqliteUniverseStore:
         row = self._connection.execute(
             """
             SELECT run_id FROM dynamic_universe_runs
-            WHERE status = 'succeeded' AND evaluated_at >= ? AND evaluated_at <= ?
+            WHERE status = 'succeeded' AND selected_count > 0
+              AND evaluated_at >= ? AND evaluated_at <= ?
             ORDER BY evaluated_at DESC LIMIT 1
             """,
             (since.isoformat(), until.isoformat()),
@@ -535,6 +533,7 @@ class PostgresUniverseStore:
                 """
                 SELECT run_id FROM dynamic_universe_runs
                 WHERE status = 'succeeded'
+                  AND selected_count > 0
                   AND evaluated_at >= %s AND evaluated_at <= %s
                 ORDER BY evaluated_at DESC LIMIT 1
                 """,

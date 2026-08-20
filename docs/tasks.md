@@ -24,6 +24,17 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-010 Split universe membership from price setup
+
+- Owner: cursor
+- Status: DONE
+- Result: eligible names with 200 completed daily bars fill up to 15 slots.
+  Price setup stays a BUY gate. A successful 0-stock run is not reused as the
+  Seoul-day freeze, so the next cycle retries.
+- Checks: universe unit tests
+- Risks: morning 2026-08-20 cycles stay empty until automation redeploy; later
+  membership uses later realtime rankings than 09:00
+
 ### AI-004 Beginner-friendly premarket briefing semantics
 
 - Owner: codex

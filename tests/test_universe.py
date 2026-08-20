@@ -176,10 +176,10 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             risk_context=self._context(),
         )
 
-        self.assertEqual(first.symbols, ("005930", "207940"))
-        self.assertEqual(first.entry_symbols, ("005930", "207940"))
+        self.assertEqual(first.symbols, ("005930", "000660"))
+        self.assertEqual(first.entry_symbols, ("005930", "000660"))
         self.assertFalse(second.refreshed)
-        self.assertEqual(second.symbols, ("005930", "207940", "035420"))
+        self.assertEqual(second.symbols, ("005930", "000660", "035420"))
         self.assertTrue(third.refreshed)
         self.assertEqual(client.ranking_calls, [("MARKET_TRADING_AMOUNT", 5)] * 2)
         rows = self.store._connection.execute(
@@ -190,7 +190,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             """
         ).fetchall()
         no_setup = next(row for row in rows if row[0] == "000660")
-        self.assertEqual(no_setup[1:5], (2, 2, 0, 0))
+        self.assertEqual(no_setup[1:5], (2, 2, 1, 1))
         self.assertIn("missing-price-setup", no_setup[5])
 
     def test_overfetches_then_filters_and_reranks_static_eligible_stocks(self) -> None:
@@ -379,7 +379,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         )
         self.assertEqual(len(client.ranking_calls), 2)
 
-    def test_empty_price_setup_pool_is_successful_and_cacheable(self) -> None:
+    def test_no_price_setup_still_selects_eligible_and_freezes(self) -> None:
         self.repository.upsert_candles(daily_history("005930", price_setup=False))
         self.repository.upsert_candles(daily_history("207940", price_setup=False))
         client = FakeRankingClient()
@@ -394,13 +394,13 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             risk_context=self._context(),
         )
 
-        self.assertEqual(result.symbols, ())
+        self.assertEqual(result.symbols, ("005930", "000660"))
         self.assertFalse(cached.refreshed)
         self.assertEqual(client.ranking_calls, [("MARKET_TRADING_AMOUNT", 5)])
         row = self.store._connection.execute(
             "SELECT status, selected_count FROM dynamic_universe_runs"
         ).fetchone()
-        self.assertEqual(row, ("succeeded", 0))
+        self.assertEqual(row, ("succeeded", 2))
 
     def test_insufficient_history_is_normal_rejection_not_data_error(self) -> None:
         history = daily_history("035420", price_setup=True)[:199]
@@ -416,13 +416,16 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
 
         self.assertEqual(result.symbols, ())
         row = self.store._connection.execute(
-            "SELECT status FROM dynamic_universe_runs"
+            "SELECT status, selected_count FROM dynamic_universe_runs"
         ).fetchone()
         decision = self.store._connection.execute(
             "SELECT violations FROM dynamic_universe_decisions"
         ).fetchone()
-        self.assertEqual(row, ("succeeded",))
+        self.assertEqual(row, ("succeeded", 0))
         self.assertIn("completed-daily-candles(199/200)", decision[0])
+        self.assertIsNone(
+            self.store.latest_selected_between(NOW, NOW + timedelta(minutes=5))
+        )
 
     def test_partial_history_with_empty_response_is_data_error(self) -> None:
         self.repository.upsert_candles(daily_history("035420", price_setup=True)[:199])
