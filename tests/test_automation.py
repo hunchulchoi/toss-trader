@@ -7,6 +7,7 @@ from typing import Self
 from unittest.mock import patch
 
 from toss_trader.automation import (
+    MARKET_SCAN_SYSTEM_PROMPT,
     AlertmanagerReporter,
     AutomationBusy,
     AutomationRunLog,
@@ -898,6 +899,14 @@ class PaperCycleNoticeTest(unittest.TestCase):
 
 
 class MarketScanAutomationTest(unittest.TestCase):
+    def test_beginner_prompt_distinguishes_missing_data_from_rejection(self) -> None:
+        self.assertIn("주식 초보", MARKET_SCAN_SYSTEM_PROMPT)
+        self.assertIn("전문용어는 바로 쉬운 말", MARKET_SCAN_SYSTEM_PROMPT)
+        self.assertIn("'missing:*'", MARKET_SCAN_SYSTEM_PROMPT)
+        self.assertIn("가격 데이터가 있지만", MARKET_SCAN_SYSTEM_PROMPT)
+        self.assertIn("PIT 수급 데이터가 있지만", MARKET_SCAN_SYSTEM_PROMPT)
+        self.assertIn("시스템 장애인지, 데이터 부족인지, 조건 미통과인지", MARKET_SCAN_SYSTEM_PROMPT)
+
     def test_sends_only_market_scan_json_to_hermes(self) -> None:
         analyzed: list[dict[str, object]] = []
         scan = {

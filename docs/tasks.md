@@ -24,6 +24,17 @@ No tasks awaiting review.
 
 ## DONE
 
+### AI-004 Beginner-friendly premarket briefing semantics
+
+- Owner: codex
+- Status: DONE
+- Result: aligned the direct and n8n Hermes premarket prompts; briefings now lead
+  with a plain-language conclusion and distinguish actual missing data or errors
+  from valid price-setup, flow-confirmation, and imminent-event rejections
+- Checks: 339 unit tests; scoped Ruff, JSON, and Git whitespace checks
+- Risks: free-form LLM wording can still vary, but the prompt now defines each
+  machine reason explicitly and forbids describing normal rejections as missing data
+
 ### AI-003 Add a market-day midday paper briefing
 
 - Owner: codex

@@ -35,6 +35,24 @@ from .screening import format_market_scan_report
 
 logger = logging.getLogger(__name__)
 
+MARKET_SCAN_SYSTEM_PROMPT = (
+    "너는 주식 초보에게 장전 상황을 쉽게 설명하는 setup-v2.2 한국 주식시장 "
+    "분석가다. 제공된 JSON만 사용하고 전문용어는 바로 쉬운 말로 풀어라. "
+    "RISK_OFF는 '시장 약세라 신규 진입에 주의', NEUTRAL은 '방향이 뚜렷하지 않음'으로 "
+    "설명하라. 시장 레짐, 살펴본 종목 수와 승인 수, 핵심 차단 사유, 데이터 상태를 "
+    "한국어 4~6문장과 700자 이내로 요약하라. 종목은 가능하면 종목명과 코드를 함께 "
+    "표시하라. blockedReasons의 'missing:*'와 "
+    "'missing:completed-daily-candles(n/200)'만 실제 필수 데이터 부족으로 설명하라. "
+    "'violation:missing-price-setup'은 가격 데이터가 있지만 눌림 또는 과매도 반전 "
+    "모양이 나오지 않은 정상 조건 탈락이고, 'violation:flow-not-confirmed'은 PIT 수급 "
+    "데이터가 있지만 외국인 수급 반전 조건을 통과하지 못한 것이며, "
+    "'violation:event-imminent'은 확인된 임박 이벤트 위험이다. 이 세 사유를 데이터 "
+    "누락 또는 미확인이라고 표현하지 마라. errors는 데이터 수집·평가 오류로 따로 "
+    "설명하라. 승인 후보가 0개면 시스템 장애인지, 데이터 부족인지, 조건 미통과인지 "
+    "구분해서 결론을 먼저 말하라. MA 모멘텀 점수를 후보 근거로 만들지 말고, 직접적인 "
+    "매수·매도 지시와 수익 보장은 하지 마라. 도구를 호출하지 마라."
+)
+
 
 class AutomationBusy(RuntimeError):
     pass
@@ -883,14 +901,7 @@ def create_market_scan_automation_from_env() -> MarketScanAutomation:
             base_url=os.environ.get(
                 "HERMES_API_BASE_URL", "http://hermes-analysis:8642"
             ),
-            system_prompt=(
-                "너는 setup-v2.2 한국 주식시장 장전 분석가다. 제공된 JSON만으로 "
-                "시장 레짐, 승인 후보의 가격 셋업·PIT 수급, 차단 사유를 해석하라. "
-                "MA 모멘텀 점수를 후보 근거로 만들지 말고 데이터 누락은 명시하라. "
-                "한국어 2~4문장, "
-                "500자 이내로 작성하라. 확정적 수익 표현과 직접적인 매수·매도 "
-                "지시는 금지한다. 도구를 호출하지 말고 제공된 JSON만 사용하라."
-            ),
+            system_prompt=MARKET_SCAN_SYSTEM_PROMPT,
         ).analyze,
         report=AlertmanagerReporter(
             url=os.environ.get(
@@ -1298,12 +1309,7 @@ def create_workflow_task_service_from_env() -> WorkflowTaskService:
         market_analyzer=HermesAnalyzer(
             api_key=api_key,
             base_url=base_url,
-            system_prompt=(
-                "너는 setup-v2.2 한국 주식시장 장전 분석가다. 제공된 JSON만으로 "
-                "시장 레짐, 승인 후보의 가격 셋업·PIT 수급, 차단 사유를 한국어 "
-                "2~4문장으로 설명하라. MA 모멘텀 점수를 후보 근거로 만들지 말고 "
-                "데이터 누락을 명시하라. 직접 매수·매도 지시와 수익 보장은 금지한다."
-            ),
+            system_prompt=MARKET_SCAN_SYSTEM_PROMPT,
         ),
         daily_analyzer=HermesAnalyzer(api_key=api_key, base_url=base_url),
         market_reporter=AlertmanagerReporter(

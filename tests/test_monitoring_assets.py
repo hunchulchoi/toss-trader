@@ -431,6 +431,11 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("http://hermes-analysis:8642/v1/chat/completions", encoded)
         self.assertIn("toss-trader-hermes-auth", encoded)
         self.assertNotIn("HERMES_API_KEY", encoded)
+        self.assertIn("주식 초보", encoded)
+        self.assertIn("전문용어는 바로 쉬운 말", encoded)
+        self.assertIn("가격 데이터가 있지만", encoded)
+        self.assertIn("PIT 수급 데이터가 있지만", encoded)
+        self.assertIn("시스템 장애인지, 데이터 부족인지, 조건 미통과인지", encoded)
         for branch in (
             "시장 스캔 정상?",
             "발굴 후보 있음?",

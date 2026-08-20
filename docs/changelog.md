@@ -7,6 +7,16 @@
 
 ## 2026-08-20
 
+### 장전 Hermes 초보자용 설명과 결측 의미 교정
+
+- 기록 시각: 2026-08-20 09:12 KST
+- 동작: 장전 결론을 먼저 말하고 RISK_OFF·NEUTRAL 등 전문용어를 쉬운 말로
+  풀어 설명. 평가·승인 종목 수와 핵심 차단 사유, 데이터 상태를 4~6문장으로 요약
+- 의미: `missing:*`와 `completed-daily-candles(n/200)`만 실제 데이터 부족으로
+  설명. `missing-price-setup`, `flow-not-confirmed`, `event-imminent`는 각각 가격
+  패턴·수급 반전 조건·임박 이벤트에 따른 정상 탈락이며 데이터 누락으로 표현 금지
+- 범위: Python 직접 실행과 n8n 운영 workflow 자산에 동일 지침 반영. 배포는 별도
+
 ### Cycle Timeline 서울 24시·오늘 날짜
 
 - 기록 시각: 2026-08-20 09:00 KST
