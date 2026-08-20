@@ -16,7 +16,11 @@
   Hermes가 우회하지 못한다. Hermes 기존 보유 종목은 Top30 밖이어도 SELL 관찰
 - 감사: Rule은 `rule-top15`, Hermes는 `hermes-expanded-top30`으로 기록하고
   후보 분모가 달라 직접 A/B 비교가 아님을 명시
-- 범위: 코드·테스트 반영. 운영 배포 전
+- 1차 배포 시각: 2026-08-20 14:30 KST
+- 검증: 2026-08-20 14:35 KST 첫 Top30 실행은 직렬화된 `maStates` 길이 불일치로
+  fail-closed. Rule/Hermes 체결 0, n8n 실패 Telegram 정상 발송
+- 기록 시각: 2026-08-20 14:36 KST
+- 보완: Top30 및 보유종목 확장 snapshot의 `maStates`를 symbols 길이에 맞춤
 
 ### 1분봉 수집 풀을 적격 후보 30종으로 확대
 

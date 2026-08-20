@@ -1499,6 +1499,7 @@ def _hermes_candidate_snapshot(
         errors=errors,
         api_failed=snapshot.api_failed,
         new_buys_allowed=snapshot.new_buys_allowed,
+        ma_states=(None,) * len(symbols),
     )
 
 
@@ -1517,7 +1518,7 @@ def _extend_cycle_snapshot(
         signals=(*snapshot.signals, *((None,) * len(missing))),
         skips=(*snapshot.skips, *((None,) * len(missing))),
         errors=(*snapshot.errors, *((None,) * len(missing))),
-        ma_states=(),
+        ma_states=(None,) * (len(snapshot.symbols) + len(missing)),
         v2_candidates=(),
     )
 

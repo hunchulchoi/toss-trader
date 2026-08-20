@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from toss_trader.cli import (
     _collect_intraday_sample,
+    _cycle_snapshot_to_dict,
     _extend_cycle_snapshot,
     _hermes_candidate_snapshot,
     build_parser,
@@ -75,7 +76,10 @@ class IntradaySampleCollectionTest(unittest.TestCase):
 
         self.assertEqual(expanded.symbols, ("005930", "000660", "035420"))
         self.assertEqual(expanded.errors, (None, "temporary", None))
+        self.assertEqual(expanded.ma_states, (None, None, None))
         self.assertEqual(expanded.v2_candidates, ())
+        encoded = _cycle_snapshot_to_dict(expanded)
+        self.assertEqual(len(encoded["maStates"]), len(encoded["symbols"]))
 
 
 class MetricsCliTest(unittest.TestCase):
