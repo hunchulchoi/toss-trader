@@ -19,7 +19,11 @@
 - 복원: `backfill-intraday-samples --as-of YYYY-MM-DD`는 해당일 관측된 후보
   합집합을 cursor로 최대 5페이지 조회해 장 시작 도달 여부와 복원 봉 수를 기록
 - 기록 시각: 2026-08-20 14:17 KST
-- 범위: 복원 CLI 코드·테스트 반영. 운영 배포 전
+- 배포 시각: 2026-08-20 14:18 KST automation 배포
+- 복원 시각: 2026-08-20 14:19 KST
+- 운영: 오전·오후 관측 후보 합집합 51종 모두 장 시작까지 cursor 수집 완료.
+  실패 0, 신규 복원 1분봉 11,964개, 종목당 2페이지. 실행 후 automation
+  healthy, restart 0, `TRADING_ENABLED=false`
 
 ### setup-v2.3 수급 반전을 필수 차단에서 가점으로 전환
 
