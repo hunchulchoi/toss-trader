@@ -412,8 +412,6 @@ def evaluate_setup(
         for setup in setups
     ):
         violations.append("missing-price-setup")
-    if flow is not None and not flow.foreign_reversal:
-        violations.append("flow-not-confirmed")
     if price.rsi14 >= 70:
         violations.append("rsi-chase")
     if current / previous.close_price - Decimal(1) <= Decimal("-0.03"):

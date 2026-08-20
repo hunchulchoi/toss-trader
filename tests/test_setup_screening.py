@@ -368,7 +368,7 @@ class SetupScreeningTest(unittest.TestCase):
         self.assertFalse(result.approved)
         self.assertIn("missing-price-setup", result.violations)
 
-    def test_rejects_complete_flow_history_without_reversal(self) -> None:
+    def test_complete_flow_history_without_reversal_is_soft_confirmation(self) -> None:
         history = pullback_candles()
         context = approved_context(history[-1])
         result = evaluate_setup(
@@ -385,8 +385,10 @@ class SetupScreeningTest(unittest.TestCase):
             ),
         )
 
-        self.assertFalse(result.approved)
-        self.assertIn("flow-not-confirmed", result.violations)
+        self.assertTrue(result.approved)
+        self.assertNotIn("flow-not-confirmed", result.violations)
+        self.assertEqual(result.flow_stars, 0)
+        self.assertIsNotNone(result.flow_summary)
 
     def test_requires_bullish_confirmation_for_oversold_reversal(self) -> None:
         closes = [200] * 185 + list(range(199, 185, -1)) + [190]

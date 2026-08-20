@@ -159,7 +159,7 @@ class V2MarketScanner:
 
 def v2_market_scan_to_dict(result: V2MarketScanResult) -> dict[str, object]:
     return {
-        "entryStrategy": "setup-v2.2-independent-daily",
+        "entryStrategy": "setup-v2.3-independent-daily",
         "decisionAt": result.decision_at,
         "markets": [
             {

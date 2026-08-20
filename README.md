@@ -18,7 +18,7 @@ Hermes Telegram의 paper 장부 조회는
 - SQLite/PostgreSQL paper trading ledger
 - 멱등 캔들 collector와 저장 데이터 기반 MA scanner
 - watchlist 수집·MA 스캔·RiskManager·paper 체결 단일 사이클
-- 평일 장중 5분 간격 setup-v2.2 paper cycle
+- 평일 장중 5분 간격 setup-v2.3 paper cycle
 - 장전 benchmark 시장 상태 분석과 설정 universe 종목 발굴
 - RiskManager 판단·자동화 실행·Hermes token 감사 장부
 - 시장 데이터 SQLite 저장 및 공유 PostgreSQL 선택 지원
@@ -215,14 +215,15 @@ pagination한다. cursor 무진전·페이지 상한·부분 이력 뒤 빈 응�
 `ACC_TRDVAL` 합산 상위 100개로 바꾼다. 오전 Toss 성공 cache는 오후에 쓰지
 않는다. KRX 키 없음·401·빈 응답은 Toss realtime으로 채우지 않는다. STOCK·보통주·ACTIVE·거래정상 종목만 다시 순위를
 매겨 상위 30개의 직전 완결 일봉 200개를 검사하고, 200봉이 있는 적격 종목을
-최대 15개까지 고정한다. setup-v2.2 가격 조건은 membership이 아니라 BUY
+최대 15개까지 고정한다. setup-v2.3 가격 조건은 membership이 아니라 BUY
 게이트다. `TOP_GAINERS`는 선정에 쓰지 않는다. 부족분을 채우지 않는다. 선정
 0종은 성공으로 남기되 당일 freeze하지 않고 다음 cycle에서 다시 뽑는다. 랭킹·metadata·가격 데이터 오류는
 성공 cache로 저장하지 않고 다음 cycle에서 재시도한다. 현금·주문 한도·일일 손실·
 API 오류 같은 가변 Risk는 membership이 아니라 BUY 실행 단계에서 검사한다.
 정적 membership은 로컬 순수 검증이라 후보 수만큼 n8n을 호출하지 않는다.
-BUY 후보는 MA 교차가 아니라 직전 완결 일봉의 setup-v2.2 가격 조건과 PIT
-수급·이벤트에서 직접 만든다. D+1 첫 완결 1분봉에서 3% 갭과 위험 수량을 다시
+BUY 후보는 MA 교차가 아니라 직전 완결 일봉의 setup-v2.3 가격 조건과 PIT
+수급·이벤트에서 직접 만든다. PIT 6세션 이력은 필수지만 외국인 수급 반전은
+가점으로 쓰며 미반전만으로 막지 않는다. D+1 첫 완결 1분봉에서 3% 갭과 위험 수량을 다시
 검사하며, 누락은 `setup-v2-block`으로 차단한다. 이벤트는 OpenDART, 수급은
 같은 세션에서 KRX를 KIS first-observed보다 우선한다. 수급 6세션이 찰 때까지
 신규 BUY 0건이 정상이다. 현재 paper 실험값은 하루 최대 매수 5회, 동시
@@ -303,7 +304,7 @@ Telegram 비밀값으로 생성한 Alertmanager 설정은 container tmpfs에만 
 | 시각(KST) | 작업 | Hermes | Telegram |
 |---|---|---|---|
 | 평일 08:30 | 시장분석·종목발굴 | 시장 의견 생성 | 리포트 전송 |
-| 평일 09:00~15:20, 5분 간격 | setup-v2.2 D+1 rule/Hermes 비교 | v2·한도 통과 신호만 advisor | 특이사항만 전송 |
+| 평일 09:00~15:20, 5분 간격 | setup-v2.3 D+1 rule/Hermes 비교 | v2·한도 통과 신호만 advisor | 특이사항만 전송 |
 | 평일 11:50 | 일봉 paper + 당일 1m v2 퍼널 중간 분석 | 장중 미완결 자료의 독립·교차 검토 | 중간 브리핑 전송 |
 | 평일 15:40 | 일봉 paper + 당일 1m v2 퍼널 마감 분석 | 규칙 준수 요약 | 마감 리포트 전송 |
 

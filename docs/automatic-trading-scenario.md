@@ -110,7 +110,8 @@ discovery universe 안에서 발굴한다.
 - n8n이 `paper-rule-1m`, `paper-hermes-1m` task를 순차 호출
 - task endpoint는 host port 없이 `openclaw-net` 내부에서만 접근
 - 종목별 1분봉과 완결 일봉 200개 수집
-- 직전 완결 일봉의 setup-v2.2 후보를 D+1 첫 완결 1분봉에서 arm
+- 직전 완결 일봉의 setup-v2.3 후보를 D+1 첫 완결 1분봉에서 arm. PIT 수급
+  6세션은 필수지만 외국인 반전은 가점이며 미반전만으로 차단하지 않음
 - 보유 포지션은 persisted stop·structure invalidation으로 SELL 관리
 - Rule은 Hermes 없음. Hermes는 신호+한도 통과 때만. 한도 거부는 판단 행만
 - 정상 무신호는 Telegram을 보내지 않음

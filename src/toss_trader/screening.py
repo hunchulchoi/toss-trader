@@ -229,7 +229,11 @@ def format_market_scan_report(
         scan.get("candidates") if isinstance(scan.get("candidates"), list) else []
     )
     errors = scan.get("errors") if isinstance(scan.get("errors"), dict) else {}
-    is_v2 = scan.get("entryStrategy") == "setup-v2.2-independent-daily"
+    strategy_label = {
+        "setup-v2.2-independent-daily": "v2.2",
+        "setup-v2.3-independent-daily": "v2.3",
+    }.get(scan.get("entryStrategy"))
+    is_v2 = strategy_label is not None
 
     market_lines = [
         f"• {_market_label(item)}: {item.get('regime', 'UNKNOWN')}\n"
@@ -270,7 +274,7 @@ def format_market_scan_report(
             for reason, count in sorted(blocked.items(), key=lambda item: (-item[1], item[0]))[:5]
         ]
         readiness = (
-            "🧭 v2.2 준비도\n"
+            f"🧭 {strategy_label} 준비도\n"
             f"스캔 {summary.get('scanned', 0)} · 평가 {summary.get('evaluated', 0)} · "
             f"승인 {summary.get('approved', 0)} · "
             f"차단 {summary.get('blocked', 0)}\n"
@@ -280,7 +284,7 @@ def format_market_scan_report(
         "📊 시장 분석\n"
         f"{'\n\n'.join(market_lines) if market_lines else '분석 결과 없음'}\n\n"
         f"{readiness}"
-        f"🔎 {'v2.2 후보' if is_v2 else '발굴 종목'}\n"
+        f"🔎 {f'{strategy_label} 후보' if is_v2 else '발굴 종목'}\n"
         f"{'\n\n'.join(candidate_lines) if candidate_lines else '조건 충족 종목 없음'}\n\n"
         "💬 Hermes 의견\n"
         f"{opinion[:1500]}\n\n"

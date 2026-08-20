@@ -872,13 +872,13 @@ class PaperCycleRunner:
         return (
             TradeSignal(
                 signal_id=(
-                    f"setup-v2.2:{symbol}:{plan.setup_session.isoformat()}:entry"
+                    f"setup-v2.3:{symbol}:{plan.setup_session.isoformat()}:entry"
                 ),
                 symbol=symbol,
                 side=Side.BUY,
                 reference_price=plan.entry_price,
                 quantity=plan.quantity,
-                reason="setup-v2.2 daily candidate",
+                reason="setup-v2.3 daily candidate",
             ),
             None,
             plan,
@@ -977,12 +977,12 @@ def _v2_sell_signal(
 ) -> TradeSignal:
     price = raw_open * (Decimal(1) - ADVERSE_SLIPPAGE.exit_rate)
     return TradeSignal(
-        signal_id=f"setup-v2.2:{plan.symbol}:{trigger_key}:exit",
+        signal_id=f"setup-v2.3:{plan.symbol}:{trigger_key}:exit",
         symbol=plan.symbol,
         side=Side.SELL,
         reference_price=price,
         quantity=plan.quantity,
-        reason=f"setup-v2.2 {reason}",
+        reason=f"setup-v2.3 {reason}",
     )
 
 

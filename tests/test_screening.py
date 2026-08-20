@@ -153,7 +153,7 @@ class DiscoveryTest(unittest.TestCase):
             {
                 "exitCode": 0,
                 "scan": {
-                    "entryStrategy": "setup-v2.2-independent-daily",
+                    "entryStrategy": "setup-v2.3-independent-daily",
                     "markets": [],
                     "candidateSummary": {
                         "scanned": 15,
@@ -178,10 +178,10 @@ class DiscoveryTest(unittest.TestCase):
             opinion="승인 후보는 한 종목이며 수급 누적 전에는 보수적 해석이 필요합니다.",
         )
 
-        self.assertIn("🧭 v2.2 준비도", report)
+        self.assertIn("🧭 v2.3 준비도", report)
         self.assertIn("스캔 15 · 평가 15 · 승인 1 · 차단 14", report)
         self.assertIn("missing:flow-history: 14", report)
-        self.assertIn("🔎 v2.2 후보", report)
+        self.assertIn("🔎 v2.3 후보", report)
         self.assertIn("셋업 pullback, flow-reversal", report)
         self.assertIn("수급 ⭐⭐ · RSI 48.1 · 50MA 이격 +2.00%", report)
 
@@ -191,6 +191,22 @@ class DiscoveryTest(unittest.TestCase):
                 {"exitCode": 0, "scan": {"markets": [], "candidates": []}},
                 opinion=" ",
             )
+
+    def test_keeps_v22_reports_readable_after_v23_upgrade(self) -> None:
+        report = format_market_scan_report(
+            {
+                "scan": {
+                    "entryStrategy": "setup-v2.2-independent-daily",
+                    "candidateSummary": {},
+                    "candidates": [],
+                    "errors": {},
+                }
+            },
+            opinion="과거 실행입니다.",
+        )
+
+        self.assertIn("🧭 v2.2 준비도", report)
+        self.assertIn("🔎 v2.2 후보", report)
 
 
 if __name__ == "__main__":

@@ -1,13 +1,13 @@
 # Toss Trader 용어집 (Glossary)
 
-이 문서는 Toss Trader 시스템, 전략(`setup-v2.2`), 데이터 파이프라인, 운영 문서([`docs/`](.)) 전반에서 사용되는 핵심 용어와 개념을 정리한 공식 용어집입니다.
+이 문서는 Toss Trader 시스템, 전략(`setup-v2.3`), 데이터 파이프라인, 운영 문서([`docs/`](.)) 전반에서 사용되는 핵심 용어와 개념을 정리한 공식 용어집입니다.
 
 ---
 
 ## 목차
 1. [시스템 및 아키텍처 안전 (Architecture & Safety)](#1-시스템-및-아키텍처-안전-architecture--safety)
 2. [데이터 및 시점 무결성 (Data & Point-In-Time)](#2-데이터-및-시점-무결성-data--point-in-time)
-3. [전략 및 매매 규칙 (Strategy & Rules - setup-v2.2)](#3-전략-및-매매-규칙-strategy--rules---setup-v22)
+3. [전략 및 매매 규칙 (Strategy & Rules - setup-v2.3)](#3-전략-및-매매-규칙-strategy--rules---setup-v23)
 4. [원장 및 손익 엔진 (Ledgers & PnL Engine)](#4-원장-및-손익-엔진-ledgers--pnl-engine)
 5. [자동화 및 외부 연동 (Automation & Interfaces)](#5-자동화-및-외부-연동-automation--interfaces)
 6. [멀티 에이전트 협업 체계 (Multi-Agent System)](#6-멀티-에이전트-협업-체계-multi-agent-system)
@@ -66,10 +66,10 @@
 
 ---
 
-## 3. 전략 및 매매 규칙 (Strategy & Rules - setup-v2.2)
+## 3. 전략 및 매매 규칙 (Strategy & Rules - setup-v2.3)
 
-### setup-v2.2
-- **정의**: 완결 일봉 200개 기반 가격 셋업, 외인/기관 PIT 수급 전환, OpenDART 공시 차단 필터, D+1 첫 1분봉 3% 갭 검사를 모두 결합한 한국 주식 안전 매수 전략.
+### setup-v2.3
+- **정의**: 완결 일봉 200개 기반 가격 셋업, 6세션 PIT 수급 이력과 반전 가점, OpenDART 공시 차단 필터, D+1 첫 1분봉 3% 갭 검사를 결합한 한국 주식 paper 전략.
 - **기존 MA 전략과의 차이**: 단순 MA 골든크로스로 신호를 만들지 않고, 200일 완결 데이터와 엄격한 사전 게이트를 통과한 후보만 생성.
 - **관련 문서**: [docs/2026-08-14/setup-v2-design.md](2026-08-14/setup-v2-design.md), [docs/2026-08-18/setup-v2-activation.md](2026-08-18/setup-v2-activation.md)
 
@@ -81,7 +81,7 @@
 
 ### Flow Reversal (수급 전환 / 6세션 룰)
 - **정의**: 의사결정 시점에 관측 완료된 **연속 6개 세션**의 수급 데이터를 검사.
-- **규칙**: 이전 5개 세션 외국인 누적 순매수 비율이 음수(매도세)였다가, 직전 세션에서 양수로 전환되고 최신 외인 순매수가 순매수(>0)일 것. (기관 순매수 확인은 가산 요인).
+- **규칙**: 연속 6세션 이력은 필수다. 이전 5개 세션 외국인 누적 순매수 비율이 음수였다가 최신 외인 순매수가 양수로 전환하면 가점하며, 미반전만으로 BUY를 차단하지 않는다. 기관 순매수 확인도 가산 요인이다.
 - **관련 문서**: [docs/2026-08-14/setup-v2-design.md](2026-08-14/setup-v2-design.md)
 
 ### D+1 Entry & 3% Gap Filter (D+1 진입 및 갭 검사)
@@ -105,7 +105,7 @@
 ## 4. 원장 및 손익 엔진 (Ledgers & PnL Engine)
 
 ### Dual Portfolio (Rule vs Hermes 듀얼 포트폴리오)
-- **Rule Portfolio (`rule`)**: 순수 정량적 룰(setup-v2.2 + RiskManager)에 따라 자동으로 체결되는 가상 포트폴리오.
+- **Rule Portfolio (`rule`)**: 순수 정량적 룰(setup-v2.3 + RiskManager)에 따라 자동으로 체결되는 가상 포트폴리오.
 - **Hermes Portfolio (`hermes`)**: 동일한 시장 스냅샷과 룰을 거친 신호에 대해 Hermes LLM Advisor의 추가 분석/승인을 거치는 가상 포트폴리오.
 - **특징**: 각각 1,000,000원의 독립된 초기 현금과 장부를 가지며 상호 간섭 없음.
 - **관련 문서**: [pnl-engine.md](pnl-engine.md), [paper-cycle-flow.md](paper-cycle-flow.md)

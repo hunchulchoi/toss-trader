@@ -326,7 +326,7 @@ flowchart TD
     PICK --> C[종목별 1m + 완결 일봉 200개 순차 조회]
     C -->|최소 0.25초 + rate-limit 대기| MC[(market_candles)]
     MC --> PIT[(PostgreSQL PIT<br/>수급 6세션 + 이벤트)]
-    PIT --> X{전일 setup-v2.2 승인 +<br/>D+1 첫 완결봉 arm?}
+    PIT --> X{전일 setup-v2.3 승인 +<br/>D+1 첫 완결봉 arm?}
     X -->|신규 entry| B[위험 수량 BUY]
     X -->|보유 stop/structure exit| CS[SELL]
     X -->|누락·대기·조건 없음| NS[skip / v2 idle]

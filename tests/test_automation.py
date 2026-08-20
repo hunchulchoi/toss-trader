@@ -904,7 +904,8 @@ class MarketScanAutomationTest(unittest.TestCase):
         self.assertIn("전문용어는 바로 쉬운 말", MARKET_SCAN_SYSTEM_PROMPT)
         self.assertIn("'missing:*'", MARKET_SCAN_SYSTEM_PROMPT)
         self.assertIn("가격 데이터가 있지만", MARKET_SCAN_SYSTEM_PROMPT)
-        self.assertIn("PIT 수급 데이터가 있지만", MARKET_SCAN_SYSTEM_PROMPT)
+        self.assertIn("PIT 수급 6세션은 필수", MARKET_SCAN_SYSTEM_PROMPT)
+        self.assertIn("v2.3에서 가점 신호", MARKET_SCAN_SYSTEM_PROMPT)
         self.assertIn("시스템 장애인지, 데이터 부족인지, 조건 미통과인지", MARKET_SCAN_SYSTEM_PROMPT)
 
     def test_sends_only_market_scan_json_to_hermes(self) -> None:

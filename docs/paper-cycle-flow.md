@@ -1,6 +1,6 @@
 # Paper cycle flow
 
-이 문서는 현재 운영 중인 setup-v2.2 paper cycle의 기준 설명이다. 시스템은
+이 문서는 다음 세션 배포 예정인 setup-v2.3 paper cycle의 기준 설명이다. 시스템은
 `TRADING_ENABLED=false`이며 PostgreSQL에 가상 판단·체결만 기록한다. 증권사
 실계좌 주문은 생성하지 않는다.
 
@@ -25,7 +25,7 @@ flowchart TD
     CAL -->|예| U[거래일 universe 생성 또는 당일 cache]
     U --> S[Rule: 1m + 완결 일봉 200개 수집]
     S --> PIT[PostgreSQL PIT 조회]
-    PIT --> C{전일 setup-v2.2 후보 승인?}
+    PIT --> C{전일 setup-v2.3 후보 승인?}
     C -->|누락·위반| SKIP[setup-v2 block / fill 없음]
     C -->|승인| BAR{오늘 첫 1분봉 완결?}
     BAR -->|아니오| WAIT[waiting:first-session-bar]
@@ -71,7 +71,7 @@ symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트�
    상위 30개를 가격 평가 대상으로 삼는다. `TOP_GAINERS`는 선정에 쓰지 않는다.
 4. 직전 완결 일봉 200개가 있는 적격 종목을 상위 15개까지 선택한다. 가격
    setup 미달은 감사 `missing-price-setup`만 남기고 membership에서 빼지 않는다.
-   BUY는 계속 setup-v2.2 게이트. 부족분을 채우지 않는다. 선정 0종은 성공이지만
+   BUY는 계속 setup-v2.3 게이트. 부족분을 채우지 않는다. 선정 0종은 성공이지만
    당일 freeze하지 않는다. 현금·수량·주문 한도·일일 손실·API 오류는 BUY
    실행 Risk에서만 검사한다.
 5. 순위 밖이어도 현재 보유 종목은 추적 대상에 포함한다.
@@ -83,7 +83,7 @@ symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트�
    완결 일봉 부족만 오류가 아닌
    `setup-v2:missing:completed-daily-candles(n/200)` skip이다.
 
-## Setup-v2.2 candidate
+## Setup-v2.3 candidate
 
 후보는 오늘 장중 가격이 아니라 직전 완결 일봉까지의 200일 데이터로 만든다.
 기존 MA 골든크로스가 BUY를 만들고 setup-v2가 뒤에서 거르는 구조가 아니다.
@@ -96,9 +96,9 @@ symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트�
 - 소스 우선순위: 같은 세션이면 KRX 공식 CSV → KIS first-observed
 - 시간 규칙: `available_at <= decision_at`인 행만 사용
 
-가격 setup은 pullback 또는 oversold reversal 중 하나가 필요하다. 수급은 최근
-5세션 외국인 순매수 비율이 음수에서 양수로 전환되고 최신 외국인 순매수가
-양수여야 한다. 기관 확인은 추가 강도지만 외국인 반전 자체는 필수다.
+가격 setup은 pullback 또는 oversold reversal 중 하나가 필요하다. 수급은 연속
+6세션 이력이 필수다. 최근 5세션 외국인 순매수 비율이 음수에서 양수로 전환하면
+가점하고 기관 확인은 추가 강도로 쓴다. 미반전만으로 BUY를 차단하지 않는다.
 
 다음은 신규 BUY를 차단한다.
 
@@ -177,7 +177,7 @@ armed 신호도 최종 RiskManager를 통과해야 한다. 주요 제한은 주�
 
 ## End-of-day cycle
 
-15:40의 `1d` cycle은 현재 독립 v2.2 BUY/SELL 신호를 만들지 않는다. Rule과
+15:40의 `1d` cycle은 현재 독립 v2.3 BUY/SELL 신호를 만들지 않는다. Rule과
 Hermes 장부의 성과 snapshot을 닫고, 같은 서울 일자의 `1m cycle_insight`를
 모아 setup 차단·시가 대기·보유 idle·체결을 마감 분석에 전달한다. 장중 실제로
 없었던 매수 기회를 사후 뉴스로 만들어내지 않는다.

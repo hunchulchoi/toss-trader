@@ -1204,7 +1204,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             "startedAt": result.started_at,
             "finishedAt": result.finished_at,
             "interval": result.interval,
-            "entryStrategy": "setup-v2.2-independent-daily",
+            "entryStrategy": "setup-v2.3-independent-daily",
             "dailyReturnRate": result.daily_return_rate,
             "currencyReturns": result.currency_returns,
             "equity": result.equity,

@@ -95,7 +95,7 @@ class V2MarketScannerTest(unittest.TestCase):
             self.assertEqual(result.markets[0].regime, MarketRegime.RISK_ON)
             self.assertEqual(collector.counts["069500"], 60)
             self.assertEqual(collector.counts["005930"], 200)
-            self.assertEqual(payload["entryStrategy"], "setup-v2.2-independent-daily")
+            self.assertEqual(payload["entryStrategy"], "setup-v2.3-independent-daily")
             self.assertEqual(payload["candidateSummary"]["scanned"], 2)
             self.assertEqual(payload["candidateSummary"]["evaluated"], 1)
             self.assertEqual(payload["candidateSummary"]["approved"], 1)

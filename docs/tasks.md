@@ -24,6 +24,17 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-012 Make observed flow reversal a setup-v2.3 bonus
+
+- Owner: codex
+- Status: DONE
+- Result: six consecutive PIT flow sessions remain mandatory, while a missing
+  foreign reversal no longer vetoes an otherwise valid price setup. Foreign and
+  institutional confirmation remain ranking evidence through flow stars.
+- Checks: setup, market scan, cycle, automation, and full unit suites
+- Risks: this deliberately increases paper entry frequency. Deploy only before
+  a fresh session; a midday rollout could backfill an entry from the first bar.
+
 ### STRAT-011 Afternoon KRX prior-session amount rankings
 
 - Owner: cursor
