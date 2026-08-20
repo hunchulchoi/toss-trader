@@ -30,10 +30,13 @@ No tasks awaiting review.
 - Status: DONE
 - Result: six consecutive PIT flow sessions remain mandatory, while a missing
   foreign reversal no longer vetoes an otherwise valid price setup. Foreign and
-  institutional confirmation remain ranking evidence through flow stars.
+  institutional confirmation remain ranking evidence through flow stars. New
+  entry arming is limited to the first ten minutes after market open, while
+  exits for existing plans remain active all session.
 - Checks: setup, market scan, cycle, automation, and full unit suites
-- Risks: this deliberately increases paper entry frequency. Deploy only before
-  a fresh session; a midday rollout could backfill an entry from the first bar.
+- Risks: this deliberately increases paper entry frequency. Midday rollout no
+  longer backfills an opening-bar entry, but the next full session remains the
+  first representative paper observation.
 
 ### STRAT-011 Afternoon KRX prior-session amount rankings
 

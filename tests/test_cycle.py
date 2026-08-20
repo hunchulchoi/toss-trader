@@ -408,7 +408,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
             short_window=2,
             long_window=3,
             quantity=Decimal(1),
-            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+            now=market_open + timedelta(minutes=5),
         )
 
         self.assertEqual(result.fill_count, 1)
@@ -419,6 +419,38 @@ class PaperCycleRunnerTest(unittest.TestCase):
         assert plan is not None
         self.assertEqual(plan.quantity, result.items[0].fill.quantity)
         self.assertEqual(plan.cluster_id, "UNKNOWN")
+
+    def test_v2_cycle_rejects_retroactive_entry_after_arm_window(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="10",
+                    low_price="9.5",
+                )
+            ],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=11),
+        )
+
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "setup-v2:blocked:late-entry-window",
+        )
+        self.assertIsNone(self.paper_ledger.v2_position_plan("005930"))
 
     def test_v2_cycle_pages_back_to_toss_session_open_bar(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
@@ -489,7 +521,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
             short_window=2,
             long_window=3,
             quantity=Decimal(1),
-            now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+            now=market_open + timedelta(minutes=5),
         )
 
         self.assertEqual(result.fill_count, 1)
@@ -516,7 +548,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
         runner = self._runner(client, v2_strategy=strategy)
         runner.run(
             symbols=("005930",), interval="1m", short_window=2, long_window=3,
-            quantity=Decimal(1), now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+            quantity=Decimal(1), now=market_open + timedelta(minutes=5),
         )
         strategy.bars = [
             _minute_bar(
@@ -568,7 +600,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
         runner = self._runner(client, v2_strategy=strategy)
         runner.run(
             symbols=("005930",), interval="1m", short_window=2, long_window=3,
-            quantity=Decimal(1), now=datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+            quantity=Decimal(1), now=market_open + timedelta(minutes=5),
         )
 
         result = runner.run(
@@ -596,7 +628,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
             {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
         )
         rule_runner = self._runner(client, v2_strategy=strategy)
-        now = datetime(2026, 8, 12, 7, 0, tzinfo=UTC)
+        now = market_open + timedelta(minutes=5)
         snapshot = rule_runner.prepare(
             symbols=("005930",), interval="1m", short_window=2, long_window=3,
             quantity=Decimal(1), now=now,

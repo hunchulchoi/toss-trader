@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from json import dumps
 from typing import Any
@@ -39,6 +39,7 @@ from .v2_engine import (
 from .v2_runtime import OfficialV2CycleStrategy
 
 HANDLED_CYCLE_ERRORS = (OSError, RuntimeError, TossApiError, TypeError, ValueError)
+V2_ENTRY_ARM_WINDOW = timedelta(minutes=10)
 
 
 def _is_setup_v2_missing(error: BaseException) -> bool:
@@ -868,6 +869,8 @@ class PaperCycleRunner:
         )
         if not decision.armed or decision.plan is None:
             return None, decision.reason, None
+        if now > session.market_open_at + V2_ENTRY_ARM_WINDOW:
+            return None, "setup-v2:blocked:late-entry-window", None
         plan = decision.plan
         return (
             TradeSignal(
