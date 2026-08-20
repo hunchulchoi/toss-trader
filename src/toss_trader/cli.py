@@ -50,7 +50,7 @@ from .paper_timeline import PostgresPaperTimelineStore
 from .pit_collector import run_pit_collection, serve_pit_collector
 from .portfolio import PortfolioPerformance
 from .portfolio_backtest import PortfolioBacktestResult, run_ma_portfolio_backtest
-from .repository import open_market_repository
+from .repository import MarketRepository, open_market_repository
 from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
 from .setup_screening import OfficialSetupContextFactory
 from .strategy import MaCrossoverEvaluation, ma_crossover_signal
@@ -97,6 +97,14 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--count", type=int, default=100)
     collect.add_argument("--before")
     collect.add_argument("--unadjusted", action="store_true")
+
+    intraday_backfill = subparsers.add_parser(
+        "backfill-intraday-samples",
+        help="restore available 1m candles for observed universe candidates",
+    )
+    intraday_backfill.add_argument("--as-of", type=date.fromisoformat)
+    intraday_backfill.add_argument("--symbols", nargs="+")
+    intraday_backfill.add_argument("--max-eligible-rank", type=int, default=30)
 
     official = subparsers.add_parser(
         "collect-official-data",
@@ -362,6 +370,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _emit(_client(settings).holdings(args.symbol))
         if args.command == "collect-candles":
             return _collect_candles(settings, args)
+        if args.command == "backfill-intraday-samples":
+            return _backfill_intraday_samples(settings, args)
         if args.command == "collect-official-data":
             return _collect_official_data(settings, args)
         if args.command == "serve-pit-collector":
@@ -735,6 +745,146 @@ def _collect_candles(settings: Settings, args: argparse.Namespace) -> int:
         return _emit(asdict(result))
     finally:
         repository.close()
+
+
+def _backfill_intraday_samples(
+    settings: Settings, args: argparse.Namespace
+) -> int:
+    max_rank = int(args.max_eligible_rank)
+    if not 1 <= max_rank <= 100:
+        raise ValueError("max eligible rank must be between 1 and 100")
+    seoul = ZoneInfo("Asia/Seoul")
+    now = datetime.now(UTC)
+    today = now.astimezone(seoul).date()
+    session_day = args.as_of or today
+    if session_day > today:
+        raise ValueError("intraday backfill date must not be in the future")
+    probe = datetime.combine(
+        session_day, datetime.min.time(), tzinfo=seoul
+    ).replace(hour=12)
+
+    postgres_parameters = settings.postgres_connection_parameters()
+    with ExitStack() as stack:
+        client = _client(settings)
+        calendar = MarketCalendarService(client)
+        session = calendar.regular_session("KR", now=probe)
+        if (
+            not session.is_business_day
+            or session.market_open_at is None
+            or session.market_close_at is None
+        ):
+            raise ValueError(f"{session_day.isoformat()} is not a KR market day")
+        cutoff = (
+            min(now, session.market_close_at)
+            if session_day == today
+            else session.market_close_at
+        )
+        if cutoff <= session.market_open_at:
+            raise ValueError("intraday backfill requires a started market session")
+
+        repository = open_market_repository(
+            postgres_parameters=postgres_parameters,
+            sqlite_path=settings.market_db_path,
+        )
+        stack.callback(repository.close)
+        universe_store = open_universe_store(
+            postgres_parameters=postgres_parameters,
+            sqlite_path=settings.paper_db_path,
+        )
+        stack.callback(universe_store.close)
+        if args.symbols:
+            symbols = tuple(dict.fromkeys(str(item).upper() for item in args.symbols))
+        else:
+            start = datetime.combine(
+                session_day, datetime.min.time(), tzinfo=seoul
+            )
+            symbols = universe_store.candidate_symbols_between(
+                start.astimezone(UTC),
+                cutoff.astimezone(UTC),
+                max_eligible_rank=max_rank,
+            )
+        if not symbols:
+            raise ValueError("no observed universe candidates for intraday backfill")
+
+        collector = MarketCollector(client=client, repository=repository)
+        results: list[dict[str, Any]] = []
+        failures: list[dict[str, str]] = []
+        target = session.market_open_at + timedelta(minutes=1)
+        for symbol in symbols:
+            before_count = _session_candle_count(
+                repository, symbol=symbol, session_day=session_day
+            )
+            cursor: str | None = None
+            seen_cursors: set[str] = set()
+            pages = 0
+            received = 0
+            completion = "page-limit"
+            try:
+                for _ in range(5):
+                    page = collector.collect(
+                        symbol=symbol,
+                        interval="1m",
+                        count=200,
+                        before=cursor,
+                    )
+                    pages += 1
+                    received += page.received
+                    if (
+                        page.oldest_timestamp is not None
+                        and page.oldest_timestamp <= target
+                    ):
+                        completion = "session-open-reached"
+                        break
+                    if page.next_before is None:
+                        completion = "provider-exhausted"
+                        break
+                    if page.next_before in seen_cursors:
+                        raise RuntimeError("intraday cursor made no progress")
+                    seen_cursors.add(page.next_before)
+                    cursor = page.next_before
+                else:
+                    raise RuntimeError("intraday pagination limit reached")
+                after_count = _session_candle_count(
+                    repository, symbol=symbol, session_day=session_day
+                )
+                results.append(
+                    {
+                        "symbol": symbol,
+                        "pages": pages,
+                        "received": received,
+                        "storedBefore": before_count,
+                        "storedAfter": after_count,
+                        "restored": max(0, after_count - before_count),
+                        "completion": completion,
+                    }
+                )
+            except (OSError, RuntimeError, TossApiError, TypeError, ValueError) as error:
+                failures.append(
+                    {"symbol": symbol, "error": f"{type(error).__name__}: {error}"}
+                )
+
+    _emit(
+        {
+            "sessionDate": session_day,
+            "cutoff": cutoff,
+            "symbolCount": len(symbols),
+            "results": results,
+            "failures": failures,
+            "restoredCandles": sum(int(item["restored"]) for item in results),
+            "tradingEnabled": False,
+        }
+    )
+    return 3 if failures else 0
+
+
+def _session_candle_count(
+    repository: MarketRepository, *, symbol: str, session_day: date
+) -> int:
+    seoul = ZoneInfo("Asia/Seoul")
+    return sum(
+        candle.timestamp.astimezone(seoul).date() == session_day
+        for candle in repository.latest_candles(symbol, "1m", limit=1000)
+    )
 
 
 def _scan_ma(settings: Settings, args: argparse.Namespace) -> int:

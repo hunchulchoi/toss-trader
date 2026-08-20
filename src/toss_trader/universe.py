@@ -84,6 +84,14 @@ class UniverseStore(Protocol):
         ranking_source: str = RANKING_SOURCE_TOSS,
     ) -> tuple[str, ...] | None: ...
 
+    def candidate_symbols_between(
+        self,
+        since: datetime,
+        until: datetime,
+        *,
+        max_eligible_rank: int,
+    ) -> tuple[str, ...]: ...
+
     def latest_candidates_between(
         self,
         since: datetime,
@@ -559,6 +567,27 @@ class SqliteUniverseStore:
         ).fetchall()
         return tuple(str(item[0]) for item in rows)
 
+    def candidate_symbols_between(
+        self,
+        since: datetime,
+        until: datetime,
+        *,
+        max_eligible_rank: int,
+    ) -> tuple[str, ...]:
+        rows = self._connection.execute(
+            """
+            SELECT d.symbol
+            FROM dynamic_universe_runs AS r
+            JOIN dynamic_universe_decisions AS d ON d.run_id = r.run_id
+            WHERE r.status = 'succeeded'
+              AND r.evaluated_at >= ? AND r.evaluated_at <= ?
+              AND d.eligible_rank BETWEEN 1 AND ?
+            ORDER BY r.evaluated_at DESC, d.eligible_rank, d.symbol
+            """,
+            (since.isoformat(), until.isoformat(), max_eligible_rank),
+        ).fetchall()
+        return tuple(dict.fromkeys(str(item[0]) for item in rows))
+
     def record_success(
         self,
         *,
@@ -697,6 +726,28 @@ class PostgresUniverseStore:
                 (row[0],),
             )
             return tuple(str(item[0]) for item in cursor.fetchall())
+
+    def candidate_symbols_between(
+        self,
+        since: datetime,
+        until: datetime,
+        *,
+        max_eligible_rank: int,
+    ) -> tuple[str, ...]:
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT d.symbol
+                FROM dynamic_universe_runs AS r
+                JOIN dynamic_universe_decisions AS d ON d.run_id = r.run_id
+                WHERE r.status = 'succeeded'
+                  AND r.evaluated_at >= %s AND r.evaluated_at <= %s
+                  AND d.eligible_rank BETWEEN 1 AND %s
+                ORDER BY r.evaluated_at DESC, d.eligible_rank, d.symbol
+                """,
+                (since, until, max_eligible_rank),
+            )
+            return tuple(dict.fromkeys(str(item[0]) for item in cursor.fetchall()))
 
     def record_success(
         self,

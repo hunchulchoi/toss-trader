@@ -189,6 +189,14 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             second.collection_symbols, ("005930", "000660", "207940")
         )
         self.assertTrue(third.refreshed)
+        self.assertEqual(
+            self.store.candidate_symbols_between(
+                NOW,
+                NOW + timedelta(days=1, minutes=1),
+                max_eligible_rank=2,
+            ),
+            ("005930", "000660"),
+        )
         self.assertEqual(client.ranking_calls, [("MARKET_TRADING_AMOUNT", 5)] * 2)
         rows = self.store._connection.execute(
             """

@@ -36,6 +36,8 @@ class CollectionResult:
     received: int
     upserted: int
     next_before: str | None
+    oldest_timestamp: datetime | None = None
+    newest_timestamp: datetime | None = None
 
 
 class MarketCollector:
@@ -108,6 +110,12 @@ class MarketCollector:
             received=len(candles),
             upserted=upserted,
             next_before=next_before,
+            oldest_timestamp=min(
+                (candle.timestamp for candle in candles), default=None
+            ),
+            newest_timestamp=max(
+                (candle.timestamp for candle in candles), default=None
+            ),
         )
 
 

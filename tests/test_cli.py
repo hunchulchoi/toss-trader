@@ -289,6 +289,15 @@ class MetricsCliTest(unittest.TestCase):
         self.assertEqual(args.host, "127.0.0.1")
         self.assertEqual(args.port, 9200)
 
+    def test_intraday_backfill_defaults_to_top_thirty(self) -> None:
+        args = build_parser().parse_args(
+            ["backfill-intraday-samples", "--as-of", "2026-08-20"]
+        )
+
+        self.assertEqual(args.command, "backfill-intraday-samples")
+        self.assertEqual(args.as_of.isoformat(), "2026-08-20")
+        self.assertEqual(args.max_eligible_rank, 30)
+
     def test_config_reports_metrics_listener_without_secrets(self) -> None:
         output = io.StringIO()
         with (

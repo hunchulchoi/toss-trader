@@ -96,6 +96,14 @@ class MarketCollectorTest(unittest.TestCase):
             [item.close_price for item in stored], [Decimal(71000), Decimal(71100)]
         )
         self.assertEqual(first.next_before, "2026-08-12T09:00:00+09:00")
+        self.assertEqual(
+            first.oldest_timestamp,
+            datetime.fromisoformat("2026-08-12T09:00:00+09:00"),
+        )
+        self.assertEqual(
+            first.newest_timestamp,
+            datetime.fromisoformat("2026-08-12T09:01:00+09:00"),
+        )
 
     def test_collects_stock_names_into_database(self) -> None:
         collector = MarketCollector(

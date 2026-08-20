@@ -31,7 +31,9 @@ No tasks awaiting review.
 - Result: trading membership remains capped at 15 symbols, while the latest
   static-eligible Top30 is preserved as the collection pool. Each 1m rule cycle
   upserts 30 recent bars for non-trading candidates; cycle symbols retain their
-  existing strategy-sized collection.
+  existing strategy-sized collection. A bounded backfill command restores all
+  available session bars for the observed candidate union and reports per-symbol
+  page/completion/restoration counts.
 - Checks: universe/store cache coverage, background sampling failure isolation,
   scoped Ruff, and full unit suite
 - Risks: forward collection only; historical gaps remain. Extra candidates add
