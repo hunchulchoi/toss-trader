@@ -12,7 +12,10 @@
 - 기록 시각: 2026-08-20 09:00 KST
 - 동작: `/cycles` 시각을 `ko-KR` 12시간제 잘린 `04:07`이 아니라 서울 24시
   `16:07`로 표시. 날짜 필터 기본값은 최신 기록이 아니라 서울 달력 오늘
-- 운영: 코드만, 배포 대기
+- 운영: 반영함. 2026-08-20 09:06 KST `main` `30b933b` 푸시 후 `timeline`만
+  재빌드·재생성. health `healthy`, restart 0, `TRADING_ENABLED=false`,
+  Tailscale `/healthz`·`/cycles` 200. 라이브 `/assets/cycles.js`에
+  `hour12: false`·`seoulToday` 확인
 
 ## 2026-08-19
 
