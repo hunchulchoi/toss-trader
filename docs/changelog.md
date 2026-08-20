@@ -15,7 +15,10 @@
 - 의미: `missing:*`와 `completed-daily-candles(n/200)`만 실제 데이터 부족으로
   설명. `missing-price-setup`, `flow-not-confirmed`, `event-imminent`는 각각 가격
   패턴·수급 반전 조건·임박 이벤트에 따른 정상 탈락이며 데이터 누락으로 표현 금지
-- 범위: Python 직접 실행과 n8n 운영 workflow 자산에 동일 지침 반영. 배포는 별도
+- 범위: Python 직접 실행과 n8n 운영 workflow 자산에 동일 지침 반영
+- 배포 시각: 2026-08-20 09:22 KST. automation 재빌드·재생성 후 healthy,
+  n8n workflow import·publish·재시작. 게시 버전 active, 16 nodes/12 connections,
+  초보자 설명·가격/수급 의미·장애/결측/조건 구분 문구 확인. `TRADING_ENABLED=false`
 
 ### Cycle Timeline 서울 24시·오늘 날짜
 
