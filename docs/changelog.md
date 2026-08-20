@@ -14,7 +14,9 @@
   컬렉터 장애 아님
 - 동작: 완결 200봉 적격 최대 15가 membership. 가격 setup은 BUY 게이트.
   선정 0종은 freeze하지 않음
-- 운영: 코드만, 배포 대기
+- 운영: 반영함. 2026-08-20 10:15 KST `main` `eb5aa03` 푸시 후 `automation`
+  재빌드·재생성. health `healthy`, restart 0, `TRADING_ENABLED=false`.
+  다음 1m(10:20)부터 0종 cache 무시하고 적격 15 재선정
 
 ### 장전 Hermes 초보자용 설명과 결측 의미 교정
 
