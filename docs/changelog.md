@@ -21,6 +21,12 @@
   fail-closed. Rule/Hermes 체결 0, n8n 실패 Telegram 정상 발송
 - 기록 시각: 2026-08-20 14:36 KST
 - 보완: Top30 및 보유종목 확장 snapshot의 `maStates`를 symbols 길이에 맞춤
+- 2차 배포 시각: 2026-08-20 14:37 KST
+- 운영 검증: 2026-08-20 14:38 KST Rule snapshot 15종, Hermes 준비·실제 평가
+  30종, sample 실패 0, 양쪽 체결 0. Hermes `evaluationPool`은
+  `hermes-expanded-top30`·직접 비교 불가로 저장. automation healthy,
+  restart 0, `TRADING_ENABLED=false`
+- n8n: MCP 공개·active, draft=active, intraday Rule→Hermes graph 유지
 
 ### 1분봉 수집 풀을 적격 후보 30종으로 확대
 
