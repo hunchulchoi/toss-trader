@@ -7,7 +7,7 @@ import os
 import sys
 from collections.abc import Mapping, Sequence
 from contextlib import ExitStack
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
@@ -1227,6 +1227,11 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             market_repository=market_repository,
             initial_cash=settings.paper_initial_cash,
         )
+        if snapshot is not None and args.portfolio == "hermes":
+            snapshot = _extend_cycle_snapshot(
+                snapshot, performance.open_position_symbols()
+            )
+            symbols = snapshot.symbols
         collector = MarketCollector(client=client, repository=market_repository)
         universe_result = None
         if explicit_symbols is not None:
@@ -1291,7 +1296,21 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 cycle_symbols=symbols,
                 collection_symbols=universe_result.collection_symbols,
             )
-        symbol_names = collector.resolve_symbol_names(symbols) if symbols else {}
+        name_symbols = tuple(
+            dict.fromkeys(
+                (
+                    *symbols,
+                    *(
+                        universe_result.collection_symbols
+                        if universe_result is not None
+                        else ()
+                    ),
+                )
+            )
+        )
+        symbol_names = (
+            collector.resolve_symbol_names(name_symbols) if name_symbols else {}
+        )
         result = PaperCycleRunner(
             collector=collector,
             strategy=StoredMaStrategy(market_repository),
@@ -1356,6 +1375,20 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             if interval == "1d"
             else None
         )
+        hermes_snapshot = None
+        if interval == "1m" and universe_result is not None:
+            failed_samples = {
+                str(item["symbol"]): str(item["error"])
+                for item in (intraday_sample or {}).get("failures", [])
+            }
+            hermes_snapshot = _cycle_snapshot_to_dict(
+                _hermes_candidate_snapshot(
+                    result.snapshot,
+                    universe_result.collection_symbols,
+                    failed_samples=failed_samples,
+                ),
+                symbol_names=symbol_names,
+            )
     _emit(
         {
             "portfolioId": args.portfolio,
@@ -1376,6 +1409,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             "sharedSnapshot": _cycle_snapshot_to_dict(
                 result.snapshot, symbol_names=symbol_names
             ),
+            "hermesSnapshot": hermes_snapshot,
             "instruments": [
                 {"symbol": symbol, "name": symbol_names[symbol]} for symbol in symbols
             ],
@@ -1389,8 +1423,26 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                     "collectionSymbols": list(universe_result.collection_symbols),
                 }
                 if universe_result is not None
-                else {"source": "explicit", "symbols": list(symbols)}
+                else {
+                    "source": (
+                        "shared-hermes-candidate-pool"
+                        if snapshot is not None and args.portfolio == "hermes"
+                        else "explicit"
+                    ),
+                    "symbols": list(symbols),
+                }
             ),
+            "evaluationPool": {
+                "role": (
+                    "hermes-expanded-top30"
+                    if snapshot is not None and args.portfolio == "hermes"
+                    else "rule-top15"
+                ),
+                "symbolCount": len(symbols),
+                "directlyComparable": not (
+                    snapshot is not None and args.portfolio == "hermes"
+                ),
+            },
             "intradaySample": intraday_sample,
             "summary": {
                 "symbols": result.symbol_count,
@@ -1423,6 +1475,50 @@ def _intraday_review_for_day(store: CycleStateStore, now: datetime) -> dict[str,
     )
     return aggregate_intraday_review(
         insights_from_runs(runs), cycle_count=len(runs)
+    )
+
+
+def _hermes_candidate_snapshot(
+    snapshot: PaperCycleSnapshot,
+    collection_symbols: tuple[str, ...],
+    *,
+    failed_samples: Mapping[str, str],
+) -> PaperCycleSnapshot:
+    symbols = tuple(dict.fromkeys(collection_symbols)) or snapshot.symbols
+    source_errors = dict(zip(snapshot.symbols, snapshot.errors, strict=True))
+    errors = tuple(
+        failed_samples.get(symbol) or source_errors.get(symbol) for symbol in symbols
+    )
+    return PaperCycleSnapshot(
+        evaluated_at=snapshot.evaluated_at,
+        symbols=symbols,
+        interval=snapshot.interval,
+        collections=(None,) * len(symbols),
+        signals=(None,) * len(symbols),
+        skips=(None,) * len(symbols),
+        errors=errors,
+        api_failed=snapshot.api_failed,
+        new_buys_allowed=snapshot.new_buys_allowed,
+    )
+
+
+def _extend_cycle_snapshot(
+    snapshot: PaperCycleSnapshot, extra_symbols: tuple[str, ...]
+) -> PaperCycleSnapshot:
+    missing = tuple(
+        symbol for symbol in dict.fromkeys(extra_symbols) if symbol not in snapshot.symbols
+    )
+    if not missing:
+        return snapshot
+    return replace(
+        snapshot,
+        symbols=(*snapshot.symbols, *missing),
+        collections=(*snapshot.collections, *((None,) * len(missing))),
+        signals=(*snapshot.signals, *((None,) * len(missing))),
+        skips=(*snapshot.skips, *((None,) * len(missing))),
+        errors=(*snapshot.errors, *((None,) * len(missing))),
+        ma_states=(),
+        v2_candidates=(),
     )
 
 

@@ -583,6 +583,30 @@ class IntradayPaperAutomationTest(unittest.TestCase):
         self.assertEqual(environment["TRADING_ENABLED"], "false")
         self.assertEqual(result["cycle"]["interval"], "1m")
 
+    def test_legacy_process_gives_hermes_the_collection_pool(self) -> None:
+        rule = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                '{"universe":{"symbols":["005930"],'
+                '"collectionSymbols":["005930","000660"]},"summary":{}}'
+            ),
+            stderr="",
+        )
+        hermes = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout='{"summary":{}}', stderr=""
+        )
+
+        with patch("subprocess.run", side_effect=(rule, hermes)) as run:
+            PaperCycleProcess(interval="1m").run()
+
+        hermes_command = run.call_args_list[1].args[0]
+        symbols_at = hermes_command.index("--symbols")
+        self.assertEqual(
+            hermes_command[symbols_at + 1 : symbols_at + 3],
+            ["005930", "000660"],
+        )
+
     def test_hermes_task_reuses_rule_market_snapshot(self) -> None:
         completed = subprocess.CompletedProcess(
             args=[], returncode=0, stdout='{"summary":{}}', stderr=""
@@ -605,6 +629,17 @@ class IntradayPaperAutomationTest(unittest.TestCase):
                     "apiFailed": False,
                     "newBuysAllowed": True,
                 },
+                "hermesSnapshot": {
+                    "version": 1,
+                    "symbols": ["005930", "000660", "035420"],
+                    "interval": "1m",
+                    "evaluatedAt": "2026-08-13T05:00:00+00:00",
+                    "collections": [None, None, None],
+                    "signals": [None, None, None],
+                    "errors": [None, None, None],
+                    "apiFailed": False,
+                    "newBuysAllowed": True,
+                },
             }
         }
 
@@ -618,7 +653,7 @@ class IntradayPaperAutomationTest(unittest.TestCase):
         self.assertIn("--snapshot-stdin", command)
         self.assertNotIn("--symbols", command)
         submitted = json.loads(run.call_args.kwargs["input"])
-        self.assertEqual(submitted["symbols"], ["005930", "000660"])
+        self.assertEqual(submitted["symbols"], ["005930", "000660", "035420"])
         self.assertEqual(submitted["interval"], "1m")
         self.assertEqual(result["exitCode"], 0)
 

@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-013 Give Hermes the expanded Top30 candidate pool
+
+- Owner: codex
+- Status: DONE
+- Result: Rule keeps the selected Top15 snapshot. Hermes receives a separate
+  static-eligible Top30 snapshot, rebuilds setup-v2.3 candidates from the shared
+  stored market/PIT data, and keeps out-of-pool holdings for SELL management.
+- Checks: expanded snapshot selection, sample-error isolation, held-symbol union,
+  legacy process compatibility, automation/cycle tests, and full unit suite
+- Risks: Rule and Hermes no longer share the same candidate denominator, so the
+  output is labeled as asymmetric pool research rather than a direct A/B test.
+  All deterministic setup, event, gap, timing, and execution Risk gates remain.
+
 ### DATA-003 Expand intraday samples beyond the trading universe
 
 - Owner: codex

@@ -8,7 +8,14 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
-from toss_trader.cli import _collect_intraday_sample, build_parser, main
+from toss_trader.cli import (
+    _collect_intraday_sample,
+    _extend_cycle_snapshot,
+    _hermes_candidate_snapshot,
+    build_parser,
+    main,
+)
+from toss_trader.cycle import PaperCycleSnapshot
 from toss_trader.cycle_state import SqliteCycleStateStore
 from toss_trader.execution import PaperTradingService
 from toss_trader.market_data import CollectionResult
@@ -45,6 +52,30 @@ class IntradaySampleCollectionTest(unittest.TestCase):
         self.assertEqual(result["receivedCandles"], 30)
         self.assertEqual(result["upsertedCandles"], 30)
         self.assertEqual(result["failures"][0]["symbol"], "035420")
+
+    def test_builds_expanded_hermes_pool_and_keeps_held_symbol(self) -> None:
+        base = PaperCycleSnapshot(
+            evaluated_at=datetime(2026, 8, 20, 0, 5, tzinfo=UTC),
+            symbols=("005930",),
+            interval="1m",
+            collections=(None,),
+            signals=(None,),
+            skips=(None,),
+            errors=(None,),
+            api_failed=False,
+            new_buys_allowed=True,
+        )
+
+        research = _hermes_candidate_snapshot(
+            base,
+            ("005930", "000660"),
+            failed_samples={"000660": "temporary"},
+        )
+        expanded = _extend_cycle_snapshot(research, ("035420",))
+
+        self.assertEqual(expanded.symbols, ("005930", "000660", "035420"))
+        self.assertEqual(expanded.errors, (None, "temporary", None))
+        self.assertEqual(expanded.v2_candidates, ())
 
 
 class MetricsCliTest(unittest.TestCase):

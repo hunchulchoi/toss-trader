@@ -362,7 +362,9 @@ class PaperCycleProcess:
                     rule_cycle.get("universe") if isinstance(rule_cycle, dict) else None
                 )
                 if isinstance(rule_universe, dict):
-                    symbols = rule_universe.get("symbols")
+                    symbols = rule_universe.get("collectionSymbols") or rule_universe.get(
+                        "symbols"
+                    )
                     entry_symbols = rule_universe.get("entrySymbols")
                     run_id = rule_universe.get("runId")
                     if isinstance(symbols, list) and symbols:
@@ -506,7 +508,7 @@ def _rule_shared_snapshot(rule_cycle: dict[str, Any] | None) -> dict[str, Any]:
         raise TypeError("Hermes paper task requires rule cycle JSON")
     cycle = rule_cycle.get("cycle")
     cycle = cycle if isinstance(cycle, dict) else rule_cycle
-    snapshot = cycle.get("sharedSnapshot")
+    snapshot = cycle.get("hermesSnapshot") or cycle.get("sharedSnapshot")
     if not isinstance(snapshot, dict):
         raise TypeError("rule cycle is missing shared market snapshot")
     if snapshot.get("version") != 1:
@@ -1856,6 +1858,20 @@ def _flow_audit_details(
         for key in ("symbols", "signals", "fills", "skipped", "failed"):
             if key in summary:
                 details[key] = _non_negative_int(summary.get(key))
+        evaluation_pool = cycle.get("evaluationPool")
+        evaluation_pool = (
+            evaluation_pool if isinstance(evaluation_pool, dict) else {}
+        )
+        role = evaluation_pool.get("role")
+        if isinstance(role, str):
+            details["evaluationPoolRole"] = role
+        if "symbolCount" in evaluation_pool:
+            details["evaluationPoolSymbols"] = _non_negative_int(
+                evaluation_pool.get("symbolCount")
+            )
+        directly_comparable = evaluation_pool.get("directlyComparable")
+        if isinstance(directly_comparable, bool):
+            details["directlyComparable"] = directly_comparable
         decisions = sorted(set(_collect_decision_ids(result)))
         if decisions:
             details["riskDecisionIds"] = decisions[:100]
