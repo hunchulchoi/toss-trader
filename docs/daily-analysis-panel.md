@@ -15,7 +15,7 @@ neither Docker access nor Cursor authentication.
 
 ## Rounds
 
-1. GPT quant, Grok skeptic, and Gemini Risk analyze the same JSON independently.
+1. Grok quant, Grok skeptic, and Gemini Risk analyze the same JSON independently.
 2. Each model receives all three labeled independent opinions and reviews their
    agreement, conflicts, and overclaims.
 3. Hermes receives the briefing JSON plus all six responses and produces the

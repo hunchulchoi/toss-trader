@@ -21,7 +21,7 @@ HERMES = os.environ.get("HERMES_BIN", "/opt/hermes/.venv/bin/hermes")
 ROLES = {
     "gpt": {
         "role": "quant analyst",
-        "model": "gpt-5.6-sol-medium",
+        "model": "cursor-grok-4.6-high-fast",
         "instruction": (
             "수익률·체결·신호·후보 funnel을 정량 분석하라. 비교 가능한 수치와 "
             "데이터 한계를 구분하고, 제공되지 않은 값을 추정하지 마라."
@@ -80,6 +80,11 @@ def _cursor_call(name: str, prompt: str) -> dict[str, Any]:
             prompt,
         ],
         cwd="/tmp",
+        env={
+            **os.environ,
+            "HOME": "/opt/data",
+            "XDG_CONFIG_HOME": "/opt/data/.config",
+        },
         capture_output=True,
         text=True,
         timeout=300,
@@ -87,7 +92,11 @@ def _cursor_call(name: str, prompt: str) -> dict[str, Any]:
     )
     finished_at = datetime.now(UTC)
     if process.returncode != 0:
-        raise RuntimeError(f"{name} agent failed with exit {process.returncode}")
+        detail = (process.stderr or process.stdout).strip()
+        suffix = f": {detail[:1000]}" if detail else ""
+        raise RuntimeError(
+            f"{name} agent failed with exit {process.returncode}{suffix}"
+        )
     try:
         payload = json.loads(process.stdout)
     except json.JSONDecodeError as error:

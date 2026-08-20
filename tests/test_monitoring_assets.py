@@ -338,12 +338,15 @@ class MonitoringAssetsTest(unittest.TestCase):
     def test_hermes_panel_runner_uses_read_only_fixed_models(self) -> None:
         source = (ROOT / "automation" / "hermes-panel-runner.py").read_text()
 
-        self.assertIn('"gpt-5.6-sol-medium"', source)
-        self.assertIn('"cursor-grok-4.6-high-fast"', source)
+        self.assertNotIn('"gpt-5.6-sol-medium"', source)
+        self.assertGreaterEqual(source.count('"cursor-grok-4.6-high-fast"'), 2)
         self.assertIn('"gemini-3.7-flash-high"', source)
         self.assertIn('"--mode",\n            "ask"', source)
         self.assertNotIn('"--sandbox"', source)
         self.assertNotIn("docker exec", source)
+        self.assertIn('"HOME": "/opt/data"', source)
+        self.assertIn('"XDG_CONFIG_HOME": "/opt/data/.config"', source)
+        self.assertIn("process.stderr or process.stdout", source)
         self.assertIn("/workflow/daily-panel-complete", source)
 
     def test_hermes_panel_runner_distinguishes_midday_from_close(self) -> None:
@@ -678,6 +681,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("__TELEGRAM_BOT_TOKEN__", template)
         self.assertIn("__TELEGRAM_CHAT_ID__", template)
         self.assertIn("message_thread_id: __TELEGRAM_TOPIC__", template)
+        self.assertIn("message_thread_id: 5", template)
         self.assertIn("TossTraderMarketScan", template)
         self.assertIn("TossTraderPaperCycleNotice", template)
         self.assertIn("group_wait: 0s", template)
