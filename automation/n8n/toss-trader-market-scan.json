@@ -34,7 +34,7 @@
     "시장 리포트 Telegram": {"main": [[{"node": "Telegram 전송 정상?", "type": "main", "index": 0}]]},
     "Telegram 전송 정상?": {"main": [[{"node": "시장 리포트 완료", "type": "main", "index": 0}], [{"node": "Telegram 실패 기록", "type": "main", "index": 0}]]}
   },
-  "settings": {"executionOrder": "v1", "timezone": "Asia/Seoul", "errorWorkflow": "toss-trader-workflow-error"},
+  "settings": {"executionOrder": "v1", "timezone": "Asia/Seoul", "errorWorkflow": "toss-trader-workflow-error", "availableInMCP": true},
   "pinData": {},
   "versionId": "aaaaaaaa-fd93-4c61-ad10-9454335bfbe7"
 }
