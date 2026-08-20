@@ -24,7 +24,7 @@ from .automation import (
     serve_automation,
 )
 from .backtest import run_ma_backtest
-from .calendar import MarketCalendarService
+from .calendar import MarketCalendarService, previous_kr_business_date
 from .client import TossClient
 from .config import Settings
 from .cycle import PaperCycleRunner, PaperCycleSnapshot
@@ -34,6 +34,7 @@ from .errors import TossApiError
 from .execution import PaperTradingService
 from .kis_flow import KisInvestorFlowClient, KisInvestorFlowCollector
 from .krx_flow import KrxInvestorFlowCsvImporter, resolve_krx_session_index
+from .krx_openapi import fetch_krx_acc_trdval_rankings
 from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
 from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
@@ -1085,6 +1086,21 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             )
             stack.callback(universe_store.close)
             latest_cycle = cycle_state.latest_run()
+            calendar = MarketCalendarService(client)
+
+            def krx_amount_rankings(now: datetime, count: int) -> dict:
+                if not settings.krx_api_key:
+                    raise RuntimeError(
+                        "KRX_API_KEY is required for afternoon universe rankings"
+                    )
+                session = previous_kr_business_date(calendar, now)
+                return fetch_krx_acc_trdval_rankings(
+                    api_key=settings.krx_api_key,
+                    bas_dd=session.strftime("%Y%m%d"),
+                    count=count,
+                    ranked_at=now,
+                )
+
             universe_result = DynamicUniverseSelector(
                 client=client,
                 collector=collector,
@@ -1094,6 +1110,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 candidate_count=settings.dynamic_universe_candidate_count,
                 ranking_fetch_count=settings.dynamic_universe_ranking_fetch_count,
                 universe_size=settings.dynamic_universe_size,
+                krx_amount_rankings=krx_amount_rankings,
             ).resolve(
                 now=now,
                 held_symbols=performance.open_position_symbols(),

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
@@ -65,6 +65,16 @@ class MarketCalendarService:
 
 def country_for_symbol(symbol: str) -> str:
     return "KR" if symbol.isdigit() else "US"
+
+
+def previous_kr_business_date(calendar: MarketCalendarService, now: datetime) -> date:
+    local = now.astimezone(ZoneInfo("Asia/Seoul")).date()
+    for delta in range(1, 14):
+        day = local - timedelta(days=delta)
+        probe = datetime.combine(day, time(12), tzinfo=ZoneInfo("Asia/Seoul"))
+        if calendar.regular_session("KR", now=probe).is_business_day:
+            return day
+    raise RuntimeError("no prior KR business session")
 
 
 def _regular_market(

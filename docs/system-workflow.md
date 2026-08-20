@@ -311,9 +311,12 @@ flowchart TD
     S[n8n 5분 trigger] --> API[POST /workflow/paper-rule-1m]
     API --> HAPI[POST /workflow/paper-hermes-1m]
     API --> U{오늘 성공한\nuniverse가 있는가?}
-    U -->|예| UC[당일 선정 종목 cache 사용]
-    U -->|아니오| R1[실시간 거래대금 최대 100]
+    U -->|예| UC[당일 같은 source 선정 cache]
+    U -->|아니오| SRC{서울 12:00 이후인가?}
+    SRC -->|아니오| R1[Toss 실시간 거래대금 최대 100]
+    SRC -->|예| R2[KRX 전일 ACC_TRDVAL 최대 100]
     R1 --> META[/stocks metadata batch 조회]
+    R2 --> META
     META --> STATIC[STOCK·보통주·ACTIVE·거래정상\neligible Top 30 재랭크]
     STATIC --> PRICE[직전 완결 일봉 200개\n가격 setup 필터]
     PRICE --> UR[최대 15 선정·미충원]
@@ -489,6 +492,7 @@ erDiagram
         int candidate_count
         int approved_count
         int selected_count
+        text ranking_source
         text error_message
     }
     DYNAMIC_UNIVERSE_DECISIONS {

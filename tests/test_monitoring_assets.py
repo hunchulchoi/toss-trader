@@ -258,6 +258,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("automation:", compose)
         self.assertIn('command: ["serve-automation"]', compose)
         self.assertIn("HERMES_API_KEY", compose)
+        self.assertIn("KRX_API_KEY", compose)
         self.assertIn("toss-trader-automation", compose)
         self.assertIn("openclaw-net", compose)
         self.assertIn("RISK_MANAGER_WEBHOOK_URL: http://n8n:5678/webhook/", compose)

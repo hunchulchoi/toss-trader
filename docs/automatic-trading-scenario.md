@@ -342,8 +342,11 @@ DYNAMIC_UNIVERSE_SIZE=15
 CANDLE_REQUEST_INTERVAL_SECONDS=0.25
 ```
 
-장중 paper cycle은 고정 watchlist를 사용하지 않는다. 서울 거래일 첫 cycle에서
-한국 시장 실시간 거래대금 랭킹을 최대 100개 조회한다. 투자유의 종목은 요청에서
+장중 paper cycle은 고정 watchlist를 사용하지 않는다. 서울 12:00 KST 전에는
+Toss 실시간 거래대금 랭킹을 최대 100개 조회한다. 12:00 KST부터는 KRX
+전일 `ACC_TRDVAL`(유가 `stk_bydd_trd` + 코스닥 `ksq_bydd_trd`) 상위 100개로
+바꾼다. 오전 Toss cache는 오후에 재사용하지 않는다. KRX 실패는 Toss로
+폴백하지 않는다. 투자유의 종목은 Toss 요청에서
 제외하고, metadata의 STOCK·보통주·ACTIVE·거래정상 종목만 `eligible_rank`를
 다시 매겨 상위 30개를 평가한다. `TOP_GAINERS`는 선정에 사용하지 않는다.
 직전 완결 일봉 200개가 있는 적격 종목을 최대 15개까지 당일 고정한다. 가격

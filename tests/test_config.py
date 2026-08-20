@@ -13,6 +13,7 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(settings.metrics_host, "0.0.0.0")
         self.assertEqual(settings.metrics_port, 9108)
         self.assertEqual(settings.paper_initial_cash, Decimal(1000000))
+        self.assertEqual(settings.krx_api_key, "")
 
     def test_supports_canonical_and_legacy_credential_names(self) -> None:
         canonical = Settings.from_mapping(

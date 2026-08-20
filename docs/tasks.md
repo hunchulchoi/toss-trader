@@ -24,6 +24,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-011 Afternoon KRX prior-session amount rankings
+
+- Owner: cursor
+- Status: DONE
+- Result: Seoul 12:00+ universe ranking uses KRX prior-session `ACC_TRDVAL`
+  (KOSPI+KOSDAQ). Morning still Toss realtime. Afternoon cache requires
+  `ranking_source=krx:acc-trdval` so the 10:25 Toss freeze is not reused.
+  Fail-closed on missing key, 401, or empty `OutBlock_1`.
+- Checks: krx_openapi, calendar, universe, config, compose asset tests
+- Risks: KRX has no same-day amount; afternoon names can differ from the
+  morning 15. No per-symbol investor flow on this API.
+
 ### STRAT-010 Split universe membership from price setup
 
 - Owner: cursor

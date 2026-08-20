@@ -7,6 +7,18 @@
 
 ## 2026-08-20
 
+### 오후 universe 랭킹을 KRX 전일 대금으로 전환
+
+- 기록 시각: 2026-08-20 11:30 KST
+- 구멍: Toss `MARKET_TRADING_AMOUNT duration=realtime`는 당일 장중 대금이라
+  전일 확정 모집단과 갈라진다. 오전 freeze 15종을 오후에 그대로 쓰면 소스
+  전환이 안 된다
+- 동작: 서울 12:00부터 유가 `stk_bydd_trd` + 코스닥 `ksq_bydd_trd`의 직전
+  KR 영업일 `ACC_TRDVAL` 상위 100. 6자리 숫자 종목만. Toss `stocks()`로
+  STOCK·보통주·정지 필터 유지. `ranking_source`로 오전 Toss cache와 분리.
+  키 없음·401·빈 블록은 fail-closed, Toss 폴백 없음
+- 운영: 코드만, 배포 대기
+
 ### 유니버스 멤버십에서 가격 셋업 분리
 
 - 기록 시각: 2026-08-20 10:15 KST

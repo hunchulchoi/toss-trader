@@ -1,7 +1,7 @@
 import unittest
 from datetime import UTC, date, datetime
 
-from toss_trader.calendar import MarketCalendarService
+from toss_trader.calendar import MarketCalendarService, previous_kr_business_date
 
 
 class FakeCalendarClient:
@@ -77,6 +77,30 @@ class MarketCalendarServiceTest(unittest.TestCase):
 
         self.assertTrue(session.is_business_day)
         self.assertEqual(client.calls, [("US", date(2026, 8, 11))])
+
+    def test_previous_kr_business_date_skips_weekend(self) -> None:
+        class DayCalendar:
+            def market_calendar(self, country: str, *, day: date | None = None):
+                assert day is not None
+                if day.weekday() >= 5:
+                    return {"today": {"date": day.isoformat(), "integrated": None}}
+                return {
+                    "today": {
+                        "date": day.isoformat(),
+                        "integrated": {
+                            "regularMarket": {
+                                "startTime": f"{day.isoformat()}T09:00:00+09:00",
+                                "endTime": f"{day.isoformat()}T15:30:00+09:00",
+                            }
+                        },
+                    }
+                }
+
+        monday = datetime(2026, 8, 17, 4, 0, tzinfo=UTC)
+        self.assertEqual(
+            previous_kr_business_date(MarketCalendarService(DayCalendar()), monday),
+            date(2026, 8, 14),
+        )
 
 
 if __name__ == "__main__":

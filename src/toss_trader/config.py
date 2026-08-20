@@ -37,6 +37,7 @@ class Settings:
     candle_request_interval_seconds: float = 0.25
     metrics_host: str = "0.0.0.0"
     metrics_port: int = 9108
+    krx_api_key: str = ""
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> Settings:
@@ -139,6 +140,7 @@ class Settings:
             candle_request_interval_seconds=candle_interval,
             metrics_host=metrics_host,
             metrics_port=metrics_port,
+            krx_api_key=values.get("KRX_API_KEY", "").strip(),
         )
 
     @classmethod

@@ -138,6 +138,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         fetch_count: int = 5,
         universe_size: int = 2,
         risk_manager: object | None = None,
+        krx_amount_rankings: object | None = None,
     ) -> DynamicUniverseSelector:
         return DynamicUniverseSelector(
             client=client,
@@ -148,6 +149,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             candidate_count=candidate_count,
             ranking_fetch_count=fetch_count,
             universe_size=universe_size,
+            krx_amount_rankings=krx_amount_rankings,  # type: ignore[arg-type]
         )
 
     @staticmethod
@@ -166,7 +168,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             now=NOW, held_symbols=(), risk_context=self._context()
         )
         second = self._selector(client).resolve(
-            now=NOW + timedelta(hours=2),
+            now=NOW + timedelta(hours=1),
             held_symbols=("035420",),
             risk_context=self._context(),
         )
@@ -389,7 +391,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             now=NOW, held_symbols=(), risk_context=self._context()
         )
         cached = selector.resolve(
-            now=NOW + timedelta(hours=3),
+            now=NOW + timedelta(hours=1),
             held_symbols=(),
             risk_context=self._context(),
         )
@@ -445,6 +447,60 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             ).fetchone(),
             ("failed",),
         )
+
+    def test_afternoon_uses_krx_and_ignores_morning_toss_cache(self) -> None:
+        afternoon = datetime(2026, 8, 13, 3, 0, tzinfo=UTC)
+        client = FakeRankingClient()
+        krx_calls: list[tuple[datetime, int]] = []
+
+        def krx_rankings(now: datetime, count: int) -> dict:
+            krx_calls.append((now, count))
+            return {
+                "rankedAt": afternoon.isoformat(),
+                "rankings": [
+                    {
+                        "rank": 1,
+                        "symbol": "207940",
+                        "price": {"lastPrice": "1500000", "changeRate": "0.01"},
+                        "tradingAmount": "5000000000",
+                    }
+                ],
+            }
+
+        selector = self._selector(
+            client,
+            candidate_count=1,
+            fetch_count=1,
+            universe_size=1,
+            krx_amount_rankings=krx_rankings,
+        )
+        morning = selector.resolve(
+            now=NOW, held_symbols=(), risk_context=self._context()
+        )
+        later = selector.resolve(
+            now=afternoon, held_symbols=(), risk_context=self._context()
+        )
+
+        self.assertEqual(morning.symbols, ("005930",))
+        self.assertTrue(later.refreshed)
+        self.assertEqual(later.symbols, ("207940",))
+        self.assertEqual(client.ranking_calls, [("MARKET_TRADING_AMOUNT", 1)])
+        self.assertEqual(krx_calls, [(afternoon, 1)])
+        sources = [
+            row[0]
+            for row in self.store._connection.execute(
+                "SELECT ranking_source FROM dynamic_universe_runs "
+                "WHERE status = 'succeeded' ORDER BY evaluated_at"
+            )
+        ]
+        self.assertEqual(sources, ["toss:realtime", "krx:acc-trdval"])
+
+    def test_afternoon_without_krx_fetcher_is_data_error(self) -> None:
+        afternoon = datetime(2026, 8, 13, 3, 0, tzinfo=UTC)
+        with self.assertRaisesRegex(RuntimeError, "KRX_API_KEY"):
+            self._selector(FakeRankingClient()).resolve(
+                now=afternoon, held_symbols=(), risk_context=self._context()
+            )
 
     def test_ranking_failure_tracks_held_symbols_only(self) -> None:
         result = self._selector(FakeRankingClient(fail=True)).resolve(

@@ -90,7 +90,9 @@
 - **관련 문서**: [paper-cycle-flow.md](paper-cycle-flow.md#d1-entry-and-sizing)
 
 ### Dynamic Universe (동적 유니버스)
-- **정의**: 고정된 종목군 대신, 서울 거래일 첫 사이클에서 Toss 시장 거래대금 상위 종목군을 바탕으로 적격 보통주를 랭크하여 선정하는 유니버스.
+- **정의**: 고정된 종목군 대신, 서울 거래일 오전에 Toss 실시간 거래대금, 12:00
+  KST부터 KRX 전일 `ACC_TRDVAL` 상위 종목군을 바탕으로 적격 보통주를 랭크하여
+  선정하는 유니버스.
 - **규칙**: 직전 완결 200봉이 있는 적격 보통주만 최대 15개까지 당일 유니버스로 동결. 가격 셋업은 BUY 게이트. 선정 0종은 freeze하지 않음. 기존 보유 종목은 유니버스 밖으로 밀려나도 청산 추적을 유지.
 - **관련 문서**: [docs/2026-08-19/universe-strategy-debate.md](2026-08-19/universe-strategy-debate.md), [README.md](../README.md#실행)
 

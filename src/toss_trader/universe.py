@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal, InvalidOperation
@@ -23,6 +23,9 @@ from .risk import (
 from .setup_screening import evaluate_price_setups
 
 SEOUL = ZoneInfo("Asia/Seoul")
+RANKING_SOURCE_TOSS = "toss:realtime"
+RANKING_SOURCE_KRX = "krx:acc-trdval"
+KRX_AFTERNOON_START = time(12, 0)
 STATIC_UNIVERSE_VIOLATIONS = frozenset(
     {
         "unsupported-security-type",
@@ -73,7 +76,11 @@ class RankingClient(Protocol):
 
 class UniverseStore(Protocol):
     def latest_selected_between(
-        self, since: datetime, until: datetime
+        self,
+        since: datetime,
+        until: datetime,
+        *,
+        ranking_source: str = RANKING_SOURCE_TOSS,
     ) -> tuple[str, ...] | None: ...
 
     def record_success(
@@ -82,6 +89,7 @@ class UniverseStore(Protocol):
         run_id: str,
         evaluated_at: datetime,
         ranked_at: datetime | None,
+        ranking_source: str,
         decisions: Sequence[UniverseDecision],
     ) -> None: ...
 
@@ -101,6 +109,7 @@ CREATE TABLE IF NOT EXISTS dynamic_universe_runs (
     candidate_count INTEGER NOT NULL,
     approved_count INTEGER NOT NULL,
     selected_count INTEGER NOT NULL,
+    ranking_source TEXT,
     error_message TEXT
 );
 CREATE TABLE IF NOT EXISTS dynamic_universe_decisions (
@@ -134,6 +143,7 @@ CREATE TABLE IF NOT EXISTS dynamic_universe_runs (
     candidate_count INTEGER NOT NULL,
     approved_count INTEGER NOT NULL,
     selected_count INTEGER NOT NULL,
+    ranking_source TEXT,
     error_message TEXT
 );
 CREATE TABLE IF NOT EXISTS dynamic_universe_decisions (
@@ -158,7 +168,9 @@ CREATE INDEX IF NOT EXISTS dynamic_universe_decisions_run_idx
 ON dynamic_universe_decisions (run_id, selected, score DESC)
 ;
 ALTER TABLE dynamic_universe_decisions
-ADD COLUMN IF NOT EXISTS eligible_rank INTEGER
+ADD COLUMN IF NOT EXISTS eligible_rank INTEGER;
+ALTER TABLE dynamic_universe_runs
+ADD COLUMN IF NOT EXISTS ranking_source TEXT
 """
 
 
@@ -174,6 +186,7 @@ class DynamicUniverseSelector:
         candidate_count: int,
         ranking_fetch_count: int,
         universe_size: int,
+        krx_amount_rankings: Callable[[datetime, int], dict[str, Any]] | None = None,
     ) -> None:
         self._client = client
         self._collector = collector
@@ -183,6 +196,7 @@ class DynamicUniverseSelector:
         self._candidate_count = candidate_count
         self._ranking_fetch_count = ranking_fetch_count
         self._universe_size = universe_size
+        self._krx_amount_rankings = krx_amount_rankings
         if ranking_fetch_count < candidate_count:
             raise ValueError("ranking fetch count must be at least candidate count")
         if universe_size > candidate_count:
@@ -197,7 +211,10 @@ class DynamicUniverseSelector:
     ) -> UniverseRefreshResult:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("universe decision time must include a timezone offset")
-        cached = self._store.latest_selected_between(_seoul_day_start(now), now)
+        source = ranking_source_for(now)
+        cached = self._store.latest_selected_between(
+            _seoul_day_start(now), now, ranking_source=source
+        )
         if cached is not None:
             return UniverseRefreshResult(
                 run_id=None,
@@ -214,6 +231,7 @@ class DynamicUniverseSelector:
                 run_id=run_id,
                 evaluated_at=now,
                 ranked_at=ranked_at,
+                ranking_source=source,
                 decisions=decisions,
             )
             return UniverseRefreshResult(
@@ -240,13 +258,7 @@ class DynamicUniverseSelector:
     def _refresh(
         self, now: datetime, risk_context: UniverseRiskContext
     ) -> tuple[tuple[UniverseDecision, ...], datetime | None]:
-        amount = self._client.rankings(
-            ranking_type="MARKET_TRADING_AMOUNT",
-            market_country="KR",
-            duration="realtime",
-            exclude_investment_caution=True,
-            count=self._ranking_fetch_count,
-        )
+        amount = self._amount_payload(now)
         amount_rows, amount_ranked_at = _ranking_rows(amount)
         ranked = _amount_rankings(amount_rows)
         if not ranked:
@@ -358,6 +370,21 @@ class DynamicUniverseSelector:
         )
         return decisions, amount_ranked_at
 
+    def _amount_payload(self, now: datetime) -> dict[str, Any]:
+        if ranking_source_for(now) == RANKING_SOURCE_KRX:
+            if self._krx_amount_rankings is None:
+                raise RuntimeError(
+                    "KRX_API_KEY is required for afternoon universe rankings"
+                )
+            return self._krx_amount_rankings(now, self._ranking_fetch_count)
+        return self._client.rankings(
+            ranking_type="MARKET_TRADING_AMOUNT",
+            market_country="KR",
+            duration="realtime",
+            exclude_investment_caution=True,
+            count=self._ranking_fetch_count,
+        )
+
     def _completed_daily(self, symbol: str, *, now: datetime) -> list[Candle]:
         today = now.astimezone(SEOUL).date()
         completed = self._stored_completed_daily(symbol, today=today)
@@ -423,22 +450,42 @@ class SqliteUniverseStore:
                 "ALTER TABLE dynamic_universe_decisions "
                 "ADD COLUMN eligible_rank INTEGER"
             )
+        run_columns = {
+            str(row[1])
+            for row in self._connection.execute(
+                "PRAGMA table_info(dynamic_universe_runs)"
+            )
+        }
+        if "ranking_source" not in run_columns:
+            self._connection.execute(
+                "ALTER TABLE dynamic_universe_runs ADD COLUMN ranking_source TEXT"
+            )
         self._connection.commit()
 
     def close(self) -> None:
         self._connection.close()
 
     def latest_selected_between(
-        self, since: datetime, until: datetime
+        self,
+        since: datetime,
+        until: datetime,
+        *,
+        ranking_source: str = RANKING_SOURCE_TOSS,
     ) -> tuple[str, ...] | None:
         row = self._connection.execute(
             """
             SELECT run_id FROM dynamic_universe_runs
             WHERE status = 'succeeded' AND selected_count > 0
               AND evaluated_at >= ? AND evaluated_at <= ?
+              AND COALESCE(ranking_source, ?) = ?
             ORDER BY evaluated_at DESC LIMIT 1
             """,
-            (since.isoformat(), until.isoformat()),
+            (
+                since.isoformat(),
+                until.isoformat(),
+                RANKING_SOURCE_TOSS,
+                ranking_source,
+            ),
         ).fetchone()
         if row is None:
             return None
@@ -462,6 +509,7 @@ class SqliteUniverseStore:
         run_id: str,
         evaluated_at: datetime,
         ranked_at: datetime | None,
+        ranking_source: str,
         decisions: Sequence[UniverseDecision],
     ) -> None:
         with self._connection:
@@ -469,8 +517,8 @@ class SqliteUniverseStore:
                 """
                 INSERT INTO dynamic_universe_runs
                 (run_id, evaluated_at, ranked_at, status, candidate_count,
-                 approved_count, selected_count, error_message)
-                VALUES (?, ?, ?, 'succeeded', ?, ?, ?, NULL)
+                 approved_count, selected_count, ranking_source, error_message)
+                VALUES (?, ?, ?, 'succeeded', ?, ?, ?, ?, NULL)
                 """,
                 (
                     run_id,
@@ -479,6 +527,7 @@ class SqliteUniverseStore:
                     len(decisions),
                     sum(item.risk.approved for item in decisions),
                     sum(item.selected for item in decisions),
+                    ranking_source,
                 ),
             )
             self._connection.executemany(
@@ -526,7 +575,11 @@ class PostgresUniverseStore:
         self._connection.close()
 
     def latest_selected_between(
-        self, since: datetime, until: datetime
+        self,
+        since: datetime,
+        until: datetime,
+        *,
+        ranking_source: str = RANKING_SOURCE_TOSS,
     ) -> tuple[str, ...] | None:
         with self._connection.cursor() as cursor:
             cursor.execute(
@@ -535,9 +588,10 @@ class PostgresUniverseStore:
                 WHERE status = 'succeeded'
                   AND selected_count > 0
                   AND evaluated_at >= %s AND evaluated_at <= %s
+                  AND COALESCE(ranking_source, %s) = %s
                 ORDER BY evaluated_at DESC LIMIT 1
                 """,
-                (since, until),
+                (since, until, RANKING_SOURCE_TOSS, ranking_source),
             )
             row = cursor.fetchone()
             if row is None:
@@ -562,6 +616,7 @@ class PostgresUniverseStore:
         run_id: str,
         evaluated_at: datetime,
         ranked_at: datetime | None,
+        ranking_source: str,
         decisions: Sequence[UniverseDecision],
     ) -> None:
         with self._connection.cursor() as cursor:
@@ -569,8 +624,9 @@ class PostgresUniverseStore:
                 """
                 INSERT INTO dynamic_universe_runs
                 (run_id, evaluated_at, ranked_at, status, candidate_count,
-                 approved_count, selected_count, error_message) VALUES
-                (%s, %s, %s, 'succeeded', %s, %s, %s, NULL)
+                 approved_count, selected_count, ranking_source, error_message)
+                VALUES
+                (%s, %s, %s, 'succeeded', %s, %s, %s, %s, NULL)
                 """,
                 (
                     run_id,
@@ -579,6 +635,7 @@ class PostgresUniverseStore:
                     len(decisions),
                     sum(item.risk.approved for item in decisions),
                     sum(item.selected for item in decisions),
+                    ranking_source,
                 ),
             )
             cursor.executemany(
@@ -736,6 +793,12 @@ def _with_held(
     selected: tuple[str, ...], held_symbols: tuple[str, ...]
 ) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*selected, *held_symbols)))
+
+
+def ranking_source_for(now: datetime) -> str:
+    if now.astimezone(SEOUL).time() >= KRX_AFTERNOON_START:
+        return RANKING_SOURCE_KRX
+    return RANKING_SOURCE_TOSS
 
 
 def _seoul_day_start(now: datetime) -> datetime:

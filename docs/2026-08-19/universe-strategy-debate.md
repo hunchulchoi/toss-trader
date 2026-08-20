@@ -115,3 +115,10 @@ Codex·Cursor·agy는 구현 전 다시 교차검토해 다음으로 수렴했�
 3. `selected_count=0` 성공은 cache로 쓰지 않는다. 다음 cycle 재시도.
 4. PIT·이벤트는 계속 게이트. 오늘 장중 automation 반영. 오전 0종 cycle은
    당일 실험의 앞부분으로 남는다.
+
+## 2026-08-20 오후 랭킹 소스
+
+사용자 지시로 같은 날 12:00 KST부터 live universe 랭킹을 KRX 전일
+`ACC_TRDVAL`로 바꾼다. 오전 Toss `realtime` freeze는 `ranking_source`가
+달라서 오후에 재사용하지 않는다. 실패 시 Toss로 폴백하지 않는다. 레짐
+스캔(KODEX 200 / KOSDAQ 150)은 이 턴에서 바꾸지 않는다.

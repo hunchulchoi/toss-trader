@@ -210,8 +210,10 @@ DYNAMIC_UNIVERSE_SIZE=15
 함께 완결 일봉이 200개가 되거나 provider cursor가 소진될 때까지 bounded
 pagination한다. cursor 무진전·페이지 상한·부분 이력 뒤 빈 응답은 데이터 오류로
 재시도하고, 정상 응답으로 확인된 완결 일봉이 200개보다 적을 때만 skip한다.
-종목은 고정 watchlist가 아니다. 서울 거래일 첫 cycle에서 Toss 실시간 거래대금
-랭킹을 최대 100개 조회한다. STOCK·보통주·ACTIVE·거래정상 종목만 다시 순위를
+종목은 고정 watchlist가 아니다. 서울 12:00 KST 전 cycle은 Toss 실시간 거래대금
+랭킹을 최대 100개 조회한다. 12:00 KST부터는 KRX 전일 유가·코스닥
+`ACC_TRDVAL` 합산 상위 100개로 바꾼다. 오전 Toss 성공 cache는 오후에 쓰지
+않는다. KRX 키 없음·401·빈 응답은 Toss realtime으로 채우지 않는다. STOCK·보통주·ACTIVE·거래정상 종목만 다시 순위를
 매겨 상위 30개의 직전 완결 일봉 200개를 검사하고, 200봉이 있는 적격 종목을
 최대 15개까지 고정한다. setup-v2.2 가격 조건은 membership이 아니라 BUY
 게이트다. `TOP_GAINERS`는 선정에 쓰지 않는다. 부족분을 채우지 않는다. 선정

@@ -59,9 +59,14 @@ symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트�
 
 ## Universe and market snapshot
 
-1. 서울 거래일에 성공한 universe가 있으면 장중 같은 선택을 사용한다.
-2. 첫 cycle은 Toss 실시간 거래대금 랭킹을 최대 100개 조회한다. `rankedAt`은
-   provider provenance 시각일 뿐 전일 확정 거래대금 근거가 아니다.
+1. 서울 거래일에 같은 `ranking_source`로 선정 1종 이상인 성공 universe가
+   있으면 장중 같은 선택을 사용한다. 오전(`toss:realtime`) cache는 12:00
+   KST 이후 `krx:acc-trdval` 조회에 재사용하지 않는다.
+2. 12:00 KST 전 첫 cycle은 Toss 실시간 거래대금 랭킹을 최대 100개 조회한다.
+   12:00 KST부터는 KRX Open API 전일 유가·코스닥 `ACC_TRDVAL`을 합쳐 상위
+   100개를 쓴다. `basDd`는 Toss KR calendar로 찾은 직전 영업일. 키 없음·
+   401·빈 응답은 Toss realtime으로 채우지 않고 실패한다. `rankedAt`은
+   provider provenance 시각일 뿐 전일 확정 근거가 아니다.
 3. STOCK·보통주·ACTIVE·거래정상·유효 가격만 `eligible_rank`를 다시 매기고
    상위 30개를 가격 평가 대상으로 삼는다. `TOP_GAINERS`는 선정에 쓰지 않는다.
 4. 직전 완결 일봉 200개가 있는 적격 종목을 상위 15개까지 선택한다. 가격
