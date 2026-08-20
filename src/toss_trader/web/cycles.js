@@ -1,6 +1,8 @@
 const state = { data: null, date: "latest", portfolio: "all", status: "all" };
 const $ = (id) => document.getElementById(id);
-const timeFormatter = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
+const timeFormatter = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false,
+});
 const dateFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
 const priceFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -55,12 +57,20 @@ function translateReason(raw) {
     .join(" · ");
 }
 
+function seoulToday() { return dateFormatter.format(new Date()); }
+
 function availableDates() {
-  return [...new Set(cycleTimeline().map((run) => tradingDate(run.startedAt)))].sort().reverse();
+  const dates = new Set(cycleTimeline().map((run) => tradingDate(run.startedAt)));
+  dates.add(seoulToday());
+  return [...dates].sort().reverse();
 }
 
 function selectedDate() {
-  return state.date === "latest" ? availableDates()[0] : state.date;
+  return state.date === "latest" ? seoulToday() : state.date;
+}
+
+function runStamp(run) {
+  return { date: tradingDate(run.startedAt), time: localTime(run.startedAt) };
 }
 
 function filteredRuns() {
@@ -243,8 +253,9 @@ function render() {
   const runs = filteredRuns();
   const groups = new Map();
   runs.forEach((run) => {
-    const key = `${tradingDate(run.startedAt)} ${localTime(run.startedAt)}`;
-    if (!groups.has(key)) groups.set(key, {});
+    const stamp = runStamp(run);
+    const key = `${stamp.date} ${stamp.time}`;
+    if (!groups.has(key)) groups.set(key, stamp);
     groups.get(key)[run.portfolioId] = run;
   });
 
@@ -259,11 +270,11 @@ function render() {
   $("visible-range").textContent = selectedDate() || "기록 없음";
 
   const list = $("cycle-list"); list.replaceChildren();
-  groups.forEach((pair, key) => {
+  groups.forEach((pair) => {
     const row = document.createElement("article"); row.className = "cycle-row";
     const time = document.createElement("div"); time.className = "cycle-time";
-    const strong = document.createElement("strong"); strong.textContent = key.slice(-5);
-    const date = document.createElement("span"); date.textContent = key.slice(0, 10);
+    const strong = document.createElement("strong"); strong.textContent = pair.time;
+    const date = document.createElement("span"); date.textContent = pair.date;
     time.append(strong, date);
     const content = document.createElement("div"); content.className = "cycle-content";
     const cards = document.createElement("div"); cards.className = "cycle-pair";

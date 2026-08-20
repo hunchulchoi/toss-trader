@@ -156,7 +156,7 @@
 - **관련 문서**: [paper-mcp.md](paper-mcp.md)
 
 ### Timeline Web UI
-- **정의**: 포트폴리오 자산 추이, 보유 종목, 최근 63개 시세 스파크라인, 5분 사이클별 상태기계 펀넬을 시각화하는 읽기 전용 웹 대시보드 (`/cycles`).
+- **정의**: 포트폴리오 자산 추이, 보유 종목, 최근 63개 시세 스파크라인, 5분 사이클별 상태기계 펀넬을 시각화하는 읽기 전용 웹 대시보드 (`/cycles`). `/cycles` 시각은 서울 24시, 기본 날짜는 서울 달력 오늘.
 - **관련 문서**: [README.md](../README.md#실행), [operations-runbook.md](operations-runbook.md)
 
 ### Alertmanager & Telegram
