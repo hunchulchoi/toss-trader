@@ -672,7 +672,10 @@ class SqliteUniverseStore:
             JOIN dynamic_universe_decisions AS d ON d.run_id = r.run_id
             WHERE r.status = 'succeeded'
               AND r.evaluated_at >= ? AND r.evaluated_at <= ?
-              AND d.eligible_rank BETWEEN 1 AND ?
+              AND (
+                d.eligible_rank BETWEEN 1 AND ?
+                OR (d.eligible_rank IS NULL AND d.risk_approved = 1)
+              )
               AND d.risk_approved = 1
             ORDER BY r.evaluated_at DESC, d.eligible_rank, d.symbol
             """,
@@ -832,7 +835,10 @@ class PostgresUniverseStore:
                 JOIN dynamic_universe_decisions AS d ON d.run_id = r.run_id
                 WHERE r.status = 'succeeded'
                   AND r.evaluated_at >= %s AND r.evaluated_at <= %s
-                  AND d.eligible_rank BETWEEN 1 AND %s
+                  AND (
+                    d.eligible_rank BETWEEN 1 AND %s
+                    OR (d.eligible_rank IS NULL AND d.risk_approved)
+                  )
                   AND d.risk_approved
                 ORDER BY r.evaluated_at DESC, d.eligible_rank, d.symbol
                 """,

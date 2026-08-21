@@ -261,6 +261,50 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         self.assertEqual(no_setup[1:5], (2, None, 0, 0))
         self.assertIn("missing-price-setup", no_setup[5])
 
+    def test_backfill_candidates_include_legacy_approved_rows(self) -> None:
+        evaluated_at = NOW + timedelta(minutes=30)
+        with self.store._connection:
+            self.store._connection.execute(
+                """INSERT INTO dynamic_universe_runs VALUES (
+                    ?, ?, NULL, 'succeeded', 2, 2, 1, NULL, NULL
+                )""",
+                ("legacy-run", evaluated_at.isoformat()),
+            )
+            self.store._connection.executemany(
+                """INSERT INTO dynamic_universe_decisions VALUES (
+                    ?, 'legacy-run', ?, ?, '1', ?, NULL, ?, '0', '1', '100',
+                    ?, ?, '[]'
+                )""",
+                (
+                    (
+                        "legacy-approved",
+                        evaluated_at.isoformat(),
+                        "005930",
+                        1,
+                        None,
+                        1,
+                        1,
+                    ),
+                    (
+                        "legacy-rejected",
+                        evaluated_at.isoformat(),
+                        "000660",
+                        2,
+                        None,
+                        0,
+                        0,
+                    ),
+                ),
+            )
+
+        symbols = self.store.candidate_symbols_between(
+            NOW,
+            NOW + timedelta(hours=1),
+            max_eligible_rank=30,
+        )
+
+        self.assertEqual(symbols, ("005930",))
+
     def test_overfetches_then_filters_and_reranks_static_eligible_stocks(self) -> None:
         rows = (
             ("069500", "40000", "1200000000", "0.01"),
