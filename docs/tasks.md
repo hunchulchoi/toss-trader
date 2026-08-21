@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### DATA-004 Restore a weekly setup-v2 price sample
+
+- Owner: codex
+- Status: DONE
+- Result: fixed historical intraday cursor seeding and legacy candidate lookup,
+  restored 73,479 1m candles plus 10,900 daily warmup candles,
+  and completed 46 price-setup symbol-days with full regular-session 1m coverage
+- Checks: 372 unit tests, scoped Ruff, Git whitespace, zero Toss failures across
+  four session backfills, and a repeatable read-only diagnostic over 357 current
+  static-eligible symbols
+- Risks: counterfactual price-only sample with current-pool/static survivorship
+  bias; not exact replay, strict setup-v2 approval, PnL, or profitability evidence
+- 기록 시각: 2026-08-21 17:00 KST
+
 ### STRAT-014 Build a setup-first opening pool and useful midday review
 
 - Owner: codex/cursor/agy

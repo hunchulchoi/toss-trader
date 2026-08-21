@@ -7,6 +7,21 @@
 
 ## 2026-08-21
 
+### 이번 주 setup-v2 가격 표본 복원
+
+- 기록 시각: 2026-08-21 17:00 KST
+- 복원 시각: 2026-08-21 16:43~16:57 KST
+- 코드: 과거 `backfill-intraday-samples`가 최신 페이지에서 시작하던 문제를
+  해당 세션 마감 cursor 시작으로 수정. 구 `eligible_rank` NULL run은 승인 후보를
+  복원 대상으로 포함하고, 주간 집계가 최근 1,000봉에서 잘리지 않게 보완
+- 데이터: 8/18~21 관측 후보 1분봉 61,239개, full-pool 가격 셋업 후보의
+  추가 1분봉 12,240개, 8/14 cutoff 일봉 warmup 10,900개 복원. 모든 수집은
+  `TRADING_ENABLED=false`, 주문 호출 0
+- 진단: current static-eligible 357종 중 매일 341종 평가. 가격 셋업 46
+  종목-일/고유 25종을 찾고 46개 모두 정규장 1분봉 390개 확보
+- 도구: `automation/setup-v2-sample-diagnostic.py`가 read-only
+  `price-only-counterfactual` 결과만 출력. exact replay, strict 승인, PnL 지원 안 함
+
 ### D-1 setup-first 장전 풀과 변화 중심 점심 브리핑
 
 - 기록 시각: 2026-08-21 14:49 KST
