@@ -25,7 +25,9 @@ from .setup_screening import evaluate_price_setups
 SEOUL = ZoneInfo("Asia/Seoul")
 RANKING_SOURCE_TOSS = "toss:realtime"
 RANKING_SOURCE_KRX = "krx:acc-trdval"
+RANKING_SOURCE_OPENING = "official:d1-known-pool"
 KRX_AFTERNOON_START = time(12, 0)
+STOCK_METADATA_BATCH_SIZE = 100
 STATIC_UNIVERSE_VIOLATIONS = frozenset(
     {
         "unsupported-security-type",
@@ -204,6 +206,8 @@ class DynamicUniverseSelector:
         ranking_fetch_count: int,
         universe_size: int,
         krx_amount_rankings: Callable[[datetime, int], dict[str, Any]] | None = None,
+        opening_rankings: Callable[[datetime], dict[str, Any]] | None = None,
+        candidate_gate: Callable[[str, datetime], RiskDecision] | None = None,
     ) -> None:
         self._client = client
         self._collector = collector
@@ -214,6 +218,8 @@ class DynamicUniverseSelector:
         self._ranking_fetch_count = ranking_fetch_count
         self._universe_size = universe_size
         self._krx_amount_rankings = krx_amount_rankings
+        self._opening_rankings = opening_rankings
+        self._candidate_gate = candidate_gate
         if ranking_fetch_count < candidate_count:
             raise ValueError("ranking fetch count must be at least candidate count")
         if universe_size > candidate_count:
@@ -228,7 +234,7 @@ class DynamicUniverseSelector:
     ) -> UniverseRefreshResult:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("universe decision time must include a timezone offset")
-        source = ranking_source_for(now)
+        source = self._ranking_source(now)
         cached = self._store.latest_selected_between(
             _seoul_day_start(now), now, ranking_source=source
         )
@@ -266,7 +272,8 @@ class DynamicUniverseSelector:
                 collection_symbols=tuple(
                     item.symbol
                     for item in decisions
-                    if item.eligible_rank is not None
+                    if item.risk.approved
+                    and item.eligible_rank is not None
                     and item.eligible_rank <= self._candidate_count
                 ),
             )
@@ -289,18 +296,24 @@ class DynamicUniverseSelector:
         self, now: datetime, risk_context: UniverseRiskContext
     ) -> tuple[tuple[UniverseDecision, ...], datetime | None]:
         amount = self._amount_payload(now)
+        ranking_session = _ranking_session(amount)
         amount_rows, amount_ranked_at = _ranking_rows(amount)
         ranked = _amount_rankings(amount_rows)
         if not ranked:
             raise RuntimeError("dynamic universe rankings are empty")
         symbols = tuple(item["symbol"] for item in ranked)
-        stocks = self._client.stocks(symbols)
+        stocks = [
+            stock
+            for offset in range(0, len(symbols), STOCK_METADATA_BATCH_SIZE)
+            for stock in self._client.stocks(
+                symbols[offset : offset + STOCK_METADATA_BATCH_SIZE]
+            )
+        ]
         stock_by_symbol = _stock_info(stocks, symbols)
         self._repository.upsert_symbol_names(
             {symbol: str(stock_by_symbol[symbol]["name"]) for symbol in symbols}
         )
         provisional: list[tuple[dict[str, Any], RiskDecision]] = []
-        eligible_rank = 0
         for item in ranked:
             symbol = item["symbol"]
             stock = stock_by_symbol[symbol]
@@ -327,21 +340,10 @@ class DynamicUniverseSelector:
             if not static_risk.approved:
                 provisional.append((item, static_risk))
                 continue
-            eligible_rank += 1
-            item["eligible_rank"] = eligible_rank
-            if eligible_rank > self._candidate_count:
-                provisional.append(
-                    (
-                        item,
-                        RiskDecision(
-                            approved=False,
-                            violations=("outside-eligible-candidate-limit",),
-                        ),
-                    )
-                )
-                continue
             try:
-                completed = self._completed_daily(symbol, now=now)
+                completed = self._completed_daily(
+                    symbol, now=now, expected_session=ranking_session
+                )
             except (OSError, RuntimeError, TypeError, ValueError) as error:
                 raise RuntimeError(
                     f"universe price data unavailable for {symbol}: "
@@ -371,11 +373,39 @@ class DynamicUniverseSelector:
                 provisional.append(
                     (
                         item,
-                        RiskDecision(True, ("missing-price-setup",)),
+                        RiskDecision(False, ("missing-price-setup",)),
                     )
                 )
                 continue
-            provisional.append((item, static_risk))
+            candidate_risk = (
+                self._candidate_gate(symbol, now)
+                if self._candidate_gate is not None
+                else static_risk
+            )
+            missing_candidate_data = tuple(
+                reason
+                for reason in candidate_risk.violations
+                if reason.startswith("missing:")
+            )
+            if missing_candidate_data:
+                raise RuntimeError(
+                    f"candidate PIT data incomplete for {symbol}: "
+                    f"{','.join(missing_candidate_data)}"
+                )
+            provisional.append((item, candidate_risk))
+        eligible_rank = 0
+        ranked_provisional: list[tuple[dict[str, Any], RiskDecision]] = []
+        for item, risk in provisional:
+            if risk.approved:
+                eligible_rank += 1
+                item["eligible_rank"] = eligible_rank
+                if eligible_rank > self._candidate_count:
+                    risk = RiskDecision(
+                        approved=False,
+                        violations=("outside-eligible-candidate-limit",),
+                    )
+            ranked_provisional.append((item, risk))
+        provisional = ranked_provisional
         selected_symbols = set(
             [
                 item["symbol"]
@@ -401,7 +431,9 @@ class DynamicUniverseSelector:
         return decisions, amount_ranked_at
 
     def _amount_payload(self, now: datetime) -> dict[str, Any]:
-        if ranking_source_for(now) == RANKING_SOURCE_KRX:
+        if self._opening_rankings is not None:
+            return self._opening_rankings(now)
+        if self._ranking_source(now) == RANKING_SOURCE_KRX:
             if self._krx_amount_rankings is None:
                 raise RuntimeError(
                     "KRX_API_KEY is required for afternoon universe rankings"
@@ -415,10 +447,21 @@ class DynamicUniverseSelector:
             count=self._ranking_fetch_count,
         )
 
-    def _completed_daily(self, symbol: str, *, now: datetime) -> list[Candle]:
+    def _ranking_source(self, now: datetime) -> str:
+        if self._opening_rankings is not None:
+            return RANKING_SOURCE_OPENING
+        return ranking_source_for(now)
+
+    def _completed_daily(
+        self,
+        symbol: str,
+        *,
+        now: datetime,
+        expected_session: date | None = None,
+    ) -> list[Candle]:
         today = now.astimezone(SEOUL).date()
         completed = self._stored_completed_daily(symbol, today=today)
-        if len(completed) >= 200:
+        if _daily_is_current(completed, expected_session):
             return completed
         before: str | None = None
         seen_cursors: set[str] = set()
@@ -427,7 +470,11 @@ class DynamicUniverseSelector:
             kwargs: dict[str, object] = {
                 "symbol": symbol,
                 "interval": "1d",
-                "count": max(1, 200 - len(completed)),
+                "count": (
+                    max(1, 200 - len(completed))
+                    if len(completed) < 200
+                    else 5
+                ),
             }
             if before is not None:
                 kwargs["before"] = before
@@ -440,9 +487,15 @@ class DynamicUniverseSelector:
             ):
                 raise RuntimeError(f"invalid daily collection count for {symbol}")
             completed = self._stored_completed_daily(symbol, today=today)
-            if len(completed) >= 200:
+            if _daily_is_current(completed, expected_session):
                 return completed
             if collection.next_before is None:
+                if len(completed) >= 200 and expected_session is not None:
+                    latest = completed[-1].timestamp.astimezone(SEOUL).date()
+                    raise RuntimeError(
+                        f"latest daily candle is stale for {symbol}: "
+                        f"{latest}/{expected_session}"
+                    )
                 if completed and len(completed) == completed_before:
                     raise RuntimeError(
                         f"daily history made no progress before exhaustion for {symbol}"
@@ -505,7 +558,7 @@ class SqliteUniverseStore:
         row = self._connection.execute(
             """
             SELECT run_id FROM dynamic_universe_runs
-            WHERE status = 'succeeded' AND selected_count > 0
+            WHERE status = 'succeeded'
               AND evaluated_at >= ? AND evaluated_at <= ?
               AND COALESCE(ranking_source, ?) = ?
             ORDER BY evaluated_at DESC LIMIT 1
@@ -543,7 +596,7 @@ class SqliteUniverseStore:
         row = self._connection.execute(
             """
             SELECT run_id FROM dynamic_universe_runs
-            WHERE status = 'succeeded' AND selected_count > 0
+            WHERE status = 'succeeded'
               AND evaluated_at >= ? AND evaluated_at <= ?
               AND COALESCE(ranking_source, ?) = ?
             ORDER BY evaluated_at DESC LIMIT 1
@@ -560,7 +613,7 @@ class SqliteUniverseStore:
         rows = self._connection.execute(
             """
             SELECT symbol FROM dynamic_universe_decisions
-            WHERE run_id = ? AND eligible_rank IS NOT NULL
+            WHERE run_id = ? AND eligible_rank IS NOT NULL AND risk_approved = 1
             ORDER BY eligible_rank, amount_rank, symbol
             """,
             (row[0],),
@@ -582,6 +635,7 @@ class SqliteUniverseStore:
             WHERE r.status = 'succeeded'
               AND r.evaluated_at >= ? AND r.evaluated_at <= ?
               AND d.eligible_rank BETWEEN 1 AND ?
+              AND d.risk_approved = 1
             ORDER BY r.evaluated_at DESC, d.eligible_rank, d.symbol
             """,
             (since.isoformat(), until.isoformat(), max_eligible_rank),
@@ -671,7 +725,6 @@ class PostgresUniverseStore:
                 """
                 SELECT run_id FROM dynamic_universe_runs
                 WHERE status = 'succeeded'
-                  AND selected_count > 0
                   AND evaluated_at >= %s AND evaluated_at <= %s
                   AND COALESCE(ranking_source, %s) = %s
                 ORDER BY evaluated_at DESC LIMIT 1
@@ -707,7 +760,6 @@ class PostgresUniverseStore:
                 """
                 SELECT run_id FROM dynamic_universe_runs
                 WHERE status = 'succeeded'
-                  AND selected_count > 0
                   AND evaluated_at >= %s AND evaluated_at <= %s
                   AND COALESCE(ranking_source, %s) = %s
                 ORDER BY evaluated_at DESC LIMIT 1
@@ -720,7 +772,7 @@ class PostgresUniverseStore:
             cursor.execute(
                 """
                 SELECT symbol FROM dynamic_universe_decisions
-                WHERE run_id = %s AND eligible_rank IS NOT NULL
+                WHERE run_id = %s AND eligible_rank IS NOT NULL AND risk_approved
                 ORDER BY eligible_rank, amount_rank, symbol
                 """,
                 (row[0],),
@@ -743,6 +795,7 @@ class PostgresUniverseStore:
                 WHERE r.status = 'succeeded'
                   AND r.evaluated_at >= %s AND r.evaluated_at <= %s
                   AND d.eligible_rank BETWEEN 1 AND %s
+                  AND d.risk_approved
                 ORDER BY r.evaluated_at DESC, d.eligible_rank, d.symbol
                 """,
                 (since, until, max_eligible_rank),
@@ -831,6 +884,28 @@ def _ranking_rows(payload: object) -> tuple[list[Mapping[str, Any]], datetime | 
     if any(not isinstance(item, Mapping) for item in rankings):
         raise TypeError("each ranking must be an object")
     return rankings, ranked_at
+
+
+def _ranking_session(payload: object) -> date | None:
+    if not isinstance(payload, Mapping):
+        raise TypeError("ranking response must be an object")
+    raw = payload.get("rankingSession")
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise TypeError("ranking rankingSession must be text or null")
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as error:
+        raise ValueError("ranking rankingSession must be an ISO date") from error
+
+
+def _daily_is_current(candles: Sequence[Candle], expected_session: date | None) -> bool:
+    if len(candles) < 200:
+        return False
+    if expected_session is None:
+        return True
+    return candles[-1].timestamp.astimezone(SEOUL).date() == expected_session
 
 
 def _amount_rankings(

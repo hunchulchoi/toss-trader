@@ -12,7 +12,7 @@ from toss_trader.krx_openapi import (
 
 
 class KrxOpenApiTest(unittest.TestCase):
-    def test_merges_markets_sorts_amount_and_skips_non_six_codes(self) -> None:
+    def test_merges_markets_sorts_amount_and_accepts_six_char_codes(self) -> None:
         payload = krx_rows_to_rankings(
             [
                 {
@@ -42,23 +42,33 @@ class KrxOpenApiTest(unittest.TestCase):
                     "ACC_TRDVAL": "2,000,000,000",
                 }
             ],
-            count=2,
+            count=3,
             ranked_at=datetime(2026, 8, 20, 3, 0, tzinfo=UTC),
         )
 
         self.assertEqual(
             [item["symbol"] for item in payload["rankings"]],
-            ["000660", "005930"],
+            ["0004V0", "000660", "005930"],
         )
         self.assertEqual(payload["rankings"][0]["rank"], 1)
-        self.assertEqual(payload["rankings"][0]["tradingAmount"], "2000000000")
-        self.assertEqual(payload["rankings"][0]["price"]["changeRate"], "-0.015")
-        self.assertEqual(payload["rankings"][1]["price"]["changeRate"], "0.02")
+        self.assertEqual(payload["rankings"][1]["tradingAmount"], "2000000000")
+        self.assertEqual(payload["rankings"][1]["price"]["changeRate"], "-0.015")
+        self.assertEqual(payload["rankings"][2]["price"]["changeRate"], "0.02")
         self.assertEqual(payload["rankedAt"], "2026-08-20T03:00:00+00:00")
 
     def test_empty_blocks_are_data_error(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "krx daily rankings are empty"):
             krx_rows_to_rankings([], [], count=10, ranked_at=datetime.now(UTC))
+
+    def test_malformed_allowed_symbol_is_data_error(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "row is invalid for 005930"):
+            krx_rows_to_rankings(
+                [{"ISU_CD": "005930", "TDD_CLSPRC": "", "FLUC_RT": "0"}],
+                [],
+                count=1,
+                ranked_at=datetime.now(UTC),
+                allowed_symbols=frozenset({"005930"}),
+            )
 
     def test_fetch_requests_prior_session_and_maps_auth_header(self) -> None:
         calls: list[Request] = []
@@ -78,7 +88,16 @@ class KrxOpenApiTest(unittest.TestCase):
                     ]
                 }
             else:
-                body = {"OutBlock_1": []}
+                body = {
+                    "OutBlock_1": [
+                        {
+                            "ISU_CD": "000660",
+                            "TDD_CLSPRC": "1",
+                            "FLUC_RT": "0",
+                            "ACC_TRDVAL": "9",
+                        }
+                    ]
+                }
             return BytesIO(json.dumps(body).encode())
 
         payload = fetch_krx_acc_trdval_rankings(
@@ -96,6 +115,31 @@ class KrxOpenApiTest(unittest.TestCase):
         self.assertTrue(all("basDd=20260819" in item.full_url for item in calls))
         self.assertNotIn("secret-key", calls[0].full_url)
         self.assertEqual(payload["rankings"][0]["symbol"], "005930")
+
+    def test_one_empty_market_block_is_fail_closed(self) -> None:
+        def fake_urlopen(request: Request, timeout: float = 0) -> BytesIO:
+            rows = (
+                [
+                    {
+                        "ISU_CD": "005930",
+                        "TDD_CLSPRC": "1",
+                        "FLUC_RT": "0",
+                        "ACC_TRDVAL": "10",
+                    }
+                ]
+                if "stk_bydd_trd" in request.full_url
+                else []
+            )
+            return BytesIO(json.dumps({"OutBlock_1": rows}).encode())
+
+        with self.assertRaisesRegex(RuntimeError, "empty market block"):
+            fetch_krx_acc_trdval_rankings(
+                api_key="secret-key",
+                bas_dd="20260819",
+                count=1,
+                ranked_at=datetime.now(UTC),
+                urlopen=fake_urlopen,
+            )
 
     def test_unauthorized_is_fail_closed(self) -> None:
         def fake_urlopen(request: Request, timeout: float = 0) -> BytesIO:

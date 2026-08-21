@@ -311,15 +311,12 @@ flowchart TD
     S[n8n 5분 trigger] --> API[POST /workflow/paper-rule-1m]
     API --> HAPI[POST /workflow/paper-hermes-1m]
     API --> U{오늘 성공한\nuniverse가 있는가?}
-    U -->|예| UC[당일 같은 source 선정 cache]
-    U -->|아니오| SRC{서울 12:00 이후인가?}
-    SRC -->|아니오| R1[Toss 실시간 거래대금 최대 100]
-    SRC -->|예| R2[KRX 전일 ACC_TRDVAL 최대 100]
+    U -->|예| UC[D-1 setup-first 당일 cache\n정상 0종 포함]
+    U -->|아니오| R1[08:35 KRX D-1 실제 조회 ∩ market_symbols\n전일 거래대금·종가]
     R1 --> META[/stocks metadata batch 조회]
-    R2 --> META
-    META --> STATIC[STOCK·보통주·ACTIVE·거래정상\neligible Top 30 재랭크]
-    STATIC --> PRICE[직전 완결 일봉 200개\n가격 setup 필터]
-    PRICE --> UR[최대 15 선정·미충원]
+    META --> STATIC[STOCK·보통주·ACTIVE·거래정상]
+    STATIC --> PRICE[전체 직전 완결 일봉 200개\n가격·PIT·이벤트 우선 평가]
+    PRICE --> UR[통과자 거래대금 재랭크\n최대 15·미충원]
     UR --> UL[(dynamic_universe_runs\ndynamic_universe_decisions)]
     UR --> PICK[승인 상위 15까지 + 보유 종목\n부족분 채움 없음]
     UC --> C

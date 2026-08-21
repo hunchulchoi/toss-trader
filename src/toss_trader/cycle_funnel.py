@@ -23,6 +23,8 @@ def insights_from_runs(runs: Sequence[PaperCycleRun]) -> tuple[dict[str, Any], .
         except (JSONDecodeError, TypeError, UnicodeError):
             continue
         if isinstance(payload, dict):
+            payload = dict(payload)
+            payload["_observedAt"] = run.started_at.isoformat()
             insights.append(payload)
     return tuple(insights)
 
@@ -46,21 +48,49 @@ def aggregate_intraday_review(
             if not symbol:
                 continue
             state = latest.setdefault(
-                symbol, {"buyFills": 0, "sellFills": 0, "lastReason": None}
+                symbol,
+                {
+                    "buyFills": 0,
+                    "sellFills": 0,
+                    "firstReason": None,
+                    "lastReason": None,
+                    "lastReasonClass": None,
+                    "firstObservedAt": None,
+                    "lastObservedAt": None,
+                    "reasonCounts": Counter(),
+                    "transitionCount": 0,
+                },
             )
             fill_side = row.get("fillSide")
+            row_error = None
             if fill_side == "BUY":
                 buy_fills += 1
                 state["buyFills"] += 1
-                state["lastReason"] = "filled:BUY"
+                reason = "filled:BUY"
             elif fill_side == "SELL":
                 sell_fills += 1
                 state["sellFills"] += 1
-                state["lastReason"] = "filled:SELL"
+                reason = "filled:SELL"
             else:
-                reason = row.get("skipReason") or row.get("error") or row.get("reason")
-                if reason:
-                    state["lastReason"] = str(reason)
+                row_error = row.get("error")
+                reason = row.get("skipReason") or row_error or row.get("reason")
+            if reason:
+                reason = str(reason)
+                reason_class = (
+                    "error"
+                    if fill_side not in {"BUY", "SELL"} and row_error
+                    else _reason_class(reason)
+                )
+                observed_at = insight.get("_observedAt")
+                if state["firstReason"] is None:
+                    state["firstReason"] = reason
+                    state["firstObservedAt"] = observed_at
+                elif state["lastReason"] != reason:
+                    state["transitionCount"] += 1
+                state["lastReason"] = reason
+                state["lastReasonClass"] = reason_class
+                state["lastObservedAt"] = observed_at
+                state["reasonCounts"][reason] += 1
 
     last_reasons = Counter(
         str(state["lastReason"])
@@ -70,21 +100,54 @@ def aggregate_intraday_review(
     details = tuple(
         {
             "symbol": symbol,
+            "firstReason": state["firstReason"],
             "lastReason": state["lastReason"],
+            "firstObservedAt": state["firstObservedAt"],
+            "lastObservedAt": state["lastObservedAt"],
+            "reasonCounts": dict(state["reasonCounts"]),
+            "transitionCount": state["transitionCount"],
+            "reasonClass": state["lastReasonClass"]
+            or _reason_class(state["lastReason"]),
             "buyFills": state["buyFills"],
             "sellFills": state["sellFills"],
         }
         for symbol, state in sorted(latest.items())
     )
+    changed = tuple(
+        {
+            "symbol": row["symbol"],
+            "from": row["firstReason"],
+            "to": row["lastReason"],
+            "transitions": row["transitionCount"],
+        }
+        for row in details
+        if row["transitionCount"]
+    )
     return {
+        "schemaVersion": 2,
         "purpose": REVIEW_PURPOSE,
         "cycles": len(insights) if cycle_count is None else cycle_count,
         "symbols": len(latest),
         "buyFills": buy_fills,
         "sellFills": sell_fills,
         "lastReasons": dict(last_reasons),
+        "reasonClasses": dict(
+            Counter(row["reasonClass"] for row in details)
+        ),
+        "changedFacts": changed,
         "symbolsDetail": details,
     }
+
+
+def _reason_class(reason: object) -> str:
+    value = str(reason or "")
+    if value == "error" or "unavailable" in value:
+        return "error"
+    if ":waiting:" in value:
+        return "waiting"
+    if ":missing:" in value or "completed-daily-candles" in value:
+        return "missing-data"
+    return "normal-rejection"
 
 
 def format_intraday_review_lines(review: Mapping[str, Any]) -> tuple[str, ...]:

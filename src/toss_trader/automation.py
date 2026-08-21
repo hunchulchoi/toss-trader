@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from .calendar import MarketCalendarService, MarketSession
 from .client import TossClient
@@ -1383,9 +1384,18 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
         briefing_observed_at, str
     ):
         raise TypeError("briefingObservedAt must be text")
+    if briefing_observed_at is not None:
+        observed_at = datetime.fromisoformat(briefing_observed_at)
+        if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+            raise ValueError("briefingObservedAt must include a timezone offset")
+        seoul = observed_at.astimezone(ZoneInfo("Asia/Seoul"))
+        if 11 <= seoul.hour < 15 and briefing_kind != "midday":
+            raise ValueError("midday briefingKind does not match observed time")
+        if briefing_kind == "midday" and not 11 <= seoul.hour < 15:
+            raise ValueError("midday briefingKind does not match observed time")
     portfolios = {
-        "rule": rule.get("cycle", rule),
-        "hermes": hermes.get("cycle", hermes),
+        "rule": _compact_panel_cycle(rule.get("cycle", rule)),
+        "hermes": _compact_panel_cycle(hermes.get("cycle", hermes)),
     }
     summaries = [
         value.get("summary", {})
@@ -1401,27 +1411,115 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "cycle": {
             "comparison": True,
-            "portfolios": portfolios,
-            "dailyReview": {
-                "purpose": REVIEW_PURPOSE,
-                "portfolios": {
-                    "rule": (
-                        portfolios["rule"].get("intradayReview")
-                        if isinstance(portfolios["rule"], dict)
-                        else None
-                    ),
-                    "hermes": (
-                        portfolios["hermes"].get("intradayReview")
-                        if isinstance(portfolios["hermes"], dict)
-                        else None
-                    ),
-                },
+            "middaySnapshotV2": {
+                "schemaVersion": 2,
+                "kind": briefing_kind,
+                "observedAt": briefing_observed_at,
+                "portfolios": portfolios,
             },
+            "dailyReview": {"purpose": REVIEW_PURPOSE, "schemaVersion": 2},
             "summary": {
                 key: sum(int(summary.get(key, 0)) for summary in summaries)
                 for key in ("symbols", "signals", "fills", "skipped", "failed")
             },
         },
+    }
+
+
+def _compact_panel_cycle(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    compact = {
+        key: (
+            _compact_intraday_review(value.get(key))
+            if key == "intradayReview"
+            else value.get(key)
+        )
+        for key in (
+            "portfolioId",
+            "startedAt",
+            "finishedAt",
+            "dailyReturnRate",
+            "equity",
+            "realizedPnl",
+            "unrealizedPnl",
+            "totalCosts",
+            "initialCash",
+            "cashBalance",
+            "consecutiveApiErrors",
+            "summary",
+            "intradayReview",
+            "intradaySample",
+            "universe",
+            "evaluationPool",
+        )
+        if key in value
+    }
+    return compact
+
+
+def _compact_intraday_review(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    details = value.get("symbolsDetail")
+    details = details if isinstance(details, (list, tuple)) else ()
+    compact_details = []
+    for row in sorted(
+        (item for item in details if isinstance(item, dict)),
+        key=lambda item: (-int(item.get("transitionCount") or 0), str(item.get("symbol") or "")),
+    )[:10]:
+        reason_counts = row.get("reasonCounts")
+        reason_counts = reason_counts if isinstance(reason_counts, dict) else {}
+        compact_details.append(
+            {
+                **{
+                    key: row.get(key)
+                    for key in (
+                        "symbol",
+                        "firstReason",
+                        "lastReason",
+                        "firstObservedAt",
+                        "lastObservedAt",
+                        "transitionCount",
+                        "reasonClass",
+                        "buyFills",
+                        "sellFills",
+                    )
+                },
+                "reasonCounts": dict(
+                    sorted(
+                        reason_counts.items(),
+                        key=lambda item: (-int(item[1]), str(item[0])),
+                    )[:5]
+                ),
+            }
+        )
+    changed = value.get("changedFacts")
+    changed = changed if isinstance(changed, (list, tuple)) else ()
+    compact_changed = tuple(
+        {
+            key: item.get(key)
+            for key in ("symbol", "from", "to", "transitions")
+        }
+        for item in changed
+        if isinstance(item, dict)
+    )[:10]
+    return {
+        key: value.get(key)
+        for key in (
+            "schemaVersion",
+            "purpose",
+            "cycles",
+            "symbols",
+            "buyFills",
+            "sellFills",
+            "lastReasons",
+            "reasonClasses",
+        )
+        if key in value
+    } | {
+        "changedFacts": compact_changed,
+        "symbolsDetail": tuple(compact_details),
     }
 
 

@@ -22,13 +22,19 @@ def krx_rows_to_rankings(
     *,
     count: int,
     ranked_at: datetime,
+    allowed_symbols: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     best: dict[str, dict[str, str]] = {}
     for row in (*kospi_rows, *kosdaq_rows):
+        raw_symbol = str(row.get("ISU_CD") or "").strip()
         parsed = _parse_row(row)
         if parsed is None:
+            if allowed_symbols is not None and raw_symbol in allowed_symbols:
+                raise RuntimeError(f"krx ranking row is invalid for {raw_symbol}")
             continue
         symbol, last_price, change_rate, trading_amount = parsed
+        if allowed_symbols is not None and symbol not in allowed_symbols:
+            continue
         current = best.get(symbol)
         if current is None or Decimal(trading_amount) > Decimal(
             current["tradingAmount"]
@@ -68,13 +74,22 @@ def fetch_krx_acc_trdval_rankings(
     bas_dd: str,
     count: int,
     ranked_at: datetime,
+    allowed_symbols: frozenset[str] | None = None,
     urlopen: Callable[..., Any] = default_urlopen,
 ) -> dict[str, Any]:
     if not api_key.strip():
         raise RuntimeError("KRX_API_KEY is required for afternoon universe rankings")
     kospi = _fetch_block(KOSPI_DAILY, api_key=api_key, bas_dd=bas_dd, urlopen=urlopen)
     kosdaq = _fetch_block(KOSDAQ_DAILY, api_key=api_key, bas_dd=bas_dd, urlopen=urlopen)
-    return krx_rows_to_rankings(kospi, kosdaq, count=count, ranked_at=ranked_at)
+    if not kospi or not kosdaq:
+        raise RuntimeError("krx daily rankings contain an empty market block")
+    return krx_rows_to_rankings(
+        kospi,
+        kosdaq,
+        count=count,
+        ranked_at=ranked_at,
+        allowed_symbols=allowed_symbols,
+    )
 
 
 def _fetch_block(
@@ -112,7 +127,7 @@ def _fetch_block(
 
 def _parse_row(row: Mapping[str, Any]) -> tuple[str, str, str, str] | None:
     symbol = str(row.get("ISU_CD") or "").strip()
-    if len(symbol) != 6 or not symbol.isdigit() or not SYMBOL_PATTERN.fullmatch(symbol):
+    if len(symbol) != 6 or not SYMBOL_PATTERN.fullmatch(symbol):
         return None
     last_price = _decimal_text(row.get("TDD_CLSPRC"))
     trading_amount = _decimal_text(row.get("ACC_TRDVAL"))

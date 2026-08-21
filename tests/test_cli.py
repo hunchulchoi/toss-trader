@@ -13,6 +13,7 @@ from toss_trader.cli import (
     _cycle_snapshot_to_dict,
     _extend_cycle_snapshot,
     _hermes_candidate_snapshot,
+    _seoul_day_window,
     build_parser,
     main,
 )
@@ -27,6 +28,14 @@ from toss_trader.risk import RiskLimits, RiskManager
 
 
 class IntradaySampleCollectionTest(unittest.TestCase):
+    def test_intraday_review_window_starts_at_market_open(self) -> None:
+        started, finished = _seoul_day_window(
+            datetime(2026, 8, 21, 2, 50, tzinfo=UTC)
+        )
+
+        self.assertEqual(started, datetime(2026, 8, 21, 0, 0, tzinfo=UTC))
+        self.assertEqual(finished, datetime(2026, 8, 21, 2, 50, tzinfo=UTC))
+
     def test_collects_thirty_bars_only_for_non_cycle_candidates(self) -> None:
         class Collector:
             def __init__(self) -> None:

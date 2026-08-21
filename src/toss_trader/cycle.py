@@ -443,7 +443,13 @@ class PaperCycleRunner:
                     if (
                         stored_plan is None
                         and v2_candidates[index] is not None
+                        and v2_candidates[index].decision.approved
                         and not entry_blocked_by_legacy
+                        and session.market_open_at is not None
+                        and now
+                        >= session.market_open_at + COMPLETED_ONE_MINUTE_OFFSET
+                        and now
+                        <= session.market_open_at + V2_ENTRY_ARM_WINDOW
                     ):
                         self._ensure_v2_opening_bar(
                             symbol=symbol,
@@ -842,6 +848,10 @@ class PaperCycleRunner:
             return None, "setup-v2:blocked:legacy-portfolio", None
         if candidate is None:
             return None, "setup-v2:missing:daily-candidate", None
+        if not candidate.decision.approved:
+            return None, _v2_rejection_reason(candidate), None
+        if now > session.market_open_at + V2_ENTRY_ARM_WINDOW:
+            return None, "setup-v2:blocked:late-entry-window", None
         first_bar = next(
             (
                 bar
@@ -869,8 +879,6 @@ class PaperCycleRunner:
         )
         if not decision.armed or decision.plan is None:
             return None, decision.reason, None
-        if now > session.market_open_at + V2_ENTRY_ARM_WINDOW:
-            return None, "setup-v2:blocked:late-entry-window", None
         plan = decision.plan
         return (
             TradeSignal(

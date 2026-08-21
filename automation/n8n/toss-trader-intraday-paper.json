@@ -3,6 +3,7 @@
   "name": "Toss Trader Intraday Rule vs Hermes",
   "active": false,
   "nodes": [
+    {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "35 8 * * 1-5"}]}}, "id": "schedule-prepare", "name": "평일 08:35 장전 풀 준비", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.3, "position": [0, -160]},
     {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "*/5 9-14 * * 1-5"}]}}, "id": "schedule-am", "name": "평일 09:00-14:55 5분", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0]},
     {"parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "0-20/5 15 * * 1-5"}]}}, "id": "schedule-pm", "name": "평일 15:00-15:20 5분", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 160]},
     {"parameters": {}, "id": "manual", "name": "수동 테스트", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 320]},
@@ -23,6 +24,7 @@
     {"parameters": {"jsCode": "return items;"}, "id": "notice-skipped", "name": "특이사항 없음", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2440, 100]}
   ],
   "connections": {
+    "평일 08:35 장전 풀 준비": {"main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]},
     "평일 09:00-14:55 5분": {"main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]},
     "평일 15:00-15:20 5분": {"main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]},
     "수동 테스트": {"main": [[{"node": "시장 Snapshot + Rule 1분봉", "type": "main", "index": 0}]]},

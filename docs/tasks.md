@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-014 Build a setup-first opening pool and useful midday review
+
+- Owner: codex/cursor/agy
+- Status: DONE
+- Result: observe KRX D-1 at 08:35, evaluate the PIT-managed pool through
+  current D-1 candles and mandatory PIT/event gates before liquidity ranking,
+  preserve truthful opening reasons, and provide one bounded transition-based
+  midday panel snapshot with explicit briefing kinds
+- Checks: 365 unit tests, changed-file Ruff, Git whitespace, n8n JSON and new
+  Schedule/Set node schema validation, independent Cursor and agy review
+- Risks: first production 08:35 KRX response and n8n published graph still need
+  rollout smoke; actual paper signal frequency and profitability remain unknown
+- 기록 시각: 2026-08-21 14:40 KST
+
 ### STRAT-013 Give Hermes the expanded Top30 candidate pool
 
 - Owner: codex

@@ -494,7 +494,7 @@ class SetupScreeningTest(unittest.TestCase):
             context = OfficialSetupContextFactory(path)(
                 "005930",
                 date(2026, 8, 18),
-                datetime(2026, 8, 18, 15, 0, tzinfo=SEOUL),
+                datetime(2026, 8, 18, 6, 0, tzinfo=UTC),
                 False,
             )
 

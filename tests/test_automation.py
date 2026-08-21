@@ -913,14 +913,102 @@ class PaperCycleNoticeTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            payload["cycle"]["dailyReview"]["portfolios"]["rule"]["cycles"], 2
+            payload["cycle"]["middaySnapshotV2"]["portfolios"]["rule"][
+                "intradayReview"
+            ]["cycles"],
+            2,
         )
         self.assertEqual(
-            payload["cycle"]["dailyReview"]["portfolios"]["hermes"]["buyFills"],
+            payload["cycle"]["middaySnapshotV2"]["portfolios"]["hermes"][
+                "intradayReview"
+            ]["buyFills"],
             0,
         )
         self.assertEqual(payload["briefing"]["kind"], "close")
         self.assertTrue(payload["briefing"]["isFinal"])
+        self.assertEqual(
+            payload["cycle"]["middaySnapshotV2"]["schemaVersion"], 2
+        )
+
+    def test_comparison_payload_rejects_close_kind_at_midday(self) -> None:
+        with self.assertRaisesRegex(ValueError, "midday briefingKind"):
+            _comparison_payload(
+                {
+                    "briefingKind": "close",
+                    "briefingObservedAt": "2026-08-21T11:50:00+09:00",
+                    "rule": {"exitCode": 0, "cycle": {}},
+                    "hermes": {"exitCode": 0, "cycle": {}},
+                }
+            )
+
+    def test_comparison_payload_rejects_midday_kind_at_close(self) -> None:
+        with self.assertRaisesRegex(ValueError, "midday briefingKind"):
+            _comparison_payload(
+                {
+                    "briefingKind": "midday",
+                    "briefingObservedAt": "2026-08-21T15:40:00+09:00",
+                    "rule": {"exitCode": 0, "cycle": {}},
+                    "hermes": {"exitCode": 0, "cycle": {}},
+                }
+            )
+
+    def test_comparison_payload_drops_large_raw_cycle_fields(self) -> None:
+        payload = _comparison_payload(
+            {
+                "briefingKind": "midday",
+                "briefingObservedAt": "2026-08-21T11:50:00+09:00",
+                "rule": {
+                    "exitCode": 0,
+                    "cycle": {"items": [{"raw": "x" * 20000}], "summary": {}},
+                },
+                "hermes": {"exitCode": 0, "cycle": {"summary": {}}},
+            }
+        )
+
+        self.assertNotIn(
+            "items",
+            payload["cycle"]["middaySnapshotV2"]["portfolios"]["rule"],
+        )
+        self.assertLess(len(json.dumps(payload)), 12000)
+
+    def test_comparison_payload_bounds_full_thirty_symbol_reviews(self) -> None:
+        details = [
+            {
+                "symbol": f"{index:06d}",
+                "firstReason": "setup-v2:waiting:first-session-bar",
+                "lastReason": "setup-v2:violation:missing-price-setup",
+                "firstObservedAt": "2026-08-21T09:00:00+09:00",
+                "lastObservedAt": "2026-08-21T11:45:00+09:00",
+                "transitionCount": index,
+                "reasonClass": "normal-rejection",
+                "reasonCounts": {f"reason-{value}": value for value in range(10)},
+                "buyFills": 0,
+                "sellFills": 0,
+            }
+            for index in range(30)
+        ]
+        review = {
+            "schemaVersion": 2,
+            "cycles": 35,
+            "symbols": 30,
+            "buyFills": 0,
+            "sellFills": 0,
+            "lastReasons": {"setup-v2:violation:missing-price-setup": 30},
+            "reasonClasses": {"normal-rejection": 30},
+            "changedFacts": details,
+            "symbolsDetail": details,
+        }
+
+        payload = _comparison_payload(
+            {
+                "briefingKind": "midday",
+                "briefingObservedAt": "2026-08-21T11:50:00+09:00",
+                "rule": {"exitCode": 0, "cycle": {"intradayReview": review}},
+                "hermes": {"exitCode": 0, "cycle": {"intradayReview": review}},
+            }
+        )
+
+        self.assertLessEqual(len(json.dumps(payload)), 12000)
 
     def test_comparison_payload_rejects_unknown_briefing_kind(self) -> None:
         with self.assertRaisesRegex(ValueError, "briefingKind"):

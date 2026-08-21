@@ -303,9 +303,12 @@ class MonitoringAssetsTest(unittest.TestCase):
 
         self.assertFalse(workflow["active"])
         self.assertEqual(workflow["settings"]["timezone"], "Asia/Seoul")
-        schedule = json.dumps(nodes["평일 11:50·15:40 KST"])
-        self.assertIn("50 11 * * 1-5", schedule)
-        self.assertIn("40 15 * * 1-5", schedule)
+        midday_schedule = json.dumps(nodes["평일 11:50 KST"])
+        close_schedule = json.dumps(nodes["평일 15:40 KST"])
+        self.assertIn("50 11 * * 1-5", midday_schedule)
+        self.assertNotIn("40 15 * * 1-5", midday_schedule)
+        self.assertIn("40 15 * * 1-5", close_schedule)
+        self.assertNotIn("50 11 * * 1-5", close_schedule)
         encoded = json.dumps(workflow, ensure_ascii=False)
         self.assertIn("/workflow/paper-rule-1d", encoded)
         self.assertIn("/workflow/paper-hermes-1d", encoded)
@@ -322,10 +325,26 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("briefingKind", encoded)
         self.assertIn("midday", encoded)
         self.assertIn("close", encoded)
+        self.assertNotIn('$execution.mode === "trigger"', encoded)
+        self.assertNotIn('$now.setZone("Asia/Seoul").hour', encoded)
+        self.assertEqual(
+            nodes["11:50 중간 브리핑 명시"]["parameters"]["assignments"][
+                "assignments"
+            ][0]["value"],
+            "midday",
+        )
+        self.assertEqual(
+            nodes["15:40 장마감 브리핑 명시"]["parameters"]["assignments"][
+                "assignments"
+            ][0]["value"],
+            "close",
+        )
         self._assert_scheduled_runs_use_toss_market_calendar(workflow)
         for trigger_name in ("수동 테스트", "인증된 마감 리뷰 요청"):
             target = workflow["connections"][trigger_name]["main"][0][0]["node"]
-            self.assertEqual(target, "Toss 한국장 일정 확인")
+            self.assertIn("브리핑 명시", target)
+            calendar_target = workflow["connections"][target]["main"][0][0]["node"]
+            self.assertEqual(calendar_target, "Toss 한국장 일정 확인")
         for branch in (
             "Rule 일봉 정상?",
             "Rule 일봉 체결 있음?",
@@ -374,6 +393,7 @@ class MonitoringAssetsTest(unittest.TestCase):
 
         self.assertFalse(workflow["active"])
         self.assertEqual(workflow["settings"]["timezone"], "Asia/Seoul")
+        self.assertIn("35 8 * * 1-5", encoded)
         self.assertIn("*/5 9-14 * * 1-5", encoded)
         self.assertIn("0-20/5 15 * * 1-5", encoded)
         self.assertIn("/workflow/paper-rule-1m", encoded)
@@ -470,6 +490,8 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("isBusinessDay", json.dumps(gate, ensure_ascii=False))
         for schedule_name in schedule_names:
             target = workflow["connections"][schedule_name]["main"][0][0]["node"]
+            if nodes[target]["type"] == "n8n-nodes-base.set":
+                target = workflow["connections"][target]["main"][0][0]["node"]
             self.assertEqual(target, "Toss 한국장 일정 확인")
         self.assertEqual(
             workflow["connections"]["Toss 한국장 일정 확인"]["main"][0][0][

@@ -51,7 +51,13 @@ from .pit_collector import run_pit_collection, serve_pit_collector
 from .portfolio import PortfolioPerformance
 from .portfolio_backtest import PortfolioBacktestResult, run_ma_portfolio_backtest
 from .repository import MarketRepository, open_market_repository
-from .risk import N8nRiskManager, RiskLimits, RiskManager, UniverseRiskContext
+from .risk import (
+    N8nRiskManager,
+    RiskDecision,
+    RiskLimits,
+    RiskManager,
+    UniverseRiskContext,
+)
 from .setup_screening import OfficialSetupContextFactory
 from .strategy import MaCrossoverEvaluation, ma_crossover_signal
 from .timeline_web import serve_timeline
@@ -1233,6 +1239,13 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             )
             symbols = snapshot.symbols
         collector = MarketCollector(client=client, repository=market_repository)
+        v2_strategy = OfficialV2CycleStrategy(
+            market_repository,
+            context_factory=OfficialSetupContextFactory(
+                settings.market_db_path,
+                postgres_parameters=settings.postgres_connection_parameters(),
+            ),
+        )
         universe_result = None
         if explicit_symbols is not None:
             symbols = explicit_symbols
@@ -1244,6 +1257,35 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             stack.callback(universe_store.close)
             latest_cycle = cycle_state.latest_run()
             calendar = MarketCalendarService(client)
+            official_repository = _official_repository(settings)
+            stack.callback(official_repository.close)
+
+            def opening_rankings(now: datetime) -> dict:
+                if not settings.krx_api_key:
+                    raise RuntimeError(
+                        "KRX_API_KEY is required for D-1 opening rankings"
+                    )
+                session = previous_kr_business_date(calendar, now)
+                known_symbols = frozenset(official_repository.symbols())
+                if not known_symbols:
+                    raise RuntimeError("known opening pool is empty")
+                payload = fetch_krx_acc_trdval_rankings(
+                    api_key=settings.krx_api_key,
+                    bas_dd=session.strftime("%Y%m%d"),
+                    count=len(known_symbols),
+                    ranked_at=now,
+                    allowed_symbols=known_symbols,
+                )
+                payload["rankingSession"] = session.isoformat()
+                return payload
+
+            def candidate_gate(symbol: str, now: datetime) -> RiskDecision:
+                decision = v2_strategy.build_candidate(symbol, now=now).decision
+                reasons = (
+                    *(f"missing:{value}" for value in decision.missing_checks),
+                    *(f"violation:{value}" for value in decision.violations),
+                )
+                return RiskDecision(decision.approved, reasons)
 
             def krx_amount_rankings(now: datetime, count: int) -> dict:
                 if not settings.krx_api_key:
@@ -1268,6 +1310,8 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 ranking_fetch_count=settings.dynamic_universe_ranking_fetch_count,
                 universe_size=settings.dynamic_universe_size,
                 krx_amount_rankings=krx_amount_rankings,
+                opening_rankings=opening_rankings,
+                candidate_gate=candidate_gate,
             ).resolve(
                 now=now,
                 held_symbols=performance.open_position_symbols(),
@@ -1334,13 +1378,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             calendar=MarketCalendarService(client),
             performance=performance,
             state=cycle_state,
-            v2_strategy=OfficialV2CycleStrategy(
-                market_repository,
-                context_factory=OfficialSetupContextFactory(
-                    settings.market_db_path,
-                    postgres_parameters=settings.postgres_connection_parameters(),
-                ),
-            ),
+            v2_strategy=v2_strategy,
         ).run(
             symbols=symbols,
             interval=interval,
@@ -1464,7 +1502,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
 
 def _seoul_day_window(now: datetime) -> tuple[datetime, datetime]:
     local = now.astimezone(ZoneInfo("Asia/Seoul"))
-    start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = local.replace(hour=9, minute=0, second=0, microsecond=0)
     return start.astimezone(UTC), now.astimezone(UTC)
 
 

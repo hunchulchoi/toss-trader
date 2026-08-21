@@ -139,6 +139,8 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         universe_size: int = 2,
         risk_manager: object | None = None,
         krx_amount_rankings: object | None = None,
+        opening_rankings: object | None = None,
+        candidate_gate: object | None = None,
     ) -> DynamicUniverseSelector:
         return DynamicUniverseSelector(
             client=client,
@@ -150,6 +152,8 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             ranking_fetch_count=fetch_count,
             universe_size=universe_size,
             krx_amount_rankings=krx_amount_rankings,  # type: ignore[arg-type]
+            opening_rankings=opening_rankings,  # type: ignore[arg-type]
+            candidate_gate=candidate_gate,  # type: ignore[arg-type]
         )
 
     @staticmethod
@@ -178,15 +182,15 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             risk_context=self._context(),
         )
 
-        self.assertEqual(first.symbols, ("005930", "000660"))
-        self.assertEqual(first.entry_symbols, ("005930", "000660"))
+        self.assertEqual(first.symbols, ("005930", "207940"))
+        self.assertEqual(first.entry_symbols, ("005930", "207940"))
         self.assertEqual(
-            first.collection_symbols, ("005930", "000660", "207940")
+            first.collection_symbols, ("005930", "207940")
         )
         self.assertFalse(second.refreshed)
-        self.assertEqual(second.symbols, ("005930", "000660", "035420"))
+        self.assertEqual(second.symbols, ("005930", "207940", "035420"))
         self.assertEqual(
-            second.collection_symbols, ("005930", "000660", "207940")
+            second.collection_symbols, ("005930", "207940")
         )
         self.assertTrue(third.refreshed)
         self.assertEqual(
@@ -195,7 +199,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
                 NOW + timedelta(days=1, minutes=1),
                 max_eligible_rank=2,
             ),
-            ("005930", "000660"),
+            ("005930", "207940"),
         )
         self.assertEqual(client.ranking_calls, [("MARKET_TRADING_AMOUNT", 5)] * 2)
         rows = self.store._connection.execute(
@@ -206,7 +210,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             """
         ).fetchall()
         no_setup = next(row for row in rows if row[0] == "000660")
-        self.assertEqual(no_setup[1:5], (2, 2, 1, 1))
+        self.assertEqual(no_setup[1:5], (2, None, 0, 0))
         self.assertIn("missing-price-setup", no_setup[5])
 
     def test_overfetches_then_filters_and_reranks_static_eligible_stocks(self) -> None:
@@ -263,6 +267,91 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         )
 
         self.assertEqual(client.ranking_calls, [("MARKET_TRADING_AMOUNT", 5)])
+
+    def test_opening_pool_evaluates_setups_before_candidate_limit(self) -> None:
+        rows = (
+            ("000660", "190000", "500", "0.01"),
+            ("035420", "50000", "400", "0.01"),
+            ("005930", "71000", "300", "0.01"),
+            ("207940", "1500000", "200", "0.01"),
+        )
+        self.repository.upsert_candles(daily_history("035420", price_setup=False))
+        client = FakeRankingClient(rows=rows)
+        payload = client.rankings(
+            ranking_type="MARKET_TRADING_AMOUNT", count=4
+        )
+        payload["rankingSession"] = "2026-08-12"
+        client.ranking_calls.clear()
+
+        result = self._selector(
+            client,
+            candidate_count=2,
+            fetch_count=4,
+            universe_size=2,
+            opening_rankings=lambda _now: payload,
+        ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
+
+        self.assertEqual(result.symbols, ("005930", "207940"))
+        self.assertEqual(result.collection_symbols, ("005930", "207940"))
+        self.assertEqual(client.ranking_calls, [])
+
+    def test_opening_pool_rejects_stale_completed_daily_history(self) -> None:
+        client = FakeRankingClient(rows=(DEFAULT_ROWS[0],))
+        payload = client.rankings(
+            ranking_type="MARKET_TRADING_AMOUNT", count=1
+        )
+        payload["rankingSession"] = "2026-08-11"
+
+        with self.assertRaisesRegex(RuntimeError, "price data unavailable"):
+            self._selector(
+                client,
+                candidate_count=1,
+                fetch_count=1,
+                universe_size=1,
+                opening_rankings=lambda _now: payload,
+            ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
+
+        self.assertEqual(
+            self.store._connection.execute(
+                "SELECT status FROM dynamic_universe_runs"
+            ).fetchone(),
+            ("failed",),
+        )
+
+    def test_opening_pool_reranks_after_pit_and_event_gate(self) -> None:
+        client = FakeRankingClient()
+
+        result = self._selector(
+            client,
+            candidate_count=2,
+            fetch_count=3,
+            universe_size=2,
+            candidate_gate=lambda symbol, _now: RiskDecision(
+                symbol == "207940",
+                () if symbol == "207940" else ("violation:event-imminent",),
+            ),
+        ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
+
+        self.assertEqual(result.symbols, ("207940",))
+        self.assertEqual(result.collection_symbols, ("207940",))
+
+    def test_opening_pool_missing_pit_data_fails_without_cache(self) -> None:
+        client = FakeRankingClient(rows=(DEFAULT_ROWS[0],))
+
+        with self.assertRaisesRegex(RuntimeError, "PIT data incomplete"):
+            self._selector(
+                client,
+                candidate_count=1,
+                fetch_count=1,
+                universe_size=1,
+                candidate_gate=lambda _symbol, _now: RiskDecision(
+                    False, ("missing:flow-history",)
+                ),
+            ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
+
+        self.assertIsNone(
+            self.store.latest_selected_between(NOW, NOW + timedelta(minutes=1))
+        )
 
     def test_provider_cap_shortfall_succeeds_without_filler(self) -> None:
         client = FakeRankingClient(
@@ -396,7 +485,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         )
         self.assertEqual(len(client.ranking_calls), 2)
 
-    def test_no_price_setup_still_selects_eligible_and_freezes(self) -> None:
+    def test_no_price_setup_freezes_a_normal_zero_pool(self) -> None:
         self.repository.upsert_candles(daily_history("005930", price_setup=False))
         self.repository.upsert_candles(daily_history("207940", price_setup=False))
         client = FakeRankingClient()
@@ -411,13 +500,13 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             risk_context=self._context(),
         )
 
-        self.assertEqual(result.symbols, ("005930", "000660"))
+        self.assertEqual(result.symbols, ())
         self.assertFalse(cached.refreshed)
         self.assertEqual(client.ranking_calls, [("MARKET_TRADING_AMOUNT", 5)])
         row = self.store._connection.execute(
             "SELECT status, selected_count FROM dynamic_universe_runs"
         ).fetchone()
-        self.assertEqual(row, ("succeeded", 2))
+        self.assertEqual(row, ("succeeded", 0))
 
     def test_insufficient_history_is_normal_rejection_not_data_error(self) -> None:
         history = daily_history("035420", price_setup=True)[:199]
@@ -440,8 +529,9 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         ).fetchone()
         self.assertEqual(row, ("succeeded", 0))
         self.assertIn("completed-daily-candles(199/200)", decision[0])
-        self.assertIsNone(
-            self.store.latest_selected_between(NOW, NOW + timedelta(minutes=5))
+        self.assertEqual(
+            self.store.latest_selected_between(NOW, NOW + timedelta(minutes=5)),
+            (),
         )
 
     def test_partial_history_with_empty_response_is_data_error(self) -> None:

@@ -50,6 +50,14 @@ class IntradayReviewTest(unittest.TestCase):
         self.assertEqual(review["sellFills"], 0)
         self.assertEqual(review["lastReasons"]["filled:BUY"], 1)
         self.assertEqual(review["lastReasons"]["setup-v2:missing:flow-history"], 1)
+        samsung = next(
+            row for row in review["symbolsDetail"] if row["symbol"] == "005930"
+        )
+        self.assertEqual(samsung["firstReason"], "setup-v2:waiting:first-session-bar")
+        self.assertEqual(samsung["lastReason"], "filled:BUY")
+        self.assertEqual(samsung["transitionCount"], 1)
+        self.assertEqual(review["schemaVersion"], 2)
+        self.assertEqual(review["changedFacts"][0]["symbol"], "005930")
         self.assertIn("005930 BUY 1", " ".join(format_intraday_review_lines(review)))
 
     def test_empty_insights_report_no_intraday_cycles(self) -> None:
@@ -60,6 +68,14 @@ class IntradayReviewTest(unittest.TestCase):
             format_intraday_review_lines(review),
             ("당일 1m 사이클 기록 없음",),
         )
+
+    def test_raw_cycle_error_is_classified_as_error(self) -> None:
+        review = aggregate_intraday_review(
+            [{"symbols": [{"symbol": "005930", "error": "setup-v2: OSError"}]}]
+        )
+
+        self.assertEqual(review["reasonClasses"], {"error": 1})
+        self.assertEqual(review["symbolsDetail"][0]["reasonClass"], "error")
 
 
 class InsightsFromRunsTest(unittest.TestCase):

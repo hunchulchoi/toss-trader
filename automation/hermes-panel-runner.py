@@ -159,6 +159,10 @@ def _independent_prompt(name: str, context: dict[str, Any]) -> str:
         f"{spec['role']}다. {spec['instruction']} "
         f"{timing_guard} "
         "제공 JSON만 사용하고 도구를 호출하지 마라. 다른 분석가 의견은 아직 없다. "
+        "middaySnapshotV2가 있으면 마지막 사유만 반복하지 말고 firstReason→lastReason "
+        "변화, transitionCount, reasonClass, changedFacts를 우선 분석하라. "
+        "changedFacts가 비었으면 '새로 바뀐 핵심 사실 없음'이라고 짧게 쓰고 같은 결론을 "
+        "늘여 쓰지 마라. 정상 조건 탈락과 실제 missing-data/error를 구분하라. "
         "매매 지시·수익 보장 금지. 핵심 근거와 불확실성을 한국어 1200자 이내로 작성.\n"
         f"TODAY_JSON={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}"
     )
@@ -175,6 +179,7 @@ def _review_prompt(
         f"{spec['role']}다. 세 독립 의견을 모두 검토하라. "
         f"{timing_guard} "
         "합의점, 충돌, 틀린 주장/과잉해석, 최종 judge가 남겨야 할 불확실성을 "
+        "사유 변화와 changedFacts 중심으로 검토하고 새 사실이 없으면 반복을 지적하라. "
         "제공 JSON만으로 한국어 900자 이내 작성. 매매 지시 금지.\n"
         f"TODAY_JSON={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}\n"
         f"INDEPENDENT={json.dumps(opinions, ensure_ascii=False, separators=(',', ':'))}"

@@ -452,6 +452,41 @@ class PaperCycleRunnerTest(unittest.TestCase):
         )
         self.assertIsNone(self.paper_ledger.v2_position_plan("005930"))
 
+    def test_v2_rejection_is_not_hidden_by_missing_opening_bar(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        candidate = _v2_candidate()
+        candidate = replace(
+            candidate,
+            decision=replace(
+                candidate.decision,
+                approved=False,
+                violations=("missing-price-setup",),
+            ),
+        )
+        strategy = FakeV2CycleStrategy(candidate, [])
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open,
+        )
+
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "setup-v2:violation:missing-price-setup",
+        )
+        self.assertNotIn(
+            ("005930", "1m", 200),
+            client.interval_calls,
+        )
+
     def test_v2_cycle_pages_back_to_toss_session_open_bar(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         opening_bar = _minute_bar(

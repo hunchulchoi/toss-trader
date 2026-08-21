@@ -1,5 +1,37 @@
 # Architecture Decisions
 
+## ADR-007 Opening entries use a D-1 setup-first known pool
+
+- Status: accepted
+- Date: 2026-08-21
+
+### Decision
+
+Build the entry pool by observing the prior completed session's KRX rows at
+08:35 KST and intersecting them with `market_symbols`. Evaluate every statically eligible symbol's
+completed 200-day history before applying the candidate cap, then rank actual
+price-setup passes by D-1 trading value. Freeze that result for the next Seoul
+session, including a valid zero-symbol result.
+
+Same-day Toss and afternoon KRX rankings no longer change the production entry
+membership. They may be retained later as non-authoritative shadow research.
+The 10-minute entry window, opening gap check, sizing, heat, cash, account Risk,
+and held-position SELL paths remain unchanged.
+
+### Reason
+
+The former process selected a realtime Top30 first and then looked for a rare
+daily setup inside it. A five-session replay over the known pool observed only
+34 price setups in 980 evaluations, so the ordering created avoidable candidate
+misses and made afternoon membership changes unusable after the entry window.
+
+### Failure contract
+
+- D-1 rows must have `available_at <= decision time`.
+- Acquisition or parse errors fail the run and do not create a success cache.
+- Completed evaluation with no setup is a normal zero-symbol success.
+- No late entry, opening-price backfill, or retroactive fill is allowed.
+
 ## ADR-006 Daily analysis runs in the main Hermes container
 
 - Status: accepted

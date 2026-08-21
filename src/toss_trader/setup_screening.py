@@ -181,6 +181,7 @@ class OfficialSetupContextFactory:
         gap_up_chase: bool,
     ) -> SetupContext:
         decision_utc = decision_at.astimezone(ZoneInfo("UTC")).isoformat()
+        decision_kst = decision_at.astimezone(ZoneInfo("Asia/Seoul")).isoformat()
         database_errors: list[type[Exception]] = [sqlite3.OperationalError]
         try:
             if self._postgres_parameters:
@@ -199,6 +200,11 @@ class OfficialSetupContextFactory:
                 )
             else:
                 connection = sqlite3.connect(self._database_path)
+            flow_cutoff = (
+                "available_at::timestamptz<=?::timestamptz"
+                if self._postgres_parameters
+                else "julianday(available_at)<=julianday(?)"
+            )
             coverage = connection.execute(
                 """SELECT 1 FROM market_pit_coverage
                 WHERE dataset='events' AND status='SUCCESS'
@@ -214,7 +220,7 @@ class OfficialSetupContextFactory:
                     WHERE symbol=? AND available_at<=? AND is_entry_blocking=1
                       AND blocked_through IS NOT NULL AND ?<blocked_through
                     ORDER BY available_at DESC LIMIT 1""",
-                    (symbol, decision_at.isoformat(), decision_at.isoformat()),
+                    (symbol, decision_kst, decision_kst),
                 ).fetchone() is not None
                 if not event_imminent:
                     event_imminent = connection.execute(
@@ -231,10 +237,10 @@ class OfficialSetupContextFactory:
                                 AND realized.is_entry_blocking=1
                           )
                         ORDER BY announced.available_at DESC LIMIT 1""",
-                        (symbol, decision_at.isoformat(), decision_at.isoformat()),
+                        (symbol, decision_kst, decision_kst),
                     ).fetchone() is not None
             rows = connection.execute(
-                """WITH ranked_flow AS (
+                f"""WITH ranked_flow AS (
                     SELECT session_index, session_date, available_at,
                            foreign_net_buy, institutional_net_buy, trading_value,
                            ROW_NUMBER() OVER (
@@ -246,14 +252,14 @@ class OfficialSetupContextFactory:
                                END, available_at
                            ) AS source_rank
                     FROM market_flow_pit_v2
-                    WHERE symbol=? AND session_date<=? AND available_at<=?
+                    WHERE symbol=? AND session_date<=? AND {flow_cutoff}
                 )
                 SELECT session_index, session_date, available_at,
                        foreign_net_buy, institutional_net_buy, trading_value
                 FROM ranked_flow
                 WHERE source_rank=1
                 ORDER BY session_index DESC LIMIT 6""",
-                (symbol, signal_session.isoformat(), decision_at.isoformat()),
+                (symbol, signal_session.isoformat(), decision_utc),
             ).fetchall()
         except tuple(database_errors):
             return SetupContext(
