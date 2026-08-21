@@ -820,8 +820,12 @@ def _backfill_intraday_samples(
             before_count = _session_candle_count(
                 repository, symbol=symbol, session_day=session_day
             )
-            cursor: str | None = None
-            seen_cursors: set[str] = set()
+            cursor = _intraday_backfill_start_cursor(
+                session_day=session_day,
+                today=today,
+                cutoff=cutoff,
+            )
+            seen_cursors = {cursor} if cursor is not None else set()
             pages = 0
             received = 0
             completion = "page-limit"
@@ -881,6 +885,14 @@ def _backfill_intraday_samples(
         }
     )
     return 3 if failures else 0
+
+
+def _intraday_backfill_start_cursor(
+    *, session_day: date, today: date, cutoff: datetime
+) -> str | None:
+    if session_day < today:
+        return cutoff.isoformat()
+    return None
 
 
 def _session_candle_count(

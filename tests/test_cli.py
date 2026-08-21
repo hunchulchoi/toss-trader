@@ -13,6 +13,7 @@ from toss_trader.cli import (
     _cycle_snapshot_to_dict,
     _extend_cycle_snapshot,
     _hermes_candidate_snapshot,
+    _intraday_backfill_start_cursor,
     _seoul_day_window,
     build_parser,
     main,
@@ -341,6 +342,28 @@ class MetricsCliTest(unittest.TestCase):
         self.assertEqual(args.command, "backfill-intraday-samples")
         self.assertEqual(args.as_of.isoformat(), "2026-08-20")
         self.assertEqual(args.max_eligible_rank, 30)
+
+    def test_historical_intraday_backfill_starts_at_session_close(self) -> None:
+        cutoff = datetime(2026, 8, 20, 6, 30, tzinfo=UTC)
+
+        cursor = _intraday_backfill_start_cursor(
+            session_day=cutoff.date(),
+            today=datetime(2026, 8, 21, tzinfo=UTC).date(),
+            cutoff=cutoff,
+        )
+
+        self.assertEqual(cursor, cutoff.isoformat())
+
+    def test_same_day_intraday_backfill_starts_from_latest_page(self) -> None:
+        cutoff = datetime(2026, 8, 21, 6, 30, tzinfo=UTC)
+
+        cursor = _intraday_backfill_start_cursor(
+            session_day=cutoff.date(),
+            today=cutoff.date(),
+            cutoff=cutoff,
+        )
+
+        self.assertIsNone(cursor)
 
     def test_config_reports_metrics_listener_without_secrets(self) -> None:
         output = io.StringIO()
