@@ -18,7 +18,18 @@
   늦은 후보의 시초봉 소급 조회도 하지 않음
 - 브리핑: 11:50/15:40 n8n trigger와 종류를 명시적으로 분리. 원시 cycle 반복
   대신 사유의 첫값·마지막값·전환 횟수·오류 분류를 담은 compact snapshot 전달
-- 상태: 코드 및 테스트 완료, 운영 배포 전
+- 상태: 운영 반영 완료
+- 기록 시각: 2026-08-21 15:34 KST
+- 1차 배포: 15:12 KST automation, 15:13 KST n8n daily·intraday 게시,
+  15:14 KST Hermes panel runner 반영. 모두 `TRADING_ENABLED=false`
+- 실운영 보완: 15:15·15:20 KST cycle에서 신규상장 종목의 저장된 짧은
+  일봉 이력을 inclusive cursor로 이어받지 못해 fail-closed한 사실을 확인.
+  `before=oldest`의 Toss 실측 응답이 경계봉 1개와 `nextBefore=null`인 계약을
+  반영하고, 부족 수량에 경계 1칸을 더 요청하도록 수정
+- 최종 배포·검증: 15:26 KST automation 재배포. 15:29 KST paper-only smoke에서
+  D-1 known pool 364종 전수 평가, 가격·PIT·이벤트 승인 8종/선정 8종,
+  `exitCode=0`, 종목 실패 0, 체결 0. automation healthy/restart 0,
+  n8n 두 workflow active=draft, Hermes runner 해시 일치
 
 ## 2026-08-20
 
