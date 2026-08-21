@@ -15,6 +15,7 @@ from toss_trader.cli import (
     _hermes_candidate_snapshot,
     _intraday_backfill_start_cursor,
     _seoul_day_window,
+    _session_candle_count,
     build_parser,
     main,
 )
@@ -29,6 +30,35 @@ from toss_trader.risk import RiskLimits, RiskManager
 
 
 class IntradaySampleCollectionTest(unittest.TestCase):
+    def test_session_count_reads_enough_history_for_week_backfill(self) -> None:
+        class Repository:
+            def latest_candles(self, symbol: str, interval: str, *, limit: int):
+                self.call = (symbol, interval, limit)
+                return [
+                    Candle(
+                        symbol=symbol,
+                        interval=interval,
+                        timestamp=datetime(2026, 8, 18, 1, 0, tzinfo=UTC),
+                        open_price=Decimal(1),
+                        high_price=Decimal(1),
+                        low_price=Decimal(1),
+                        close_price=Decimal(1),
+                        volume=Decimal(1),
+                        currency="KRW",
+                    )
+                ]
+
+        repository = Repository()
+
+        count = _session_candle_count(
+            repository,  # type: ignore[arg-type]
+            symbol="005930",
+            session_day=datetime(2026, 8, 18, tzinfo=UTC).date(),
+        )
+
+        self.assertEqual(count, 1)
+        self.assertEqual(repository.call, ("005930", "1m", 10_000))
+
     def test_intraday_review_window_starts_at_market_open(self) -> None:
         started, finished = _seoul_day_window(
             datetime(2026, 8, 21, 2, 50, tzinfo=UTC)

@@ -901,7 +901,7 @@ def _session_candle_count(
     seoul = ZoneInfo("Asia/Seoul")
     return sum(
         candle.timestamp.astimezone(seoul).date() == session_day
-        for candle in repository.latest_candles(symbol, "1m", limit=1000)
+        for candle in repository.latest_candles(symbol, "1m", limit=10_000)
     )
 
 
