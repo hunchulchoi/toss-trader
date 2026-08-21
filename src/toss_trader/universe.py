@@ -464,14 +464,26 @@ class DynamicUniverseSelector:
         if _daily_is_current(completed, expected_session):
             return completed
         before: str | None = None
+        if (
+            expected_session is not None
+            and completed
+            and completed[-1].timestamp.astimezone(SEOUL).date()
+            == expected_session
+        ):
+            before = completed[0].timestamp.isoformat()
         seen_cursors: set[str] = set()
+        if before is not None:
+            seen_cursors.add(before)
         for _ in range(5):
             completed_before = len(completed)
+            oldest_before = completed[0].timestamp if completed else None
             kwargs: dict[str, object] = {
                 "symbol": symbol,
                 "interval": "1d",
                 "count": (
-                    max(1, 200 - len(completed))
+                    min(200, max(1, 200 - len(completed)) + 1)
+                    if before is not None and len(completed) < 200
+                    else max(1, 200 - len(completed))
                     if len(completed) < 200
                     else 5
                 ),
@@ -496,11 +508,37 @@ class DynamicUniverseSelector:
                         f"latest daily candle is stale for {symbol}: "
                         f"{latest}/{expected_session}"
                     )
-                if completed and len(completed) == completed_before:
+                inclusive_exhaustion = (
+                    before is not None
+                    and oldest_before is not None
+                    and collection.received == 1
+                    and collection.oldest_timestamp == oldest_before
+                    and collection.newest_timestamp == oldest_before
+                    and expected_session is not None
+                    and completed[-1].timestamp.astimezone(SEOUL).date()
+                    == expected_session
+                )
+                if (
+                    completed
+                    and len(completed) == completed_before
+                    and not inclusive_exhaustion
+                ):
                     raise RuntimeError(
                         f"daily history made no progress before exhaustion for {symbol}"
                     )
                 return completed
+            if (
+                expected_session is not None
+                and completed
+                and len(completed) < 200
+                and completed[-1].timestamp.astimezone(SEOUL).date()
+                == expected_session
+            ):
+                before = completed[0].timestamp.isoformat()
+                if before in seen_cursors:
+                    raise RuntimeError(f"daily cursor made no progress for {symbol}")
+                seen_cursors.add(before)
+                continue
             if collection.next_before in seen_cursors:
                 raise RuntimeError(f"daily cursor made no progress for {symbol}")
             seen_cursors.add(collection.next_before)

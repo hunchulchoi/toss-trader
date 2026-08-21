@@ -59,6 +59,54 @@ class ExhaustedHistoryCollector:
         )
 
 
+class AnchoredExhaustionCollector:
+    def __init__(self, expected_before: str, boundary: datetime) -> None:
+        self.expected_before = expected_before
+        self.boundary = boundary
+        self.calls: list[str | None] = []
+
+    def collect(self, **kwargs: object) -> SimpleNamespace:
+        before = kwargs.get("before")
+        self.calls.append(before if isinstance(before, str) else None)
+        if before != self.expected_before:
+            raise AssertionError(f"unexpected daily cursor: {before!r}")
+        return SimpleNamespace(
+            received=1,
+            upserted=0,
+            next_before=None,
+            oldest_timestamp=self.boundary,
+            newest_timestamp=self.boundary,
+        )
+
+
+class InclusiveBackfillCollector:
+    def __init__(
+        self,
+        repository: SqliteMarketRepository,
+        candles: list[Candle],
+        expected_before: str,
+        expected_count: int,
+    ) -> None:
+        self.repository = repository
+        self.candles = candles
+        self.expected_before = expected_before
+        self.expected_count = expected_count
+
+    def collect(self, **kwargs: object) -> SimpleNamespace:
+        if kwargs.get("before") != self.expected_before:
+            raise AssertionError(f"unexpected daily cursor: {kwargs.get('before')!r}")
+        if kwargs.get("count") != self.expected_count:
+            raise AssertionError(f"unexpected daily count: {kwargs.get('count')!r}")
+        upserted = self.repository.upsert_candles(self.candles)
+        return SimpleNamespace(
+            received=len(self.candles),
+            upserted=upserted,
+            next_before=None,
+            oldest_timestamp=min(item.timestamp for item in self.candles),
+            newest_timestamp=max(item.timestamp for item in self.candles),
+        )
+
+
 DEFAULT_ROWS = (
     ("005930", "71000", "1000000000", "0.02"),
     ("000660", "190000", "900000000", "0.03"),
@@ -533,6 +581,99 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
             self.store.latest_selected_between(NOW, NOW + timedelta(minutes=5)),
             (),
         )
+
+    def test_cached_short_history_continues_before_oldest_then_exhausts(self) -> None:
+        history = daily_history("035420", price_setup=True)[-164:]
+        self.repository.upsert_candles(history)
+        self.repository.upsert_candles(daily_history("005930", price_setup=True))
+        expected_before = history[0].timestamp.isoformat()
+        collector = AnchoredExhaustionCollector(expected_before, history[0].timestamp)
+
+        class SessionRankingClient(FakeRankingClient):
+            def rankings(self, **kwargs: object) -> dict:
+                payload = super().rankings(**kwargs)
+                payload["rankingSession"] = history[-1].timestamp.date().isoformat()
+                return payload
+
+        result = self._selector(
+            SessionRankingClient(
+                rows=(
+                    ("035420", "50000", "100", "0.01"),
+                    ("005930", "71000", "90", "0.01"),
+                )
+            ),
+            collector=collector,
+            candidate_count=2,
+            fetch_count=2,
+            universe_size=2,
+        ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
+
+        self.assertEqual(result.symbols, ("005930",))
+        self.assertEqual(collector.calls, [expected_before])
+        decision = self.store._connection.execute(
+            "SELECT violations FROM dynamic_universe_decisions WHERE symbol='035420'"
+        ).fetchone()
+        self.assertIn("completed-daily-candles(164/200)", decision[0])
+
+    def test_cached_partial_history_requests_inclusive_boundary_slot(self) -> None:
+        full_history = daily_history("035420", price_setup=True)
+        cached = full_history[-164:]
+        self.repository.upsert_candles(cached)
+        expected_before = cached[0].timestamp.isoformat()
+        collector = InclusiveBackfillCollector(
+            self.repository,
+            [cached[0], *full_history[:36]],
+            expected_before,
+            37,
+        )
+
+        class SessionRankingClient(FakeRankingClient):
+            def rankings(self, **kwargs: object) -> dict:
+                payload = super().rankings(**kwargs)
+                payload["rankingSession"] = cached[-1].timestamp.date().isoformat()
+                return payload
+
+        result = self._selector(
+            SessionRankingClient(
+                rows=(("035420", "50000", "100", "0.01"),)
+            ),
+            collector=collector,
+            candidate_count=1,
+            fetch_count=1,
+            universe_size=1,
+        ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
+
+        self.assertEqual(result.symbols, ("035420",))
+
+    def test_cached_199_history_requests_boundary_plus_one(self) -> None:
+        full_history = daily_history("035420", price_setup=True)
+        cached = full_history[-199:]
+        self.repository.upsert_candles(cached)
+        expected_before = cached[0].timestamp.isoformat()
+        collector = InclusiveBackfillCollector(
+            self.repository,
+            [cached[0], full_history[0]],
+            expected_before,
+            2,
+        )
+
+        class SessionRankingClient(FakeRankingClient):
+            def rankings(self, **kwargs: object) -> dict:
+                payload = super().rankings(**kwargs)
+                payload["rankingSession"] = cached[-1].timestamp.date().isoformat()
+                return payload
+
+        result = self._selector(
+            SessionRankingClient(
+                rows=(("035420", "50000", "100", "0.01"),)
+            ),
+            collector=collector,
+            candidate_count=1,
+            fetch_count=1,
+            universe_size=1,
+        ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
+
+        self.assertEqual(result.symbols, ("035420",))
 
     def test_partial_history_with_empty_response_is_data_error(self) -> None:
         self.repository.upsert_candles(daily_history("035420", price_setup=True)[:199])
