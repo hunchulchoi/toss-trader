@@ -15,7 +15,10 @@
   패널이 해석 불가만 반복했다
 - 동작: 1m cycle이 벤치마크 200봉을 같이 모으고, 1d가 결측 1분봉을 채운 뒤
   `entryWindow`·`cacheMeaning`·`reasonPath`·`armRejectDetail`을 넘긴다
-- 운영: 코드만, 배포 대기
+- 배포 시각: 2026-08-24 12:52 KST automation 재빌드·기동
+- 운영 검증: 2026-08-24 12:55 KST cycle에서 Rule 2종과 Hermes·검증용
+  후보 30종을 분리해 처리했고, 후보 30종과 벤치마크 2종의 1분봉이 저장됐다.
+  두 portfolio 모두 `succeeded`, 주문·체결 0, `TRADING_ENABLED=false` 확인
 
 ### 중간·마감 패널에 저장된 시세 대비를 붙임
 
