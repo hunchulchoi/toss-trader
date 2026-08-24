@@ -164,6 +164,12 @@ armed 신호도 최종 RiskManager를 통과해야 한다. 주요 제한은 주�
 arm 가능한 후보는 `setup-v2:shadow:armed-after-entry-window`로만 기록하며,
 RiskManager·Hermes advisor·paper fill 경로로 보내지 않는다.
 
+별도 `momentum-shadow-v1`은 09:00~10:00 `TOP_GAINERS` 상위 종목의 1분봉을
+비차단 연구 표본으로 모은다. 10:00에 3봉 유지 눌림 재돌파와 시장 ETF proxy
+동조를 평가하고 상위 2개 entry/stop/1.5R 계획만 감사 로그에 저장한다. 이 결과는
+`strategyInput=false`, `shadowOnly=true`이며 Rule/Hermes/Risk/order 경로에 연결되지
+않는다. ranking·수집 실패도 실제 매매 cycle을 실패시키지 않는다.
+
 - Rule: 신호를 n8n RiskManager로 직접 보낸다.
 - Hermes: Rule이 수집한 공유 snapshot에서 같은 deterministic setup과 local hard
   preflight를 통과한 신호에만 advisor를 호출하고, 그 결과를 다시
@@ -178,6 +184,7 @@ RiskManager·Hermes advisor·paper fill 경로로 보내지 않는다.
 | `paper_v2_position_plans` | entry·stop·heat·exit pending 상태 |
 | `paper_portfolio_snapshots` | equity·실현/미실현손익·비용 |
 | `paper_cycle_runs` | 상태, count, API streak, `cycle_insight` |
+| `automation_run_logs` | `momentum-shadow` 하루 1회 후보·탈락 사유·가상 계획 |
 | `automation_run_logs` | n8n stage, Hermes 근거·token, 실패 |
 
 종목 한 개의 오류는 나머지 종목을 막지 않는다. 일부 오류는

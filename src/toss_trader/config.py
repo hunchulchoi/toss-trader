@@ -23,7 +23,7 @@ class Settings:
     postgres_password: str | None = None
     postgres_database: str | None = None
     watchlist_symbols: tuple[str, ...] = ("005930",)
-    market_benchmark_symbols: tuple[str, ...] = ("069500",)
+    market_benchmark_symbols: tuple[str, ...] = ("069500", "229200")
     discovery_symbols: tuple[str, ...] = ("005930",)
     discovery_top_n: int = 10
     dynamic_universe_candidate_count: int = 30
@@ -121,7 +121,7 @@ class Settings:
             watchlist_symbols=watchlist_symbols,
             market_benchmark_symbols=_symbol_list(
                 "MARKET_BENCHMARK_SYMBOLS",
-                values.get("MARKET_BENCHMARK_SYMBOLS", "069500"),
+                values.get("MARKET_BENCHMARK_SYMBOLS", "069500,229200"),
             ),
             discovery_symbols=_symbol_list(
                 "DISCOVERY_SYMBOLS",

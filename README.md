@@ -220,10 +220,14 @@ membership에 쓰지 않는다. 부족분을 채우지 않는다. 선정 0종도
 성공 cache로 저장하지 않고 다음 cycle에서 재시도한다. 현금·주문 한도·일일 손실·
 API 오류 같은 가변 Risk는 membership이 아니라 BUY 실행 단계에서 검사한다.
 정적 membership은 로컬 순수 검증이라 후보 수만큼 n8n을 호출하지 않는다.
-매매 평가와 1분봉 표본은 가격 setup 통과 풀에서 최대 15종으로 유지한다.
-cycle 15종은 기존 전략 조회량(기본 61봉)을 저장하고, 나머지 후보는 cycle마다
-최근 30봉을 별도로 upsert한다. 이는 배포 이후 표본 공백을 줄이는 forward 수집이며
-과거 누락 구간을 복원하는 백필은 아니다.
+Rule 매매 평가는 가격 setup 통과 풀에서 최대 15종으로 유지한다. Hermes 비교와
+일반 1분봉 표본은 정적 적격 Top30까지 확장한다. 09:00~10:00에는 권위 없는
+`TOP_GAINERS` 중 같은 정적·일봉 이력 적격 풀에 속한 최대 30종도 최근 30봉을
+추가 수집한다. 이 순위는 실제 membership·Rule·Hermes·주문에 영향을 주지 않는다.
+10:00에는 시초 +8% 추격 제외, +3% 상승 뒤 1~4% 눌림·재돌파·3봉 유지,
+KODEX 200/KODEX 코스닥150 방향 동조, stop 거리 3% 상한, 1.5R 목표를 평가해
+상위 2개를 `automation_run_logs(run_type=momentum-shadow)`에 하루 한 번 저장한다.
+이는 배포 이후 forward 연구 표본이며 매수 신호나 과거 누락 복원이 아니다.
 Rule은 D-1 setup-first 통과자 상위 15종을 strict v2.3으로 평가한다. Hermes는
 Rule 종목을 우선 포함하고 D-1 유동성 순 정적 적격 보통주로 최대 30종을 채운다.
 Hermes에서 `missing-price-setup`·`rsi-chase`·`falling-knife`는 advisor 참고

@@ -1003,6 +1003,27 @@ class OfficialDataRepository:
             result.setdefault(str(symbol), value)
         return result
 
+    def market_categories(self, session: date) -> dict[str, str]:
+        rows = self._connection.execute(
+            """SELECT current.symbol, current.market_category
+            FROM market_universe_raw_v2 AS current
+            JOIN (
+                SELECT symbol, MAX(session_date) AS session_date
+                FROM market_universe_raw_v2
+                WHERE session_date<=?
+                GROUP BY symbol
+            ) AS latest
+              ON latest.symbol=current.symbol
+             AND latest.session_date=current.session_date
+            ORDER BY current.source, current.symbol""",
+            (session.isoformat(),),
+        ).fetchall()
+        return {
+            str(symbol): str(market_category)
+            for symbol, market_category in rows
+            if str(market_category).strip()
+        }
+
     def flow_symbols(self, *, session: date, source: str) -> set[str]:
         rows = self._connection.execute(
             """SELECT symbol FROM market_flow_pit_v2

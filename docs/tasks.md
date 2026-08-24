@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-018 Add a non-trading momentum shadow sample
+
+- Owner: codex
+- Status: DONE
+- Result: sample up to 30 static/history-eligible `TOP_GAINERS` from 09:00 to
+  10:00 without affecting authoritative membership, then persist one daily
+  three-bar reclaim, market-aligned, 1.5R shadow evaluation in the existing
+  automation audit ledger
+- Checks: focused momentum, CLI, universe, config, market-context, and official
+  data tests; scoped Ruff and Git whitespace
+- Risks: forward research only; no order, advisor, or Risk input; extra morning
+  ranking and candle calls; four-session counterfactual remained slightly negative
+- 기록 시각: 2026-08-24 17:05 KST
+
 ### DATA-012 Retry transient DNS and network errors on Toss Open API
 
 - Owner: codex

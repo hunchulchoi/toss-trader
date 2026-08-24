@@ -23,6 +23,39 @@ from toss_trader.official_data import (
 
 
 class OfficialDataTest(unittest.TestCase):
+    def test_market_categories_use_latest_observed_session_at_or_before_cutoff(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = OfficialDataRepository(str(Path(directory) / "market.db"))
+            repository.upsert_universe_rows(
+                [
+                    {
+                        "session_date": "2026-08-20",
+                        "symbol": "005930",
+                        "isin_code": "KR7005930003",
+                        "display_name": "삼성전자",
+                        "market_category": "KOSPI",
+                        "close_price": "70000",
+                        "market_cap": "1",
+                        "trading_value": "1",
+                        "listed_share_count": "1",
+                        "security_type": "COMMON",
+                        "source": "test",
+                        "source_record_id": "2026-08-20",
+                        "published_at": None,
+                        "available_at": None,
+                        "retrieved_at": "2026-08-20T16:00:00+09:00",
+                        "payload_hash": "category-test",
+                    }
+                ]
+            )
+
+            categories = repository.market_categories(date(2026, 8, 21))
+            repository.close()
+
+        self.assertEqual(categories, {"005930": "KOSPI"})
+
     def test_kis_flow_uses_official_tr_and_parses_daily_amounts(self) -> None:
         class FakeTransport:
             def __init__(self) -> None:

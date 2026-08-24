@@ -8,7 +8,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import asdict, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any
@@ -25,7 +25,7 @@ from .automation import (
     serve_automation,
 )
 from .backtest import run_ma_backtest
-from .calendar import MarketCalendarService, previous_kr_business_date
+from .calendar import MarketCalendarService, MarketSession, previous_kr_business_date
 from .client import TossClient
 from .config import Settings
 from .cycle import V2_ENTRY_ARM_WINDOW, PaperCycleRunner, PaperCycleSnapshot
@@ -40,6 +40,15 @@ from .market_context import build_market_context
 from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
 from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
+from .momentum_shadow import (
+    RULE_VERSION as MOMENTUM_SHADOW_RULE_VERSION,
+)
+from .momentum_shadow import (
+    evaluate_momentum_shadow,
+)
+from .momentum_shadow import (
+    ranking_symbols as momentum_ranking_symbols,
+)
 from .official_data import (
     OfficialApiClient,
     OfficialDataCollector,
@@ -63,7 +72,11 @@ from .risk import (
 from .setup_screening import OfficialSetupContextFactory
 from .strategy import MaCrossoverEvaluation, ma_crossover_signal
 from .timeline_web import serve_timeline
-from .universe import DynamicUniverseSelector, open_universe_store
+from .universe import (
+    RANKING_SOURCE_OPENING,
+    DynamicUniverseSelector,
+    open_universe_store,
+)
 from .v2_engine import COMPLETED_ONE_MINUTE_OFFSET
 from .v2_runtime import OfficialV2CycleStrategy
 from .v2_screening import V2MarketScanner, v2_market_scan_to_dict
@@ -71,6 +84,7 @@ from .walk_forward import WalkForwardResult, run_ma_walk_forward
 
 INTRADAY_SAMPLE_CANDLE_COUNT = 30
 SESSION_MINUTE_FETCH_COUNT = 200
+MOMENTUM_SAMPLE_LIMIT = 30
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1226,6 +1240,13 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
     postgres_parameters = settings.postgres_connection_parameters()
     now = snapshot.evaluated_at if snapshot is not None else datetime.now(UTC)
     market_context = None
+    momentum_shadow = None
+    momentum_ranked_symbols: tuple[str, ...] = ()
+    momentum_ranking_error: str | None = None
+    momentum_research_pool: tuple[str, ...] = ()
+    momentum_markets: dict[str, str] = {}
+    momentum_context_ready = False
+    momentum_session: MarketSession | None = None
     with ExitStack() as stack:
         client = _client(settings)
         market_repository = open_market_repository(
@@ -1350,15 +1371,112 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 ),
             )
             symbols = universe_result.symbols
+            local_time = now.astimezone(ZoneInfo("Asia/Seoul")).time()
+            if (
+                args.portfolio == "rule"
+                and interval == "1m"
+                and time(9, 0) <= local_time < time(10, 6)
+            ):
+                try:
+                    signal_session = previous_kr_business_date(calendar, now)
+                    day_start = datetime.combine(
+                        now.astimezone(ZoneInfo("Asia/Seoul")).date(),
+                        datetime.min.time(),
+                        tzinfo=ZoneInfo("Asia/Seoul"),
+                    ).astimezone(UTC)
+                    momentum_research_pool = (
+                        universe_store.latest_candidates_between(
+                            day_start,
+                            now,
+                            ranking_source=RANKING_SOURCE_OPENING,
+                        )
+                        or ()
+                    )
+                    momentum_markets = official_repository.market_categories(
+                        signal_session
+                    )
+                    momentum_session = calendar.regular_session("KR", now=now)
+                    momentum_context_ready = True
+                    if local_time <= time(10, 0):
+                        momentum_ranked_symbols = _momentum_ranked_symbols(
+                            client,
+                            allowed_symbols=frozenset(momentum_research_pool),
+                        )
+                    else:
+                        momentum_ranked_symbols = _momentum_observed_symbols(
+                            market_repository,
+                            symbols=momentum_research_pool,
+                            session=momentum_session,
+                            observed_at=now,
+                        )
+                except (
+                    OSError,
+                    RuntimeError,
+                    TossApiError,
+                    TypeError,
+                    ValueError,
+                ) as error:
+                    momentum_ranking_error = f"{type(error).__name__}: {error}"
         intraday_sample = None
         if interval == "1m" and universe_result is not None:
             intraday_sample = _collect_intraday_sample(
                 collector,
                 cycle_symbols=symbols,
-                collection_symbols=universe_result.collection_symbols,
+                collection_symbols=tuple(
+                    dict.fromkeys(
+                        (*universe_result.collection_symbols, *momentum_ranked_symbols)
+                    )
+                ),
                 extra_symbols=settings.market_benchmark_symbols,
                 extra_count=SESSION_MINUTE_FETCH_COUNT,
             )
+            intraday_sample["momentumRankingSymbols"] = list(
+                momentum_ranked_symbols
+            )
+            intraday_sample["momentumRankingError"] = momentum_ranking_error
+        if (
+            args.portfolio == "rule"
+            and interval == "1m"
+            and universe_result is not None
+            and momentum_context_ready
+            and time(10, 0)
+            <= now.astimezone(ZoneInfo("Asia/Seoul")).time()
+            < time(10, 6)
+        ):
+            try:
+                assert momentum_session is not None
+                momentum_shadow = evaluate_momentum_shadow(
+                    market_repository,
+                    symbols=momentum_research_pool,
+                    market_by_symbol=momentum_markets,
+                    session=momentum_session,
+                    observed_at=now,
+                )
+                if momentum_shadow.get("status") == "evaluated":
+                    _record_momentum_shadow_once(
+                        paper_ledger,
+                        payload=momentum_shadow,
+                        observed_at=now,
+                    )
+            except (OSError, RuntimeError, TossApiError, TypeError, ValueError) as error:
+                momentum_shadow = {
+                    "status": "unavailable",
+                    "ruleVersion": MOMENTUM_SHADOW_RULE_VERSION,
+                    "error": f"{type(error).__name__}: {error}",
+                }
+        elif (
+            args.portfolio == "rule"
+            and interval == "1m"
+            and universe_result is not None
+            and time(10, 0)
+            <= now.astimezone(ZoneInfo("Asia/Seoul")).time()
+            < time(10, 6)
+        ):
+            momentum_shadow = {
+                "status": "unavailable",
+                "ruleVersion": MOMENTUM_SHADOW_RULE_VERSION,
+                "error": momentum_ranking_error or "momentum context unavailable",
+            }
         name_symbols = tuple(
             dict.fromkeys(
                 (
@@ -1368,6 +1486,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                         if universe_result is not None
                         else ()
                     ),
+                    *momentum_ranked_symbols,
                     *settings.market_benchmark_symbols,
                 )
             )
@@ -1561,6 +1680,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 ),
             },
             "intradaySample": intraday_sample,
+            "momentumShadow": momentum_shadow,
             "summary": {
                 "symbols": result.symbol_count,
                 "signals": result.signal_count,
@@ -1879,6 +1999,84 @@ def _render_metrics(settings: Settings) -> int:
     finally:
         store.close()
     return 0
+
+
+def _momentum_ranked_symbols(
+    client: TossClient,
+    *,
+    allowed_symbols: frozenset[str],
+) -> tuple[str, ...]:
+    payload = client.rankings(
+        ranking_type="TOP_GAINERS",
+        market_country="KR",
+        duration="realtime",
+        exclude_investment_caution=True,
+        count=100,
+    )
+    return momentum_ranking_symbols(
+        payload,
+        allowed_symbols=allowed_symbols,
+        limit=MOMENTUM_SAMPLE_LIMIT,
+    )
+
+
+def _momentum_observed_symbols(
+    repository: MarketRepository,
+    *,
+    symbols: Sequence[str],
+    session: MarketSession,
+    observed_at: datetime,
+) -> tuple[str, ...]:
+    if session.market_open_at is None:
+        return ()
+    cutoff = min(
+        observed_at,
+        session.market_open_at.replace(hour=10, minute=0),
+    )
+    observed = []
+    for symbol in dict.fromkeys(symbols):
+        rows = repository.latest_candles(symbol, "1m", limit=60)
+        if any(
+            session.market_open_at < candle.timestamp <= cutoff for candle in rows
+        ):
+            observed.append(symbol)
+    return tuple(observed)
+
+
+def _record_momentum_shadow_once(
+    ledger: Any,
+    *,
+    payload: dict[str, Any],
+    observed_at: datetime,
+) -> str:
+    session_date = str(payload.get("sessionDate") or "")
+    if not session_date:
+        raise ValueError("momentum shadow sessionDate is required")
+    for run in ledger.recent_automation_runs(
+        limit=100, run_type="momentum-shadow"
+    ):
+        details = run.get("details")
+        if not isinstance(details, Mapping):
+            continue
+        if (
+            details.get("sessionDate") == session_date
+            and details.get("ruleVersion") == MOMENTUM_SHADOW_RULE_VERSION
+        ):
+            run_id = str(run["runId"])
+            payload["auditRunId"] = run_id
+            payload["cacheHit"] = True
+            return run_id
+    run_id = ledger.record_automation_run(
+        run_type="momentum-shadow",
+        status="succeeded",
+        stage="evaluated",
+        started_at=observed_at,
+        finished_at=observed_at,
+        details=payload,
+    )
+    payload["auditRunId"] = run_id
+    payload["cacheHit"] = False
+    return run_id
 
 
 def _collect_intraday_sample(
