@@ -21,7 +21,10 @@
 - 안전: `strategyInput=false`, `shadowOnly=true`. Rule·Hermes universe, advisor,
   RiskManager, 주문·체결에 연결하지 않는다. 연구 ranking/수집 실패는 매매 cycle을
   실패시키지 않는다
-- 운영: 미배포. 월요일 forward 표본부터 검증 예정
+- 배포 시각: 2026-08-24 17:18 KST
+- 운영: `automation` 이미지를 재빌드·교체했다. health `ok`,
+  `momentum-shadow-v1` 로드, `TRADING_ENABLED=false`를 확인했다. 월요일 forward
+  표본부터 검증 예정
 
 ### 현재 process를 과거 확정 데이터에 적용한 반사실 표본
 
