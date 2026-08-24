@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### WEB-004 Connect midday and close panel briefings to Hermes conversation view
+
+- Owner: codex
+- Status: DONE
+- Result: queried `daily_analysis_panels` and `daily_analysis_opinions` in
+  `PostgresPaperTimelineStore`, integrated 11:50 midday (`midday`) and 15:40 close
+  (`daily`) panel synthesis verdicts (`judge:hermes`) into `/hermes` conversation
+  feed, and added `중간 분석` (`midday`) to kind filters
+- Checks: 372 unit tests; scoped Ruff and Git whitespace; live container smoke check
+  confirming 71 Hermes conversations loaded with midday and close briefings
+- Risks: none; read-only query on PostgreSQL panels
+- 기록 시각: 2026-08-24 10:38 KST
+
 ### DATA-004 Restore a weekly setup-v2 price sample
 
 - Owner: codex

@@ -183,6 +183,20 @@ class PostgresPaperTimelineStore:
                         """
                     )
                     hermes_log_rows = cursor.fetchall()
+                    cursor.execute(
+                        """
+                        SELECT p.panel_id, p.status, p.created_at, p.finished_at,
+                               p.context, p.error,
+                               o.stage, o.role, o.provider, o.model, o.content,
+                               o.started_at, o.finished_at,
+                               o.prompt_tokens, o.completion_tokens, o.total_tokens
+                        FROM daily_analysis_panels p
+                        LEFT JOIN daily_analysis_opinions o ON p.panel_id = o.panel_id
+                        ORDER BY p.created_at DESC, o.finished_at DESC
+                        LIMIT 300
+                        """
+                    )
+                    panel_rows = cursor.fetchall()
             finally:
                 connection.close()
         except self._database_error as error:
@@ -198,6 +212,7 @@ class PostgresPaperTimelineStore:
             minute_rows=minute_rows,
             trend_rows=trend_rows,
             hermes_log_rows=hermes_log_rows,
+            panel_rows=panel_rows,
             default_initial_cash=self._initial_cash,
         )
 
@@ -214,6 +229,7 @@ def build_paper_timeline(
     minute_rows: Sequence[Sequence[Any]] = (),
     trend_rows: Sequence[Sequence[Any]] = (),
     hermes_log_rows: Sequence[Sequence[Any]] = (),
+    panel_rows: Sequence[Sequence[Any]] = (),
     default_initial_cash: Decimal,
 ) -> dict[str, Any]:
     initial_cash = {
@@ -343,7 +359,9 @@ def build_paper_timeline(
             names=names,
             trend_rows=trend_rows,
         ),
-        "hermesConversations": _hermes_conversations(hermes_log_rows, names),
+        "hermesConversations": _hermes_conversations(
+            hermes_log_rows, names, panel_rows=panel_rows
+        ),
         "errors": _error_events(
             cycle_rows=cycle_rows,
             advice_rows=advice_rows,
@@ -667,6 +685,7 @@ def _decision_events(
 HERMES_KIND_LABELS = {
     "hermes_trade": "종목 판단",
     "market_scan": "장전 분석",
+    "midday": "중간 분석",
     "daily": "마감 분석",
 }
 
@@ -674,8 +693,66 @@ HERMES_KIND_LABELS = {
 def _hermes_conversations(
     rows: Sequence[Sequence[Any]],
     names: Mapping[str, str],
+    *,
+    panel_rows: Sequence[Sequence[Any]] = (),
 ) -> list[dict[str, Any]]:
     conversations = []
+    panels_by_id: dict[str, dict[str, Any]] = {}
+    for row in panel_rows:
+        panel_id = str(row[0])
+        if panel_id not in panels_by_id:
+            context = _json_mapping(row[4]) if len(row) > 4 else {}
+            briefing = _json_mapping(context.get("briefing"))
+            briefing_kind = str(briefing.get("kind") or "")
+            created_at = _datetime(row[2])
+            created_seoul = created_at.astimezone(SEOUL)
+            is_midday = briefing_kind == "midday" or created_seoul.hour < 15
+            run_type = "midday" if is_midday else "daily"
+            finished_at = (
+                _datetime(row[3])
+                if len(row) > 3 and row[3] is not None
+                else created_at
+            )
+            panels_by_id[panel_id] = {
+                "runId": panel_id,
+                "runType": run_type,
+                "kind": HERMES_KIND_LABELS.get(run_type, run_type),
+                "status": str(row[1]),
+                "stage": "completed",
+                "startedAt": created_at.isoformat(),
+                "finishedAt": finished_at.isoformat(),
+                "promptTokens": 0,
+                "completionTokens": 0,
+                "totalTokens": 0,
+                "error": str(row[5]) if len(row) > 5 and row[5] is not None else None,
+                "symbol": None,
+                "name": None,
+                "side": None,
+                "approved": None,
+                "assistant": None,
+            }
+        if len(row) > 6 and row[6] is not None:
+            stage = str(row[6])
+            content = (
+                str(row[10] or "").strip()
+                if len(row) > 10 and row[10] is not None
+                else ""
+            )
+            if len(row) > 13:
+                panels_by_id[panel_id]["promptTokens"] += int(row[13] or 0)
+            if len(row) > 14:
+                panels_by_id[panel_id]["completionTokens"] += int(row[14] or 0)
+            if len(row) > 15:
+                panels_by_id[panel_id]["totalTokens"] += int(row[15] or 0)
+            if stage == "judge:hermes" and content:
+                panels_by_id[panel_id]["assistant"] = content
+            elif not panels_by_id[panel_id]["assistant"] and content:
+                panels_by_id[panel_id]["assistant"] = content
+
+    for panel in panels_by_id.values():
+        panel["bodyMissing"] = panel["assistant"] is None
+        conversations.append(panel)
+
     for row in rows:
         details = _json_mapping(row[10])
         run_type = str(row[1])
@@ -712,6 +789,9 @@ def _hermes_conversations(
                 "bodyMissing": assistant is None,
             }
         )
+    conversations.sort(
+        key=lambda item: (item["finishedAt"], item["runId"]), reverse=True
+    )
     return conversations
 
 

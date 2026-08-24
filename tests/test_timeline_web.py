@@ -249,6 +249,26 @@ def _payload():
                 {"ok": True, "orchestrator": "n8n"},
             ),
         ),
+        panel_rows=(
+            (
+                "panel-midday-1",
+                "succeeded",
+                datetime(2026, 8, 13, 2, 50, tzinfo=UTC),
+                datetime(2026, 8, 13, 2, 50, 5, tzinfo=UTC),
+                {"briefing": {"kind": "midday"}},
+                None,
+                "judge:hermes",
+                "final judge",
+                "openai",
+                "gpt-5.6-terra",
+                "점심 브리핑 판정입니다.",
+                datetime(2026, 8, 13, 2, 50, 1, tzinfo=UTC),
+                datetime(2026, 8, 13, 2, 50, 5, tzinfo=UTC),
+                1000,
+                200,
+                1200,
+            ),
+        ),
         default_initial_cash=Decimal(1000000),
     )
 
@@ -434,7 +454,7 @@ class _Cursor:
         self.queries.append(query)
 
     def fetchall(self):
-        rows = [(), (), (), (), (), (), ()]
+        rows = [(), (), (), (), (), (), (), ()]
         value = rows[self._index]
         self._index += 1
         return value

@@ -122,3 +122,6 @@ Codex·Cursor·agy는 구현 전 다시 교차검토해 다음으로 수렴했�
 `ACC_TRDVAL`로 바꾼다. 오전 Toss `realtime` freeze는 `ranking_source`가
 달라서 오후에 재사용하지 않는다. 실패 시 Toss로 폴백하지 않는다. 레짐
 스캔(KODEX 200 / KOSDAQ 150)은 이 턴에서 바꾸지 않는다.
+
+13:00 신호 0에 대한 3자 유지 합의는
+[`docs/2026-08-20/universe-vs-setup-debate.md`](../2026-08-20/universe-vs-setup-debate.md).
