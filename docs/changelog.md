@@ -13,7 +13,10 @@
 - 구멍: pit-collector가 달력 없이 매일 18:30에 KIS를 쳐, 휴장·주말 제공자
   오류가 `TossTraderKisFlowFailure`로 갔다
 - 동작: 당일이 KR 정규장이 아니면 KIS 생략. OpenDART는 그대로
-- 운영: 코드만, 배포 대기. pit-collector 재기동 필요
+- 배포 시각: 2026-08-24 13:12 KST pit-collector 재빌드·재생성
+- 운영: 반영함. restart 0, `TRADING_ENABLED=false`. 기동 직후
+  `WAITING_FOR_KIS_1540`(정규장·15:40 전). 휴장 스킵은 다음 비영업일 18:30부터
+  적용
 
 ### 휴장일에 TossTraderCycleStale이 울리던 문제
 
@@ -22,7 +25,10 @@
   25시간 stale로 취급했다
 - 동작: metrics가 Toss KR calendar로 `toss_trader_kr_intraday_cycle_expected`를
   내고, 정규장 중에만 CycleStale을 평가한다. calendar 실패는 fail-open
-- 운영: 코드만, 배포 대기. metrics·prometheus 둘 다 올려야 한다
+- 배포 시각: 2026-08-24 13:12 KST metrics·prometheus 재빌드·재생성
+- 운영: 반영함. metrics healthy, `kr_calendar_ok=1`,
+  `kr_intraday_cycle_expected=1`(장중), CycleStale `inactive`.
+  `TRADING_ENABLED=false`
 
 ### 중간 패널이 벤치마크 결측·사이징 맥락 없이 구멍만 말하던 문제
 
