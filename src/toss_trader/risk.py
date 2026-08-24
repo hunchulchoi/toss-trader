@@ -13,7 +13,7 @@ from .models import Side, TradeSignal
 
 @dataclass(frozen=True, slots=True)
 class RiskLimits:
-    max_order_notional: Decimal = Decimal(300000)
+    max_order_notional: Decimal = Decimal(700000)
     max_position_notional: Decimal = Decimal(1000000)
     max_daily_buy_count: int = 5
     max_open_positions: int = 10

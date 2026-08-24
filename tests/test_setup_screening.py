@@ -669,15 +669,15 @@ class PositionSizingTest(unittest.TestCase):
         zero = position_size_reference(
             symbol="005930",
             equity=Decimal(1000000),
-            reference_price=Decimal(400000),
-            stop_price=Decimal(390000),
+            reference_price=Decimal(800000),
+            stop_price=Decimal(790000),
             atr=Decimal(1000),
             available_cash=Decimal(1000000),
             current_open_heat=Decimal(0),
             current_cluster_heat=Decimal(0),
         )
 
-        self.assertEqual(capped.quantity, Decimal(30))
+        self.assertEqual(capped.quantity, Decimal(70))
         self.assertIn("max-order-notional", capped.limiting_factors)
         self.assertFalse(zero.approved)
         self.assertIn("below-one-lot", zero.limiting_factors)
@@ -711,8 +711,8 @@ class PositionSizingTest(unittest.TestCase):
             current_cluster_heat=Decimal(0),
         )
 
-        self.assertEqual(order_limited.quantity, Decimal(29))
-        self.assertLessEqual(order_limited.required_cash, Decimal(300000))
+        self.assertEqual(order_limited.quantity, Decimal(69))
+        self.assertLessEqual(order_limited.required_cash, Decimal(700000))
         self.assertIn("max-order-notional", order_limited.limiting_factors)
         self.assertFalse(cash_blocked.approved)
         self.assertIn("available-cash", cash_blocked.limiting_factors)

@@ -239,7 +239,7 @@ class DynamicUniverseSelector:
             _seoul_day_start(now), now, ranking_source=source
         )
         if cached is not None:
-            collection_symbols = self._store.latest_candidates_between(
+            research_candidates = self._store.latest_candidates_between(
                 _seoul_day_start(now), now, ranking_source=source
             )
             return UniverseRefreshResult(
@@ -248,9 +248,11 @@ class DynamicUniverseSelector:
                 symbols=_with_held(cached, held_symbols),
                 new_buys_allowed=True,
                 entry_symbols=(),
-                collection_symbols=(collection_symbols or cached)[
-                    : self._candidate_count
-                ],
+                collection_symbols=_research_collection_symbols(
+                    cached,
+                    research_candidates or (),
+                    limit=self._candidate_count,
+                ),
             )
         run_id = str(uuid4())
         try:
@@ -263,18 +265,21 @@ class DynamicUniverseSelector:
                 ranking_source=source,
                 decisions=decisions,
             )
+            research_candidates = tuple(
+                item.symbol
+                for item in decisions
+                if _research_candidate_eligible(item.risk.violations)
+            )
             return UniverseRefreshResult(
                 run_id=run_id,
                 refreshed=True,
                 symbols=_with_held(selected, held_symbols),
                 new_buys_allowed=True,
                 entry_symbols=selected,
-                collection_symbols=tuple(
-                    item.symbol
-                    for item in decisions
-                    if item.risk.approved
-                    and item.eligible_rank is not None
-                    and item.eligible_rank <= self._candidate_count
+                collection_symbols=_research_collection_symbols(
+                    selected,
+                    research_candidates,
+                    limit=self._candidate_count,
                 ),
             )
         except Exception as error:
@@ -650,13 +655,13 @@ class SqliteUniverseStore:
             return None
         rows = self._connection.execute(
             """
-            SELECT symbol FROM dynamic_universe_decisions
-            WHERE run_id = ? AND eligible_rank IS NOT NULL AND risk_approved = 1
-            ORDER BY eligible_rank, amount_rank, symbol
+            SELECT symbol, violations FROM dynamic_universe_decisions
+            WHERE run_id = ?
+            ORDER BY amount_rank, symbol
             """,
             (row[0],),
         ).fetchall()
-        return tuple(str(item[0]) for item in rows)
+        return _static_candidate_symbols(rows)
 
     def candidate_symbols_between(
         self,
@@ -812,13 +817,13 @@ class PostgresUniverseStore:
                 return None
             cursor.execute(
                 """
-                SELECT symbol FROM dynamic_universe_decisions
-                WHERE run_id = %s AND eligible_rank IS NOT NULL AND risk_approved
-                ORDER BY eligible_rank, amount_rank, symbol
+                SELECT symbol, violations FROM dynamic_universe_decisions
+                WHERE run_id = %s
+                ORDER BY amount_rank, symbol
                 """,
                 (row[0],),
             )
-            return tuple(str(item[0]) for item in cursor.fetchall())
+            return _static_candidate_symbols(cursor.fetchall())
 
     def candidate_symbols_between(
         self,
@@ -1124,4 +1129,34 @@ def _postgres_decision(
         item.risk.approved,
         item.selected,
         json.dumps(item.risk.violations),
+    )
+
+
+def _static_candidate_symbols(rows: Sequence[Sequence[object]]) -> tuple[str, ...]:
+    symbols: list[str] = []
+    for row in rows:
+        if len(row) != 2:
+            raise ValueError("static candidate row must contain symbol and violations")
+        raw_violations = row[1]
+        if isinstance(raw_violations, str):
+            raw_violations = json.loads(raw_violations)
+        if not isinstance(raw_violations, list) or not all(
+            isinstance(value, str) for value in raw_violations
+        ):
+            raise TypeError("static candidate violations must be a string array")
+        if not _research_candidate_eligible(raw_violations):
+            continue
+        symbols.append(str(row[0]))
+    return tuple(symbols)
+
+
+def _research_collection_symbols(
+    selected: Sequence[str], candidates: Sequence[str], *, limit: int
+) -> tuple[str, ...]:
+    return tuple(dict.fromkeys((*selected, *candidates)))[:limit]
+
+
+def _research_candidate_eligible(violations: Sequence[str]) -> bool:
+    return not STATIC_UNIVERSE_VIOLATIONS.intersection(violations) and not any(
+        value.startswith("completed-daily-candles(") for value in violations
     )

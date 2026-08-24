@@ -24,6 +24,50 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-017 Give Hermes a paper-only risk budget
+
+- Owner: codex
+- Status: DONE
+- Result: preserved Rule sizing at 0.5% per trade, 2% open heat, and 1%
+  UNKNOWN-cluster heat while applying 2%/6%/6% only to Hermes experimental
+  entries through an explicit `arm_candidate` sizing policy
+- Checks: 377 unit tests; changed-file Ruff and Git whitespace; one-share fixture
+  with planned loss above KRW 5,000 and at or below KRW 20,000 rejected by Rule
+  sizing and accepted by Hermes sizing
+- Risks: one-share planned loss above KRW 20,000 still yields zero quantity;
+  paper-only, asymmetric strategy experiment, not deployed or profitability evidence
+- 기록 시각: 2026-08-24 12:38 KST
+
+### STRAT-016 Split Hermes into a reference-gate paper strategy
+
+- Owner: codex
+- Status: DONE
+- Result: kept Rule strict while giving Hermes a selected-first, static-eligible
+  D-1 liquidity pool of up to 30 names; only `missing-price-setup`, `rsi-chase`,
+  and `falling-knife` became advisor evidence, with all Hermes entries labeled
+  `hermes-experimental`
+- Checks: 376 unit tests; changed-file Ruff and Git whitespace checks; explicit
+  coverage for cache reload, price-strategy relaxation, mandatory data/event
+  rejection, unknown future gate fail-closed, plan labeling, and no Rule changes
+- Risks: candidate and strategy denominators differ, so Rule/Hermes is not direct
+  A/B evidence; unchanged integer-share 0.5% sizing can still yield zero Hermes
+  signals; this is paper-only and has not been deployed
+- 기록 시각: 2026-08-24 12:29 KST
+
+### STRAT-015 Expand paper entry observation without loosening setup gates
+
+- Owner: codex
+- Status: DONE
+- Result: kept paper capital at KRW 1,000,000 and setup-v2.3 risk rates,
+  raised only the per-order notional ceiling to KRW 700,000, allowed entries
+  through 09:30 KST, and recorded later armable cases as shadow-only reasons
+- Checks: 374 unit tests; changed-file Ruff and Git whitespace checks; direct
+  production-data sizing diagnostic for the two 2026-08-24 candidates
+- Risks: the unchanged 0.5% per-trade risk budget is KRW 5,000, so high-priced
+  volatile candidates can still produce `below-one-lot`; shadow signals never
+  call RiskManager or Hermes and never create orders or fills
+- 기록 시각: 2026-08-24 11:35 KST
+
 ### WEB-004 Connect midday and close panel briefings to Hermes conversation view
 
 - Owner: codex

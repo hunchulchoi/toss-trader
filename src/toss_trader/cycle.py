@@ -25,7 +25,12 @@ from .paper import toss_trade_costs
 from .portfolio import DailyPortfolioPerformance, PortfolioPerformance
 from .risk import RiskDecision
 from .screening import MarketRegime, analyze_market
-from .setup_screening import EntryGateDecision, SetupType
+from .setup_screening import (
+    DEFAULT_POSITION_SIZING_POLICY,
+    EntryGateDecision,
+    PositionSizingPolicy,
+    SetupType,
+)
 from .strategy import MaCrossoverEvaluation, ma_trend_continuation_signal
 from .v2_engine import (
     ADVERSE_SLIPPAGE,
@@ -39,7 +44,15 @@ from .v2_engine import (
 from .v2_runtime import OfficialV2CycleStrategy
 
 HANDLED_CYCLE_ERRORS = (OSError, RuntimeError, TossApiError, TypeError, ValueError)
-V2_ENTRY_ARM_WINDOW = timedelta(minutes=10)
+V2_ENTRY_ARM_WINDOW = timedelta(minutes=30)
+HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS = frozenset(
+    {"falling-knife", "missing-price-setup", "rsi-chase"}
+)
+HERMES_EXPERIMENTAL_SIZING_POLICY = PositionSizingPolicy(
+    per_trade_risk_rate=Decimal("0.02"),
+    max_open_heat_rate=Decimal("0.06"),
+    max_cluster_heat_rate=Decimal("0.06"),
+)
 
 
 def _is_setup_v2_missing(error: BaseException) -> bool:
@@ -306,6 +319,7 @@ class PaperCycleRunner:
         trend_entry_symbols: tuple[str, ...] = (),
         trend_entry_key: str | None = None,
         signal_namespace: str | None = None,
+        experimental_strategy_reference: bool = False,
         snapshot: PaperCycleSnapshot | None = None,
     ) -> PaperCycleResult:
         previous_api_errors = self._state.latest_consecutive_api_errors()
@@ -335,6 +349,7 @@ class PaperCycleRunner:
                 previous_api_errors=previous_api_errors,
                 new_buys_allowed=prepared.new_buys_allowed,
                 signal_namespace=signal_namespace,
+                experimental_strategy_reference=experimental_strategy_reference,
                 snapshot=prepared,
             )
         except Exception as error:
@@ -375,6 +390,7 @@ class PaperCycleRunner:
         previous_api_errors: int,
         new_buys_allowed: bool,
         signal_namespace: str | None,
+        experimental_strategy_reference: bool,
         snapshot: PaperCycleSnapshot,
     ) -> PaperCycleResult:
         size = len(symbols)
@@ -445,7 +461,10 @@ class PaperCycleRunner:
                     if (
                         stored_plan is None
                         and v2_candidates[index] is not None
-                        and v2_candidates[index].decision.approved
+                        and _v2_candidate_can_arm(
+                            v2_candidates[index],
+                            experimental_strategy_reference=experimental_strategy_reference,
+                        )
                         and not entry_blocked_by_legacy
                         and session.market_open_at is not None
                         and now
@@ -470,12 +489,17 @@ class PaperCycleRunner:
                             self._v2_strategy.cluster_id(symbol), Decimal(0)
                         ),
                         reserved_cash=reserved_cash,
+                        experimental_strategy_reference=(
+                            experimental_strategy_reference
+                        ),
                     )
                     signal, reason, plan = packed[0], packed[1], packed[2]
                     skip_detail = packed[3] if len(packed) > 3 else None
                     signals[index] = signal
                     v2_plans_to_store[index] = plan
-                    if signal is None and reason is not None:
+                    if signal is not None:
+                        skips[index] = None
+                    elif reason is not None:
                         skips[index] = reason
                         skip_details[index] = skip_detail
                     if signal is not None and plan is not None:
@@ -761,6 +785,7 @@ class PaperCycleRunner:
         reserved_open_heat: Decimal,
         reserved_cluster_heat: Decimal,
         reserved_cash: Decimal,
+        experimental_strategy_reference: bool,
     ) -> tuple[TradeSignal | None, str | None, ArmedTradePlan | None]:
         assert self._v2_strategy is not None
         if not session.is_business_day or session.market_open_at is None:
@@ -854,11 +879,27 @@ class PaperCycleRunner:
             return None, "setup-v2:blocked:legacy-portfolio", None
         if candidate is None:
             return None, "setup-v2:missing:daily-candidate", None
-        if not candidate.decision.approved:
+        arm_candidate_input = candidate
+        if not candidate.decision.approved and not _v2_candidate_can_arm(
+            candidate,
+            experimental_strategy_reference=experimental_strategy_reference,
+        ):
             return None, _v2_rejection_reason(candidate), None
-        if now > session.market_open_at + V2_ENTRY_ARM_WINDOW:
-            return None, "setup-v2:blocked:late-entry-window", None, _entry_window_detail(
-                session, now
+        if experimental_strategy_reference:
+            arm_candidate_input = replace(
+                candidate,
+                decision=replace(
+                    candidate.decision,
+                    approved=True,
+                    setups=tuple(
+                        dict.fromkeys(
+                            (
+                                *candidate.decision.setups,
+                                SetupType.HERMES_EXPERIMENTAL,
+                            )
+                        )
+                    ),
+                ),
             )
         first_bar = next(
             (
@@ -875,7 +916,7 @@ class PaperCycleRunner:
             )
         cluster_id = self._v2_strategy.cluster_id(symbol)
         decision = arm_candidate(
-            candidate,
+            arm_candidate_input,
             first_completed_bar=first_bar,
             session_open_at=session.market_open_at,
             equity=performance.equity,
@@ -886,22 +927,41 @@ class PaperCycleRunner:
             current_cluster_heat=(
                 self._trading.cluster_v2_heat(cluster_id) + reserved_cluster_heat
             ),
+            sizing_policy=(
+                HERMES_EXPERIMENTAL_SIZING_POLICY
+                if experimental_strategy_reference
+                else DEFAULT_POSITION_SIZING_POLICY
+            ),
         )
         if not decision.armed or decision.plan is None:
             detail = dict(decision.detail or {})
             detail.update(_entry_window_detail(session, now))
             return None, decision.reason, None, detail
+        if now > session.market_open_at + V2_ENTRY_ARM_WINDOW:
+            return (
+                None,
+                "setup-v2:shadow:armed-after-entry-window",
+                None,
+                _entry_window_detail(session, now),
+            )
         plan = decision.plan
+        experimental_references = candidate.decision.violations
         return (
             TradeSignal(
                 signal_id=(
-                    f"setup-v2.3:{symbol}:{plan.setup_session.isoformat()}:entry"
+                    f"{'hermes-experimental-v2.3' if experimental_strategy_reference else 'setup-v2.3'}:"
+                    f"{symbol}:{plan.setup_session.isoformat()}:entry"
                 ),
                 symbol=symbol,
                 side=Side.BUY,
                 reference_price=plan.entry_price,
                 quantity=plan.quantity,
-                reason="setup-v2.3 daily candidate",
+                reason=(
+                    "hermes-experimental v2.3 references="
+                    + (",".join(experimental_references) or "strict-pass")
+                    if experimental_strategy_reference
+                    else "setup-v2.3 daily candidate"
+                ),
             ),
             None,
             plan,
@@ -970,6 +1030,19 @@ def _v2_rejection_reason(candidate: DailySetupCandidate) -> str:
     return "setup-v2:" + (",".join(parts) if parts else "rejected")
 
 
+def _v2_candidate_can_arm(
+    candidate: DailySetupCandidate,
+    *,
+    experimental_strategy_reference: bool,
+) -> bool:
+    decision = candidate.decision
+    if decision.approved:
+        return True
+    if not experimental_strategy_reference or decision.missing_checks:
+        return False
+    return set(decision.violations) <= HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS
+
+
 def _persisted_v2_plan(
     plan: ArmedTradePlan, *, cluster_id: str, opened_at: datetime
 ) -> V2PositionPlan:
@@ -1027,6 +1100,7 @@ def _error_message(items: tuple[SymbolCycleResult, ...]) -> str | None:
 
 
 IDLE_PRIORITY = (
+    "shadow-signal",
     "setup-v2-block",
     "v2-idle",
     "no-crossover",
@@ -1097,6 +1171,8 @@ def _idle_reason(
     if error is not None:
         return "error"
     if skip_reason is not None:
+        if skip_reason.startswith("setup-v2:shadow:"):
+            return "shadow-signal"
         if skip_reason.startswith("setup-v2:"):
             return "setup-v2-block"
         return "insufficient-candles"
@@ -1131,6 +1207,7 @@ def _cycle_insight(
         ),
         "skippedCandles": reasons.get("insufficient-candles", 0),
         "setupV2Blocked": reasons.get("setup-v2-block", 0),
+        "shadowSignals": reasons.get("shadow-signal", 0),
         "v2Idle": reasons.get("v2-idle", 0),
         "noCrossover": reasons.get("no-crossover", 0),
         "sellNoPosition": reasons.get("sell-no-position", 0),

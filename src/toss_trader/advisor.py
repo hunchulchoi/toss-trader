@@ -13,10 +13,13 @@ from .risk import RiskContext
 from .v2_engine import ArmedTradePlan, DailySetupCandidate
 
 HERMES_TRADE_PROMPT = (
-    "너는 paper trading 비교 실험의 보수적 기술적 분석 검토자다. "
+    "너는 독립 Hermes paper trading 실험의 보수적 기술적 분석 검토자다. "
     "제공된 JSON만 보고 신호를 승인 또는 거부하라. 도구를 호출하지 마라. "
     "RiskManager가 최종 결정하며 너는 안전 한도를 완화할 수 없다. "
-    "market(일봉·분봉·setup-v2·수급)이 있으면 그 가격·수급 근거로 판단하고 "
+    "setup-v2의 missing-price-setup, rsi-chase, falling-knife는 참고 근거이며 "
+    "그 위반만으로 자동 거부하지 마라. 일봉·분봉·수급을 함께 판단하라. "
+    "필수 데이터 결손·임박 이벤트·갭·수량·현금·시간·Risk 차단은 이미 하드 "
+    "게이트이므로 우회할 수 없다. "
     "한도 숫자만으로 승인하지 마라. "
     'JSON 한 개만 응답하라: {"approved": true 또는 false, '
     '"rationale": "한국어 1~3문장"}. 직접적인 투자 권유와 수익 보장은 금지한다.'

@@ -25,7 +25,7 @@ flowchart TD
     CAL -->|예| U[거래일 universe 생성 또는 당일 cache]
     U --> S[Rule: 1m + 완결 일봉 200개 수집]
     S --> PIT[PostgreSQL PIT 조회]
-    PIT --> C{전일 setup-v2.3 후보 승인?}
+    PIT --> C{Rule strict setup-v2.3 승인?}
     C -->|누락·위반| SKIP[setup-v2 block / fill 없음]
     C -->|승인| BAR{오늘 첫 1분봉 완결?}
     BAR -->|아니오| WAIT[waiting:first-session-bar]
@@ -35,8 +35,11 @@ flowchart TD
     PLAN --> RR[Rule RiskManager]
     RR -->|승인| RF[Rule paper fill]
     RR -->|거부·오류| NF[fill 없음]
-    S --> SHARE[sharedSnapshot]
-    SHARE --> H[Hermes 별도 장부에서 동일 시장 입력 재생]
+    S --> SHARE[정적 적격 Top30 sharedSnapshot]
+    SHARE --> H[Hermes: 가격 전략 위반은 참고 근거]
+    H --> HH{PIT 결손·이벤트·갭·수량·시간 hard gate}
+    HH -->|거부| HD
+    HH -->|통과| PRE
     H --> PRE{local hard preflight}
     PRE -->|거부| HD[판단 기록 / token 0]
     PRE -->|통과| ADV[Hermes advisor]
@@ -53,9 +56,10 @@ flowchart TD
     NOTICE -->|아니오| QUIET[무알림 정상 종료]
 ```
 
-Rule이 시장 데이터를 한 번 수집해 `sharedSnapshot`을 만든다. Hermes는 같은
-symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트폴리오의 차이는
-시장 입력이 아니라 advisor 개입 여부와 각자의 현금·포지션·리스크 장부다.
+Rule이 시장 데이터를 한 번 수집해 `sharedSnapshot`을 만든다. Hermes는 Rule
+선정종목과 정적 적격·유동성 후보를 합친 최대 30종의 같은 저장 시세를 재사용한다.
+Hermes는 가격 셋업·RSI·낙하 칼날 판정을 참고 근거로 보지만, 필수 데이터·이벤트·
+갭·수량·시간·Risk는 우회하지 못한다. 후보와 전략 계약이 달라 직접 A/B가 아니다.
 
 ## Universe and market snapshot
 
@@ -69,8 +73,11 @@ symbols, candles, setup 후보를 받아 재사용한다. 따라서 두 포트�
 4. 가격 setup 통과자만 D-1 거래대금 순 `eligible_rank`를 매겨 최대 15개까지
    선택한다. 부족분을 채우지 않는다. 정상 0종도 당일 고정한다. 현금·수량·주문
    한도·일일 손실·API 오류는 BUY 실행 Risk에서만 검사한다.
-5. 순위 밖이어도 현재 보유 종목은 추적 대상에 포함한다.
-6. 랭킹·metadata·가격 데이터 오류면 성공 cache를 만들지 않고 다음 cycle에서
+5. Hermes collection pool은 Rule 선택을 먼저 보존하고, 가격 셋업 통과 여부와
+   무관한 정적 적격·유동성 후보로 최대 30종을 채운다. ETF·우선주·정지·이력
+   데이터 오류는 포함하지 않는다.
+6. 순위 밖이어도 현재 보유 종목은 추적 대상에 포함한다.
+7. 랭킹·metadata·가격 데이터 오류면 성공 cache를 만들지 않고 다음 cycle에서
    재시도한다. 가격 setup 통과 후보의 필수 PIT 수급·이벤트 결손도 정상 0종으로
    고정하지 않는다. 그동안 신규 BUY를 막고 기존 보유의 SELL 경로만 유지한다.
 7. 종목별 1분봉과 완결 일봉 200개를 받고, 부족하면 `nextBefore` cursor가
@@ -116,16 +123,17 @@ timestamp는 session open과 같아야 한다.
 4. 진입·청산 각각 5bp 불리한 slippage와 국내 거래비용을 반영한다.
 5. 수량은 다음 한도의 최솟값을 정수 주식 단위로 내림한다.
 
-| 제한 | 값 |
-|---|---:|
-| 1회 위험 예산 | equity의 0.5% |
-| 전체 open heat | equity의 2% |
-| cluster heat | equity의 1% |
-| 주문 금액 | 300,000원 |
-| 가용 현금 | 비용 포함 초과 금지 |
+| 제한 | Rule | Hermes experimental |
+|---|---:|---:|
+| 1회 위험 예산 | equity의 0.5% | equity의 2% |
+| 전체 open heat | equity의 2% | equity의 6% |
+| cluster heat | equity의 1% | equity의 6% |
+| 주문 금액 | 700,000원 | 700,000원 |
+| 가용 현금 | 비용 포함 초과 금지 | 비용 포함 초과 금지 |
 
 신뢰 가능한 sector master가 아직 없어서 모든 종목을 `UNKNOWN` 단일 cluster로
-취급한다. 같은 cycle의 앞선 후보가 fill되기 전이라도 heat와 cash를 임시
+취급한다. Hermes의 6% cluster heat는 이 단일 UNKNOWN bucket 전체 한도다.
+같은 cycle의 앞선 후보가 fill되기 전이라도 heat와 cash를 임시
 예약해 뒤 후보의 중복 사용을 막는다. 계산 결과가 1주 미만이면 BUY하지 않는다.
 
 ## Position and exit state machine
@@ -148,12 +156,17 @@ plan 없는 legacy 포지션이 하나라도 있으면 신규 v2 BUY를 fail-clo
 
 ## Risk, advisor, and persistence
 
-armed 신호도 최종 RiskManager를 통과해야 한다. 주요 제한은 주문 30만원,
+armed 신호도 최종 RiskManager를 통과해야 한다. 주요 제한은 주문 70만원,
 종목 100만원, 하루 BUY 5회, 동시 보유 10종목, 일일 수익률 -3%, API 연속 오류
 5회, 휴장, 마감 10분 전 신규 BUY 금지다.
 
+신규 entry는 09:30 KST까지만 주문 후보가 된다. 그 뒤 같은 첫 봉 기준으로
+arm 가능한 후보는 `setup-v2:shadow:armed-after-entry-window`로만 기록하며,
+RiskManager·Hermes advisor·paper fill 경로로 보내지 않는다.
+
 - Rule: 신호를 n8n RiskManager로 직접 보낸다.
-- Hermes: local hard preflight 통과 후에만 advisor를 호출하고, 그 결과를 다시
+- Hermes: Rule이 수집한 공유 snapshot에서 같은 deterministic setup과 local hard
+  preflight를 통과한 신호에만 advisor를 호출하고, 그 결과를 다시
   n8n RiskManager로 보낸다.
 - Risk 판단 저장이 실패하면 승인 신호도 체결하지 않는다.
 - 모든 paper fill은 PostgreSQL 장부에만 기록한다.

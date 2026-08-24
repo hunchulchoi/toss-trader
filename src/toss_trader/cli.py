@@ -27,7 +27,7 @@ from .backtest import run_ma_backtest
 from .calendar import MarketCalendarService, previous_kr_business_date
 from .client import TossClient
 from .config import Settings
-from .cycle import PaperCycleRunner, PaperCycleSnapshot, V2_ENTRY_ARM_WINDOW
+from .cycle import V2_ENTRY_ARM_WINDOW, PaperCycleRunner, PaperCycleSnapshot
 from .cycle_funnel import aggregate_intraday_review, insights_from_runs
 from .cycle_state import CycleStateStore, open_cycle_state_store
 from .errors import TossApiError
@@ -1424,6 +1424,9 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             signal_namespace=(
                 args.portfolio if args.portfolio in {"rule", "hermes"} else None
             ),
+            experimental_strategy_reference=(
+                args.portfolio == "hermes" and args.hermes_advisor
+            ),
             snapshot=snapshot,
         )
         cash_balance = paper_ledger.cash_balance(settings.paper_initial_cash)
@@ -1500,7 +1503,11 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             "startedAt": result.started_at,
             "finishedAt": result.finished_at,
             "interval": result.interval,
-            "entryStrategy": "setup-v2.3-independent-daily",
+            "entryStrategy": (
+                "hermes-experimental-v2.3-reference-gates"
+                if args.portfolio == "hermes" and args.hermes_advisor
+                else "setup-v2.3-independent-daily"
+            ),
             "dailyReturnRate": result.daily_return_rate,
             "currencyReturns": result.currency_returns,
             "equity": result.equity,
@@ -1543,7 +1550,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             ),
             "evaluationPool": {
                 "role": (
-                    "hermes-expanded-top30"
+                    "hermes-experimental-static-top30"
                     if snapshot is not None and args.portfolio == "hermes"
                     else "rule-top15"
                 ),

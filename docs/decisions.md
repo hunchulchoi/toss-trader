@@ -1,5 +1,40 @@
 # Architecture Decisions
 
+## ADR-008 Hermes uses strategy gates as paper evidence
+
+- Status: accepted
+- Date: 2026-08-24
+
+### Decision
+
+Keep Rule on strict setup-v2.3. Give Hermes a separate, bounded paper-only pool:
+Rule selections first, then D-1 liquidity-ranked static-eligible common stocks,
+up to 30 symbols. Treat `missing-price-setup`, `rsi-chase`, and
+`falling-knife` as advisor evidence rather than automatic Hermes vetoes.
+
+Mandatory PIT/event data, imminent events, gap checks, integer-share sizing,
+heat, cash, order/account Risk, market session, and the 09:30 entry cutoff stay
+deterministic and fail-closed. Every Hermes entry is labeled
+`hermes-experimental` and remains isolated from Rule results and real trading.
+Rule retains 0.5% per-trade, 2% open, and 1% UNKNOWN-cluster heat. Hermes paper
+uses 2% per-trade and 6% open/UNKNOWN-cluster heat; both retain ATR stops,
+integer shares, the KRW 700,000 order ceiling, cash, and account RiskManager.
+
+### Reason
+
+The prior Hermes path could only review a signal after Rule's full strategy gate
+approved it. With a KRW 1,000,000 portfolio and rare D-1 setups, both ledgers
+therefore repeated the same zero-signal result and produced no independent
+strategy sample. The new split tests discretionary evidence use without
+weakening data integrity or execution safety.
+
+### Failure contract
+
+- Missing PIT/event facts or malformed market data never become model judgment.
+- Hermes cannot override sizing, cash, RiskManager, calendar, or entry time.
+- Advisor failure remains a rejected paper decision with no fill.
+- Rule and Hermes results are asymmetric experiments, not direct A/B evidence.
+
 ## ADR-007 Opening entries use a D-1 setup-first known pool
 
 - Status: accepted

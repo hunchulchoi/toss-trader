@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -8,6 +9,7 @@ from zoneinfo import ZoneInfo
 from toss_trader.models import Candle
 from toss_trader.setup_screening import (
     FlowObservation,
+    PositionSizingPolicy,
     SetupContext,
     SetupType,
     evaluate_setup,
@@ -109,8 +111,12 @@ def arm(
     equity: Decimal = Decimal(1_000_000),
     available_cash: Decimal = Decimal(1_000_000),
     current_open_heat: Decimal = Decimal(0),
+    sizing_policy: PositionSizingPolicy | None = None,
 ):
     opened_at = session_open_at or session_open_after(candidate.signal_session)
+    policy_kwargs = (
+        {"sizing_policy": sizing_policy} if sizing_policy is not None else {}
+    )
     return arm_candidate(
         candidate,
         first_completed_bar=bar
@@ -122,6 +128,7 @@ def arm(
         equity=equity,
         available_cash=available_cash,
         current_open_heat=current_open_heat,
+        **policy_kwargs,
     )
 
 
@@ -195,6 +202,34 @@ class V2EngineTest(unittest.TestCase):
         self.assertIn("below-one-lot", decision.detail["limitingFactors"])
         self.assertEqual(decision.detail["quantity"], "0")
 
+    def test_hermes_policy_allows_two_percent_risk_without_changing_default(self) -> None:
+        history = pullback_candles()
+        candidate = build_daily_candidate(
+            history, context=approved_context(history[-1])
+        )
+        candidate = replace(
+            candidate,
+            close_price=Decimal(100000),
+            setup_low=Decimal(90000),
+            atr14=Decimal(10000),
+        )
+        hermes_policy = PositionSizingPolicy(
+            per_trade_risk_rate=Decimal("0.02"),
+            max_open_heat_rate=Decimal("0.06"),
+            max_cluster_heat_rate=Decimal("0.06"),
+        )
+
+        rule = arm(candidate)
+        hermes = arm(candidate, sizing_policy=hermes_policy)
+
+        self.assertFalse(rule.armed)
+        self.assertEqual(rule.reason, "setup-v2:violation:below-one-lot")
+        self.assertTrue(hermes.armed)
+        assert hermes.plan is not None
+        self.assertEqual(hermes.plan.quantity, Decimal(1))
+        self.assertGreater(hermes.plan.planned_heat, Decimal(5000))
+        self.assertLessEqual(hermes.plan.planned_heat, Decimal(20000))
+
     def test_arm_rejects_daily_bar_naive_time_and_timestamp_mismatch(self) -> None:
         history = pullback_candles()
         candidate = build_daily_candidate(
@@ -203,7 +238,7 @@ class V2EngineTest(unittest.TestCase):
         opened_at = session_open_after(candidate.signal_session)
         with self.assertRaisesRegex(ValueError, "1m candle"):
             arm(candidate, bar=history[-1], session_open_at=opened_at)
-        naive = datetime(2026, 1, 2, 9, 0)
+        naive = datetime(2026, 1, 2, 9, 0)  # noqa: DTZ001 - validation fixture
         with self.assertRaisesRegex(ValueError, "timezone"):
             arm_candidate(
                 candidate,

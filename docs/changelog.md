@@ -29,6 +29,39 @@
   `/opt/data/scripts/toss-trader-daily-panel.py` 복사. `TRADING_ENABLED=false`,
   `/healthz` ok. 다음 11:50/15:40 브리핑부터 적용
 
+### Hermes experimental 수량 위험 예산 분리
+
+- 기록 시각: 2026-08-24 12:37 KST
+- Rule: 거래당 0.5%, 전체 open heat 2%, UNKNOWN cluster heat 1% 유지
+- Hermes: paper experimental만 거래당 2%, 전체 open heat 6%, 단일 UNKNOWN
+  cluster heat 6% 적용
+- 공통 안전: ATR14 ×1.5 stop, 정수주 내림, 주문 700,000원, 가용 현금,
+  일일 손실·API·시장시간·09:30·RiskManager 차단 유지
+- 한계: 100만원 장부에서 1주 예상손실 20,000원을 넘는 종목은 Hermes도
+  `below-one-lot`; 실거래·성과 개선 근거 아님
+
+### Hermes를 v2.3 참고형 독립 paper 전략으로 분리
+
+- 기록 시각: 2026-08-24 12:20 KST
+- 후보: Rule 선택종목을 우선 보존하고 D-1 유동성 순 정적 적격 보통주로
+  Hermes 관찰 풀을 최대 30종까지 구성
+- 전략: Rule은 strict setup-v2.3 유지. Hermes는 `missing-price-setup`,
+  `rsi-chase`, `falling-knife`를 advisor 참고 근거로 사용
+- 안전: PIT·이벤트 결손, 임박 이벤트, 갭, 정수주 수량, 0.5% 위험, heat,
+  현금·70만원 주문 상한, 계좌 Risk, 장 시간, 09:30 진입 제한은 하드 차단 유지
+- 감사: 모든 Hermes 진입은 `hermes-experimental` signal·position setup으로
+  기록. Rule과 후보·전략 계약이 달라 직접 A/B·성과 개선 근거로 사용 금지
+
+### Paper entry 관찰창과 주문 상한 조정
+
+- 기록 시각: 2026-08-24 11:18 KST
+- 동작: paper 초기 자본 1,000,000원과 거래당 위험 0.5%, ATR stop 등 기존
+  setup-v2.3 게이트는 유지하고 주문당 최대 금액만 300,000원에서 700,000원으로 조정
+- 관찰: 실제 BUY 진입창은 09:10에서 09:30 KST로 연장. 이후 arm 가능 후보는
+  shadow 사유로만 기록하고 주문·Hermes advisor·paper fill은 생성하지 않음
+- 한계: 1주 예상 손실이 5,000원 위험 예산을 넘으면 주문 상한과 무관하게
+  `below-one-lot`으로 계속 차단됨
+
 ### Hermes 대화 화면에 11:50 중간(점심) 및 15:40 마감 패널 브리핑 연동
 
 - 기록 시각: 2026-08-24 10:38 KST

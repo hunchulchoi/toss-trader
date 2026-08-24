@@ -420,7 +420,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(plan.quantity, result.items[0].fill.quantity)
         self.assertEqual(plan.cluster_id, "UNKNOWN")
 
-    def test_v2_cycle_rejects_retroactive_entry_after_arm_window(self) -> None:
+    def test_v2_cycle_allows_entry_through_thirty_minute_arm_window(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         strategy = FakeV2CycleStrategy(
             _v2_candidate(),
@@ -442,15 +442,79 @@ class PaperCycleRunnerTest(unittest.TestCase):
             short_window=2,
             long_window=3,
             quantity=Decimal(1),
-            now=market_open + timedelta(minutes=11),
+            now=market_open + timedelta(minutes=30),
+        )
+
+        self.assertEqual(result.fill_count, 1)
+        self.assertIsNotNone(self.paper_ledger.v2_position_plan("005930"))
+
+    def test_v2_cycle_records_armable_late_entry_as_shadow_only(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="10",
+                    low_price="9.5",
+                )
+            ],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=31),
+        )
+
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "setup-v2:shadow:armed-after-entry-window",
+        )
+        self.assertEqual(result.items[0].idle_reason, "shadow-signal")
+        self.assertEqual(result.insight["funnel"]["shadowSignals"], 1)
+        self.assertIsNone(self.paper_ledger.v2_position_plan("005930"))
+        self.assertEqual(self.paper_ledger.recent_risk_decisions(), [])
+
+    def test_v2_late_shadow_preserves_deterministic_gate_rejection(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="11",
+                    low_price="10",
+                )
+            ],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=31),
         )
 
         self.assertEqual(result.fill_count, 0)
         self.assertEqual(
             result.items[0].skip_reason,
-            "setup-v2:blocked:late-entry-window",
+            "setup-v2:violation:gap-up-chase",
         )
-        self.assertIsNone(self.paper_ledger.v2_position_plan("005930"))
+        self.assertEqual(result.insight["funnel"]["shadowSignals"], 0)
 
     def test_v2_rejection_is_not_hidden_by_missing_opening_bar(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
@@ -486,6 +550,154 @@ class PaperCycleRunnerTest(unittest.TestCase):
             ("005930", "1m", 200),
             client.interval_calls,
         )
+
+    def test_hermes_experimental_can_review_price_strategy_rejection(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        candidate = _v2_candidate()
+        candidate = replace(
+            candidate,
+            close_price=Decimal(100000),
+            setup_low=Decimal(90000),
+            atr14=Decimal(10000),
+            decision=replace(
+                candidate.decision,
+                approved=False,
+                setups=(),
+                violations=("missing-price-setup", "rsi-chase"),
+            ),
+        )
+        strategy = FakeV2CycleStrategy(
+            candidate,
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="100000",
+                    low_price="95000",
+                )
+            ],
+        )
+
+        result = self._runner(
+            WatchlistCandleClient(
+                {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+            ),
+            v2_strategy=strategy,
+        ).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=5),
+            signal_namespace="hermes",
+            experimental_strategy_reference=True,
+        )
+
+        self.assertEqual(result.fill_count, 1)
+        assert result.items[0].signal is not None
+        self.assertTrue(
+            result.items[0].signal.signal_id.startswith(
+                "hermes:hermes-experimental-v2.3:"
+            )
+        )
+        self.assertIn("missing-price-setup", result.items[0].signal.reason)
+        self.assertIn("rsi-chase", result.items[0].signal.reason)
+        plan = self.paper_ledger.v2_position_plan("005930")
+        assert plan is not None
+        self.assertIn("hermes-experimental-reference", plan.setups)
+        self.assertGreater(plan.planned_heat, Decimal(5000))
+        self.assertLessEqual(plan.planned_heat, Decimal(20000))
+
+    def test_hermes_experimental_keeps_missing_data_and_event_hard(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        base = _v2_candidate()
+        cases = (
+            replace(
+                base,
+                decision=replace(
+                    base.decision,
+                    approved=False,
+                    missing_checks=("flow-history",),
+                ),
+            ),
+            replace(
+                base,
+                decision=replace(
+                    base.decision,
+                    approved=False,
+                    violations=("event-imminent",),
+                ),
+            ),
+            replace(
+                base,
+                decision=replace(
+                    base.decision,
+                    approved=False,
+                    violations=("future-unknown-gate",),
+                ),
+            ),
+        )
+
+        for candidate in cases:
+            with self.subTest(candidate=candidate.decision):
+                ledger = PaperLedger(":memory:", portfolio_id="hermes")
+                state = SqliteCycleStateStore(":memory:", portfolio_id="hermes")
+                try:
+                    strategy = FakeV2CycleStrategy(
+                        candidate,
+                        [
+                            _minute_bar(
+                                market_open + timedelta(minutes=1),
+                                open_price="10",
+                                low_price="9.5",
+                            )
+                        ],
+                    )
+                    runner = PaperCycleRunner(
+                        collector=MarketCollector(
+                            client=WatchlistCandleClient(
+                                {
+                                    "005930": [
+                                        Decimal(10),
+                                        Decimal(10),
+                                        Decimal(10),
+                                        Decimal(12),
+                                    ]
+                                }
+                            ),
+                            repository=self.market_repository,
+                        ),
+                        strategy=StoredMaStrategy(self.market_repository),
+                        trading=PaperTradingService(
+                            ledger=ledger,
+                            risk_manager=RiskManager(RiskLimits()),
+                        ),
+                        calendar=MarketCalendarService(
+                            WatchlistCandleClient({"005930": [Decimal(10)]})
+                        ),
+                        performance=PortfolioPerformance(
+                            ledger=ledger,
+                            market_repository=self.market_repository,
+                        ),
+                        state=state,
+                        v2_strategy=strategy,
+                    )
+                    result = runner.run(
+                        symbols=("005930",),
+                        interval="1m",
+                        short_window=2,
+                        long_window=3,
+                        quantity=Decimal(1),
+                        now=market_open + timedelta(minutes=5),
+                        signal_namespace="hermes",
+                        experimental_strategy_reference=True,
+                    )
+                    self.assertEqual(result.fill_count, 0)
+                    assert result.items[0].skip_reason is not None
+                    self.assertTrue(result.items[0].skip_reason.startswith("setup-v2:"))
+                finally:
+                    ledger.close()
+                    state.close()
 
     def test_v2_cycle_pages_back_to_toss_session_open_bar(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)

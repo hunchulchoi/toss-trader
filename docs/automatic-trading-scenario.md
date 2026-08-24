@@ -147,7 +147,12 @@ n8n의 각 task 호출마다 automation service가 별도 프로세스로
 `paper_portfolios`가 표시 이름·mode·초기자금을 저장하고, `paper_fills`,
 `paper_risk_decisions`, `paper_cycle_runs`는 `portfolio_id`로 격리한다.
 
-Hermes: 로컬 hard preflight 통과 후에만 advisor. 한도 거부 → 판단 1행, token 0.
+Hermes: 정적 적격·유동성 Top30에서 가격 셋업·RSI·수급 방향은 참고 근거로
+advisor가 판단한다. 필수 데이터·이벤트·갭·수량·시간·로컬 hard preflight는
+계속 deterministic 차단이다. 한도 거부 → 판단 1행, token 0.
+Hermes experimental sizing은 거래당 2%, 전체 open heat 6%, 단일 UNKNOWN
+cluster heat 6%다. Rule의 0.5%/2%/1%와 분리되며 주문 70만원·현금·계좌
+RiskManager 한도는 동일하다.
 Rule: preflight 없이 n8n 1회. advisor payload는 신호+RiskContext에 cycle이 이미
 수집한 최근 완결 일봉 30개·분봉 60개·setup-v2·PIT 수급 요약을 붙인다. Hermes가
 Toss API를 직접 조회하지 않는다. 뉴스·호가 없음.
@@ -159,7 +164,9 @@ Toss API를 직접 조회하지 않는다. 뉴스·호가 없음.
 2. 장중 1m v2 cycle은 1분봉과 같은 종목의 일봉 200개를 수집한다. 완결 일봉이
    200개 미만이면 `setup-v2:missing:completed-daily-candles` skip이지
    종목 `error`가 아니다. Hermes shared snapshot이 후보를 다시 만들어도 같다.
-3. 직전 완결 일봉의 가격 setup과 PostgreSQL PIT 수급 6세션·이벤트를 평가한다.
+3. Rule은 직전 완결 일봉의 가격 setup과 PostgreSQL PIT 수급 6세션·이벤트를
+   strict 평가한다. Hermes는 가격 전략 판정을 근거로 보되 데이터·이벤트 hard
+   gate는 동일하게 강제한다.
 4. 다음 거래일 첫 완결 1분봉에서 3% 갭, stop, ATR, heat, cash로 BUY를 arm한다.
 5. 기존 v2 포지션은 structure invalidation 또는 stop touch 다음 봉 시가로
    SELL 후보를 만든다.
@@ -182,7 +189,7 @@ RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저�
 
 | 검사 | 제한 | 위반 코드 |
 |---|---:|---|
-| 1회 주문 금액 | 300,000원 | `max-order-notional` |
+| 1회 주문 금액 | 700,000원 | `max-order-notional` |
 | paper 가용 현금 | 주문 금액 초과 금지 | `insufficient-paper-cash` |
 | 종목별 보유 금액 | 1,000,000원 | `max-position-notional` |
 | 일일 신규 매수 | 5회 | `max-daily-buys` |

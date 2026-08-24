@@ -19,6 +19,7 @@ class SetupType(StrEnum):
     PULLBACK = "pullback"
     OVERSOLD_REVERSAL = "oversold-reversal"
     FLOW_REVERSAL = "flow-reversal"
+    HERMES_EXPERIMENTAL = "hermes-experimental-reference"
 
 
 class ValuationTier(StrEnum):
@@ -297,7 +298,7 @@ class PositionSizingPolicy:
     per_trade_risk_rate: Decimal = Decimal("0.005")
     max_open_heat_rate: Decimal = Decimal("0.02")
     max_cluster_heat_rate: Decimal = Decimal("0.01")
-    max_order_notional: Decimal = Decimal(300000)
+    max_order_notional: Decimal = Decimal(700000)
     atr_stop_multiple: Decimal = Decimal("1.5")
     lot_size: Decimal = Decimal(1)
 
