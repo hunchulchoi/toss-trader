@@ -46,6 +46,13 @@ ROLES = {
 }
 
 
+MARKET_CRITIQUE = (
+    "marketContext가 있으면 스킵/유휴 사유를 벤치마크·감시종목 vsOpen/vsPrevClose와 "
+    "먼저 대조하라. 퍼널 코드만 반복하는 전략 토론은 금지. changedFacts가 비어도 "
+    "시장 대비 괴리를 짧게 적어라. JSON에 없는 뉴스·사후 매수 기회는 만들지 마라. "
+)
+
+
 def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     request = urllib.request.Request(
         f"{AUTOMATION_URL}{path}",
@@ -163,6 +170,7 @@ def _independent_prompt(name: str, context: dict[str, Any]) -> str:
         "변화, transitionCount, reasonClass, changedFacts를 우선 분석하라. "
         "changedFacts가 비었으면 '새로 바뀐 핵심 사실 없음'이라고 짧게 쓰고 같은 결론을 "
         "늘여 쓰지 마라. 정상 조건 탈락과 실제 missing-data/error를 구분하라. "
+        f"{MARKET_CRITIQUE}"
         "매매 지시·수익 보장 금지. 핵심 근거와 불확실성을 한국어 1200자 이내로 작성.\n"
         f"TODAY_JSON={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}"
     )
@@ -180,6 +188,7 @@ def _review_prompt(
         f"{timing_guard} "
         "합의점, 충돌, 틀린 주장/과잉해석, 최종 judge가 남겨야 할 불확실성을 "
         "사유 변화와 changedFacts 중심으로 검토하고 새 사실이 없으면 반복을 지적하라. "
+        f"{MARKET_CRITIQUE}"
         "제공 JSON만으로 한국어 900자 이내 작성. 매매 지시 금지.\n"
         f"TODAY_JSON={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}\n"
         f"INDEPENDENT={json.dumps(opinions, ensure_ascii=False, separators=(',', ':'))}"
@@ -202,6 +211,7 @@ def _hermes_call(
         "Grok skeptic, Gemini Risk의 독립 의견과 상호검토를 판정하라. 제공된 "
         f"evidence 밖의 사실을 만들지 마라. {timing_guard} "
         f"텔레그램용 한국어 평문으로 {sections}을 포함해 2800자 이내 작성하라. "
+        f"{MARKET_CRITIQUE}"
         "매매 지시·수익 보장 금지.\n"
         f"EVIDENCE={json.dumps(evidence, ensure_ascii=False, separators=(',', ':'))}"
     )

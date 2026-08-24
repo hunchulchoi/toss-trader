@@ -128,8 +128,9 @@ discovery universe 안에서 발굴한다.
 - 같은 작업이 이미 실행 중이면 automation API가 `409` 반환
 - endpoint는 host port로 공개하지 않고 `openclaw-net`에만 노출
 - 분석 panel은 1d cycle 수익률만 보지 않는다. 같은 서울 일자 `1m`
-  `cycle_insight`를 모아 `intradayReview`/`dailyReview`로 넘긴다. 판단 기준은
-  규칙 준수(setup 차단, 시가 대기, 보유 idle, 체결)이지 당일 플러스가 아니다.
+  `cycle_insight`를 모아 `intradayReview`/`dailyReview`로 넘기고, 저장된 1분봉으로
+  `marketContext`(벤치마크·감시종목 vsOpen/vsPrevClose)를 붙인다. 판단 기준은
+  규칙 준수와 그 시세 대비이지 당일 플러스가 아니다.
   11:50 결과는 `midday` 비확정 관측으로 표시하며 종가·일일 성과를 확정하지 않는다.
   뉴스·사후 해석으로 놓친 매수를 지어내지 않는다.
 

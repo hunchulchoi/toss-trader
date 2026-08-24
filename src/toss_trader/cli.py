@@ -35,6 +35,7 @@ from .execution import PaperTradingService
 from .kis_flow import KisInvestorFlowClient, KisInvestorFlowCollector
 from .krx_flow import KrxInvestorFlowCsvImporter, resolve_krx_session_index
 from .krx_openapi import fetch_krx_acc_trdval_rankings
+from .market_context import build_market_context
 from .market_data import CollectionResult, MarketCollector, StoredMaStrategy
 from .metrics import MetricsService, open_metrics_store, serve_metrics
 from .models import Side, TradeSignal
@@ -1221,6 +1222,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
 
     postgres_parameters = settings.postgres_connection_parameters()
     now = snapshot.evaluated_at if snapshot is not None else datetime.now(UTC)
+    market_context = None
     with ExitStack() as stack:
         client = _client(settings)
         market_repository = open_market_repository(
@@ -1439,6 +1441,36 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 ),
                 symbol_names=symbol_names,
             )
+        if interval == "1d":
+            try:
+                session = MarketCalendarService(client).regular_session(
+                    "KR", now=now
+                )
+                watched = tuple(
+                    dict.fromkeys(
+                        (
+                            *(
+                                universe_result.collection_symbols
+                                if universe_result is not None
+                                else ()
+                            ),
+                            *symbols,
+                        )
+                    )
+                )
+                market_context = build_market_context(
+                    market_repository,
+                    symbols=watched,
+                    benchmark_symbols=settings.market_benchmark_symbols,
+                    session=session,
+                    now=now,
+                    names=symbol_names,
+                )
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                market_context = {
+                    "status": "unavailable",
+                    "error": type(error).__name__,
+                }
     _emit(
         {
             "portfolioId": args.portfolio,
@@ -1503,6 +1535,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 "idleReason": result.insight["idleReason"],
             },
             "intradayReview": intraday_review,
+            "marketContext": market_context,
             "items": [
                 {**asdict(item), "name": symbol_names[item.symbol]}
                 for item in result.items

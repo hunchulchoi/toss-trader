@@ -383,6 +383,12 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertEqual(close[0], "장마감 브리핑")
         self.assertIn("[내일 확인]", close[2])
 
+    def test_hermes_panel_runner_requires_market_context_critique(self) -> None:
+        source = (ROOT / "automation" / "hermes-panel-runner.py").read_text()
+        self.assertIn("MARKET_CRITIQUE", source)
+        self.assertIn("marketContext", source)
+        self.assertIn("전략 토론은 금지", source)
+
     def test_n8n_workflow_runs_intraday_paper_every_five_minutes(self) -> None:
         workflow = json.loads(
             (

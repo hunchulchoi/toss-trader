@@ -930,6 +930,36 @@ class PaperCycleNoticeTest(unittest.TestCase):
             payload["cycle"]["middaySnapshotV2"]["schemaVersion"], 2
         )
 
+    def test_comparison_payload_lifts_stored_market_context(self) -> None:
+        payload = _comparison_payload(
+            {
+                "briefingKind": "midday",
+                "briefingObservedAt": "2026-08-24T11:50:00+09:00",
+                "rule": {
+                    "exitCode": 0,
+                    "cycle": {
+                        "summary": {},
+                        "marketContext": {
+                            "status": "ok",
+                            "benchmarks": [{"symbol": "069500", "vsOpen": "0.0100"}],
+                        },
+                    },
+                },
+                "hermes": {"exitCode": 0, "cycle": {"summary": {}}},
+            }
+        )
+
+        self.assertEqual(
+            payload["cycle"]["middaySnapshotV2"]["marketContext"]["benchmarks"][0][
+                "symbol"
+            ],
+            "069500",
+        )
+        self.assertNotIn(
+            "marketContext",
+            payload["cycle"]["middaySnapshotV2"]["portfolios"]["rule"],
+        )
+
     def test_comparison_payload_rejects_close_kind_at_midday(self) -> None:
         with self.assertRaisesRegex(ValueError, "midday briefingKind"):
             _comparison_payload(

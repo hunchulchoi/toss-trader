@@ -22,6 +22,11 @@ neither Docker access nor Cursor authentication.
    Telegram report. Midday output must not claim a closing price or final daily
    performance.
 
+The 1d cycle attaches `marketContext` from stored KR 1m bars (benchmark plus
+watched symbols). The panel must contrast skip/idle reasons with those session
+moves. It must not turn empty `changedFacts` into strategy debate, and it must
+not invent missed buys from news.
+
 Full model text and exact reported input, output, cache-read, and cache-write
 tokens are stored in `daily_analysis_opinions`. Telegram receives only the
 Hermes judgment, capped below 4000 characters; the full evidence remains in the

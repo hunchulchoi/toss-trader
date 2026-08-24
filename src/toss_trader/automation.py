@@ -1397,11 +1397,22 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "rule": _compact_panel_cycle(rule.get("cycle", rule)),
         "hermes": _compact_panel_cycle(hermes.get("cycle", hermes)),
     }
+    market_context = _panel_market_context(
+        rule.get("cycle", rule), hermes.get("cycle", hermes)
+    )
     summaries = [
         value.get("summary", {})
         for value in portfolios.values()
         if isinstance(value, dict)
     ]
+    snapshot = {
+        "schemaVersion": 2,
+        "kind": briefing_kind,
+        "observedAt": briefing_observed_at,
+        "portfolios": portfolios,
+    }
+    if market_context is not None:
+        snapshot["marketContext"] = market_context
     return {
         "exitCode": max(int(rule.get("exitCode", 1)), int(hermes.get("exitCode", 1))),
         "briefing": {
@@ -1411,12 +1422,7 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "cycle": {
             "comparison": True,
-            "middaySnapshotV2": {
-                "schemaVersion": 2,
-                "kind": briefing_kind,
-                "observedAt": briefing_observed_at,
-                "portfolios": portfolios,
-            },
+            "middaySnapshotV2": snapshot,
             "dailyReview": {"purpose": REVIEW_PURPOSE, "schemaVersion": 2},
             "summary": {
                 key: sum(int(summary.get(key, 0)) for summary in summaries)
@@ -1456,6 +1462,15 @@ def _compact_panel_cycle(value: object) -> dict[str, Any]:
         if key in value
     }
     return compact
+
+
+def _panel_market_context(*cycles: object) -> dict[str, Any] | None:
+    for cycle in cycles:
+        if isinstance(cycle, dict):
+            value = cycle.get("marketContext")
+            if isinstance(value, dict) and value:
+                return value
+    return None
 
 
 def _compact_intraday_review(value: object) -> dict[str, Any] | None:
