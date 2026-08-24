@@ -112,8 +112,9 @@ tool/plugin/MCP/context tool이 없다. Telegram 질의용 MCP는 `paper-mcp`다
 | 평일 09:00~15:20, 5분 간격 | Intraday Paper Cycle | n8n rule→Hermes task | 동적 universe, 1분봉, 전략, RiskManager, paper 체결 |
 | 평일 11:50 | Daily Paper + Panel | n8n rule→Hermes→분석 queue | 장중 미완결 중간 브리핑(시세 대비), Telegram 전송 |
 | 평일 15:40 | Daily Paper + Hermes | n8n rule→Hermes→분석 task | 일봉 paper, 시세 대비 마감 분석, Telegram 전송 |
+| 매일 00:10·18:30 | pit-collector | 프로세스 타이머 | OpenDART 갱신. KIS 수급은 KR 정규장 날에만 |
 
-세 workflow의 schedule trigger는 본 작업 전에 `POST /workflow/market-session`으로 Toss
+세 n8n workflow의 schedule trigger는 본 작업 전에 `POST /workflow/market-session`으로 Toss
 한국장 일정을 조회한다. `isBusinessDay=false`면 해당 execution을 정상 종료하고
 cycle·스캔·Hermes·Telegram을 실행하지 않는다. Toss 일정 조회 오류도 fail-closed로
 본 작업을 막는다. 중간·마감 workflow는 수동 trigger와 인증 webhook도 같은

@@ -7,6 +7,14 @@
 
 ## 2026-08-24
 
+### 휴장 18:30 KIS 수급 알림
+
+- 기록 시각: 2026-08-24 13:05 KST
+- 구멍: pit-collector가 달력 없이 매일 18:30에 KIS를 쳐, 휴장·주말 제공자
+  오류가 `TossTraderKisFlowFailure`로 갔다
+- 동작: 당일이 KR 정규장이 아니면 KIS 생략. OpenDART는 그대로
+- 운영: 코드만, 배포 대기. pit-collector 재기동 필요
+
 ### 휴장일에 TossTraderCycleStale이 울리던 문제
 
 - 기록 시각: 2026-08-24 13:00 KST

@@ -12,7 +12,10 @@
   sessions verified by the Toss KR market calendar.
 - The daemon runs immediately at startup and then at 00:10 and 18:30 KST. The
   00:10 run finalizes the prior OpenDART date before the next market open; the
-  18:30 run captures KIS flow and refreshes same-day disclosures.
+  18:30 run captures KIS flow and refreshes same-day disclosures. KIS flow is
+  skipped when the Toss KR calendar says the local day is not a regular session,
+  so a closed market does not page `TossTraderKisFlowFailure`. OpenDART refresh
+  still runs.
 - Trading remains disabled.
 
 ## Runtime tables

@@ -83,7 +83,13 @@ def run_pit_collection(
     if flow_collector is not None:
         if not flow_symbols:
             raise ValueError("configured KIS flow collector needs symbols")
-        if now.astimezone(SEOUL).time() < KIS_FLOW_AVAILABLE_AT:
+        session = calendar.regular_session(
+            "KR",
+            now=datetime.combine(local_day, time(12), tzinfo=SEOUL),
+        )
+        if not session.is_business_day:
+            flow_status = "SKIPPED_MARKET_CLOSED"
+        elif now.astimezone(SEOUL).time() < KIS_FLOW_AVAILABLE_AT:
             flow_status = "WAITING_FOR_KIS_1540"
         else:
             flow_rows = flow_collector.collect(

@@ -190,6 +190,15 @@ curl -sS http://127.0.0.1:9108/metrics |
   rg 'toss_trader_kr_(calendar_ok|intraday_cycle_expected)'
 ```
 
+### TossTraderKisFlowFailure 휴장 알림
+
+원인: `pit-collector`가 매일 18:30 KST에 KIS 수급을 친다. 휴장·주말에도
+`as_of=당일`로 호출해서 제공자 오류가 나면 `TossTraderKisFlowFailure`가 울린다.
+OpenDART 갱신은 휴장에도 맞다. KIS 당일 수급은 아니다.
+
+조치: Toss KR calendar가 정규장이 아니면 KIS를 건너뛰고
+`SKIPPED_MARKET_CLOSED`만 남긴다. 실패 배열이 비어 알림 안 나간다.
+
 ### n8n workflow failure 알림
 
 Telegram에는 원본 cycle JSON·shared snapshot·캔들 목록을 보내지 않는다. 다음처럼

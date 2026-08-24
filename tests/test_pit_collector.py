@@ -168,6 +168,29 @@ class PitCollectorTest(unittest.TestCase):
         self.assertEqual(result.flow_rows, 12)
         self.assertEqual(result.flow_status, "AVAILABLE_FIRST_OBSERVED")
 
+    def test_kis_flow_skips_closed_market_days(self) -> None:
+        flow = FakeFlowCollector()
+        result = run_pit_collection(
+            FakeCollector(),
+            FakeCalendar(
+                {
+                    date(2026, 8, 14),
+                    date(2026, 8, 17),
+                    date(2026, 8, 18),
+                    date(2026, 8, 19),
+                    date(2026, 8, 20),
+                }
+            ),
+            now=datetime(2026, 8, 15, 18, 30, tzinfo=SEOUL),
+            flow_collector=flow,
+            flow_symbols=["005930"],
+        )
+
+        self.assertIsNone(flow.call)
+        self.assertEqual(result.flow_rows, 0)
+        self.assertEqual(result.flow_status, "SKIPPED_MARKET_CLOSED")
+        self.assertEqual(result.flow_failures, ())
+
     def test_kis_flow_failure_is_exposed_for_alerting(self) -> None:
         flow = FailedFlowCollector()
         result = run_pit_collection(
