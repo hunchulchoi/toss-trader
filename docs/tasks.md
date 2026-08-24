@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-015 Expand paper entry observation without loosening setup gates
+
+- Owner: codex
+- Status: DONE
+- Result: kept paper capital at KRW 1,000,000 and setup-v2.3 risk rates,
+  raised only the per-order notional ceiling to KRW 700,000, allowed entries
+  through 09:30 KST, and recorded later armable cases as shadow-only reasons
+- Checks: 374 unit tests; changed-file Ruff and Git whitespace checks; direct
+  production-data sizing diagnostic for the two 2026-08-24 candidates
+- Risks: the unchanged 0.5% per-trade risk budget is KRW 5,000, so high-priced
+  volatile candidates can still produce `below-one-lot`; shadow signals never
+  call RiskManager or Hermes and never create orders or fills
+- 기록 시각: 2026-08-24 11:35 KST
+
 ### WEB-004 Connect midday and close panel briefings to Hermes conversation view
 
 - Owner: codex

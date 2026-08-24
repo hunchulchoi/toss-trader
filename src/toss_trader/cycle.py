@@ -39,7 +39,7 @@ from .v2_engine import (
 from .v2_runtime import OfficialV2CycleStrategy
 
 HANDLED_CYCLE_ERRORS = (OSError, RuntimeError, TossApiError, TypeError, ValueError)
-V2_ENTRY_ARM_WINDOW = timedelta(minutes=10)
+V2_ENTRY_ARM_WINDOW = timedelta(minutes=30)
 
 
 def _is_setup_v2_missing(error: BaseException) -> bool:
@@ -850,8 +850,6 @@ class PaperCycleRunner:
             return None, "setup-v2:missing:daily-candidate", None
         if not candidate.decision.approved:
             return None, _v2_rejection_reason(candidate), None
-        if now > session.market_open_at + V2_ENTRY_ARM_WINDOW:
-            return None, "setup-v2:blocked:late-entry-window", None
         first_bar = next(
             (
                 bar
@@ -879,6 +877,8 @@ class PaperCycleRunner:
         )
         if not decision.armed or decision.plan is None:
             return None, decision.reason, None
+        if now > session.market_open_at + V2_ENTRY_ARM_WINDOW:
+            return None, "setup-v2:shadow:armed-after-entry-window", None
         plan = decision.plan
         return (
             TradeSignal(
@@ -1003,6 +1003,7 @@ def _error_message(items: tuple[SymbolCycleResult, ...]) -> str | None:
 
 
 IDLE_PRIORITY = (
+    "shadow-signal",
     "setup-v2-block",
     "v2-idle",
     "no-crossover",
@@ -1071,6 +1072,8 @@ def _idle_reason(
     if error is not None:
         return "error"
     if skip_reason is not None:
+        if skip_reason.startswith("setup-v2:shadow:"):
+            return "shadow-signal"
         if skip_reason.startswith("setup-v2:"):
             return "setup-v2-block"
         return "insufficient-candles"
@@ -1105,6 +1108,7 @@ def _cycle_insight(
         ),
         "skippedCandles": reasons.get("insufficient-candles", 0),
         "setupV2Blocked": reasons.get("setup-v2-block", 0),
+        "shadowSignals": reasons.get("shadow-signal", 0),
         "v2Idle": reasons.get("v2-idle", 0),
         "noCrossover": reasons.get("no-crossover", 0),
         "sellNoPosition": reasons.get("sell-no-position", 0),

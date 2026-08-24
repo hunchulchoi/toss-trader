@@ -121,7 +121,7 @@ timestamp는 session open과 같아야 한다.
 | 1회 위험 예산 | equity의 0.5% |
 | 전체 open heat | equity의 2% |
 | cluster heat | equity의 1% |
-| 주문 금액 | 300,000원 |
+| 주문 금액 | 700,000원 |
 | 가용 현금 | 비용 포함 초과 금지 |
 
 신뢰 가능한 sector master가 아직 없어서 모든 종목을 `UNKNOWN` 단일 cluster로
@@ -148,12 +148,17 @@ plan 없는 legacy 포지션이 하나라도 있으면 신규 v2 BUY를 fail-clo
 
 ## Risk, advisor, and persistence
 
-armed 신호도 최종 RiskManager를 통과해야 한다. 주요 제한은 주문 30만원,
+armed 신호도 최종 RiskManager를 통과해야 한다. 주요 제한은 주문 70만원,
 종목 100만원, 하루 BUY 5회, 동시 보유 10종목, 일일 수익률 -3%, API 연속 오류
 5회, 휴장, 마감 10분 전 신규 BUY 금지다.
 
+신규 entry는 09:30 KST까지만 주문 후보가 된다. 그 뒤 같은 첫 봉 기준으로
+arm 가능한 후보는 `setup-v2:shadow:armed-after-entry-window`로만 기록하며,
+RiskManager·Hermes advisor·paper fill 경로로 보내지 않는다.
+
 - Rule: 신호를 n8n RiskManager로 직접 보낸다.
-- Hermes: local hard preflight 통과 후에만 advisor를 호출하고, 그 결과를 다시
+- Hermes: Rule이 수집한 공유 snapshot에서 같은 deterministic setup과 local hard
+  preflight를 통과한 신호에만 advisor를 호출하고, 그 결과를 다시
   n8n RiskManager로 보낸다.
 - Risk 판단 저장이 실패하면 승인 신호도 체결하지 않는다.
 - 모든 paper fill은 PostgreSQL 장부에만 기록한다.

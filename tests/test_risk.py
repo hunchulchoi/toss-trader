@@ -65,7 +65,7 @@ class RiskManagerTest(unittest.TestCase):
 
     def test_rejects_every_configured_safety_limit(self) -> None:
         decision = self.manager.evaluate(
-            signal(quantity=Decimal(5)),
+            signal(quantity=Decimal(11)),
             RiskContext(
                 now=NOW,
                 market_close_at=NOW + timedelta(minutes=5),
@@ -303,7 +303,7 @@ class N8nRiskManagerTest(unittest.TestCase):
             payload["limits"],
             {
                 "policyVersion": 1,
-                "maxOrderNotional": "300000",
+                "maxOrderNotional": "700000",
                 "maxPositionNotional": "1000000",
                 "maxDailyBuyCount": 5,
                 "maxOpenPositions": 10,

@@ -420,7 +420,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(plan.quantity, result.items[0].fill.quantity)
         self.assertEqual(plan.cluster_id, "UNKNOWN")
 
-    def test_v2_cycle_rejects_retroactive_entry_after_arm_window(self) -> None:
+    def test_v2_cycle_allows_entry_through_thirty_minute_arm_window(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         strategy = FakeV2CycleStrategy(
             _v2_candidate(),
@@ -442,15 +442,79 @@ class PaperCycleRunnerTest(unittest.TestCase):
             short_window=2,
             long_window=3,
             quantity=Decimal(1),
-            now=market_open + timedelta(minutes=11),
+            now=market_open + timedelta(minutes=30),
+        )
+
+        self.assertEqual(result.fill_count, 1)
+        self.assertIsNotNone(self.paper_ledger.v2_position_plan("005930"))
+
+    def test_v2_cycle_records_armable_late_entry_as_shadow_only(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="10",
+                    low_price="9.5",
+                )
+            ],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=31),
+        )
+
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "setup-v2:shadow:armed-after-entry-window",
+        )
+        self.assertEqual(result.items[0].idle_reason, "shadow-signal")
+        self.assertEqual(result.insight["funnel"]["shadowSignals"], 1)
+        self.assertIsNone(self.paper_ledger.v2_position_plan("005930"))
+        self.assertEqual(self.paper_ledger.recent_risk_decisions(), [])
+
+    def test_v2_late_shadow_preserves_deterministic_gate_rejection(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="11",
+                    low_price="10",
+                )
+            ],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=31),
         )
 
         self.assertEqual(result.fill_count, 0)
         self.assertEqual(
             result.items[0].skip_reason,
-            "setup-v2:blocked:late-entry-window",
+            "setup-v2:violation:gap-up-chase",
         )
-        self.assertIsNone(self.paper_ledger.v2_position_plan("005930"))
+        self.assertEqual(result.insight["funnel"]["shadowSignals"], 0)
 
     def test_v2_rejection_is_not_hidden_by_missing_opening_bar(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)

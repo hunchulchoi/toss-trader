@@ -180,7 +180,7 @@ RiskManager 판단은 `paper_risk_decisions`에 먼저 기록한다. 판단 저�
 
 | 검사 | 제한 | 위반 코드 |
 |---|---:|---|
-| 1회 주문 금액 | 300,000원 | `max-order-notional` |
+| 1회 주문 금액 | 700,000원 | `max-order-notional` |
 | paper 가용 현금 | 주문 금액 초과 금지 | `insufficient-paper-cash` |
 | 종목별 보유 금액 | 1,000,000원 | `max-position-notional` |
 | 일일 신규 매수 | 5회 | `max-daily-buys` |
