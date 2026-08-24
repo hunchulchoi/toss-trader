@@ -9,7 +9,7 @@ from typing import Any, Protocol
 from .calendar import MarketSession
 from .models import Candle
 
-RULE_VERSION = "momentum-shadow-v1"
+RULE_VERSION = "momentum-shadow-v2"
 SELECTION_TIME = time(10, 0)
 OPENING_SPIKE_LIMIT = Decimal("0.08")
 ASCENT_THRESHOLD = Decimal("0.03")
@@ -78,6 +78,7 @@ def evaluate_momentum_shadow(
         hour=SELECTION_TIME.hour, minute=SELECTION_TIME.minute
     )
     cutoff_at = selection_at - timedelta(minutes=1)
+    entry_at = selection_at + timedelta(minutes=1)
     if observed_at < selection_at:
         return {
             "status": "waiting",
@@ -105,7 +106,7 @@ def evaluate_momentum_shadow(
             repository,
             symbol=symbol,
             session_open=session.market_open_at,
-            through=selection_at,
+            through=entry_at,
         )
         candidate, reason = _candidate(
             symbol=symbol,
@@ -113,7 +114,7 @@ def evaluate_momentum_shadow(
             rows=rows,
             proxy_rows=proxy_rows.get(market, ()),
             cutoff_at=cutoff_at,
-            selection_at=selection_at,
+            entry_at=entry_at,
         )
         reasons[reason] += 1
         if candidate is not None:
@@ -150,6 +151,67 @@ def evaluate_momentum_shadow(
     }
 
 
+def evaluate_momentum_shadow_outcome(
+    candidate: Mapping[str, Any], candles: Sequence[Candle]
+) -> dict[str, Any]:
+    symbol = str(candidate.get("symbol") or "")
+    entry_at = _aware_datetime(candidate.get("entryAt"), "entryAt")
+    entry_price = _positive_decimal(candidate.get("entryPrice"), "entryPrice")
+    stop_price = _positive_decimal(candidate.get("stopPrice"), "stopPrice")
+    target_price = _positive_decimal(candidate.get("targetPrice"), "targetPrice")
+    if not symbol or not stop_price < entry_price < target_price:
+        raise ValueError("invalid momentum shadow trade plan")
+    rows = sorted(
+        (
+            candle
+            for candle in candles
+            if candle.symbol == symbol
+            and candle.interval == "1m"
+            and candle.timestamp >= entry_at
+        ),
+        key=lambda candle: candle.timestamp,
+    )
+    if not rows:
+        return {
+            "status": "waiting-data",
+            "symbol": symbol,
+            "entryAt": entry_at.isoformat(),
+            "entryPrice": str(entry_price),
+        }
+    exit_row = rows[-1]
+    exit_price = exit_row.close_price
+    status = "marked"
+    for row in rows:
+        stop_hit = row.low_price <= stop_price
+        target_hit = row.high_price >= target_price
+        if stop_hit:
+            status = "stopped"
+            exit_row = row
+            exit_price = stop_price
+            break
+        if target_hit:
+            status = "target"
+            exit_row = row
+            exit_price = target_price
+            break
+    risk = entry_price - stop_price
+    return_rate = exit_price / entry_price - Decimal(1)
+    maximum_high = max(row.high_price for row in rows)
+    minimum_low = min(row.low_price for row in rows)
+    return {
+        "status": status,
+        "symbol": symbol,
+        "entryAt": entry_at.isoformat(),
+        "entryPrice": str(entry_price),
+        "exitAt": exit_row.timestamp.isoformat(),
+        "exitPrice": str(exit_price),
+        "returnRate": str(return_rate),
+        "rMultiple": str((exit_price - entry_price) / risk),
+        "maximumFavorableRate": str(maximum_high / entry_price - Decimal(1)),
+        "maximumAdverseRate": str(minimum_low / entry_price - Decimal(1)),
+    }
+
+
 def _session_rows(
     repository: CandleReader,
     *,
@@ -172,13 +234,13 @@ def _candidate(
     rows: Sequence[Candle],
     proxy_rows: Sequence[Candle],
     cutoff_at: datetime,
-    selection_at: datetime,
+    entry_at: datetime,
 ) -> tuple[dict[str, Any] | None, str]:
     expected_cutoff = _row_at(rows, cutoff_at)
-    entry = _row_at(rows, selection_at)
+    entry = _row_at(rows, entry_at)
     if expected_cutoff is None or entry is None or len(rows) < 60:
         return None, "incomplete-1m"
-    at_0905 = _row_at(rows, selection_at.replace(hour=9, minute=5))
+    at_0905 = _row_at(rows, entry_at.replace(hour=9, minute=5))
     if at_0905 is None:
         return None, "incomplete-1m"
     session_open = rows[0].open_price
@@ -306,3 +368,22 @@ def _normalized_market(value: object) -> str | None:
     if "KOSPI" in text or text in {"KSE", "STK"}:
         return "KOSPI"
     return None
+
+
+def _aware_datetime(value: object, field: str) -> datetime:
+    if not isinstance(value, str):
+        raise TypeError(f"momentum shadow {field} is required")
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"momentum shadow {field} must include timezone")
+    return parsed
+
+
+def _positive_decimal(value: object, field: str) -> Decimal:
+    try:
+        parsed = Decimal(str(value))
+    except Exception as error:
+        raise TypeError(f"momentum shadow {field} must be numeric") from error
+    if not parsed.is_finite() or parsed <= 0:
+        raise ValueError(f"momentum shadow {field} must be positive")
+    return parsed

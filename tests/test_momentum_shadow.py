@@ -14,6 +14,7 @@ from toss_trader.cli import (
 from toss_trader.models import Candle
 from toss_trader.momentum_shadow import (
     evaluate_momentum_shadow,
+    evaluate_momentum_shadow_outcome,
     ranking_symbols,
 )
 
@@ -37,7 +38,7 @@ class FakeRepository:
 
 def series(symbol: str, *, volume: Decimal = Decimal(100), spike: bool = False):
     closes = []
-    for minute in range(1, 61):
+    for minute in range(1, 62):
         if minute <= 14:
             close = Decimal(100) + Decimal(minute) * Decimal("0.285714")
         elif minute == 15:
@@ -129,6 +130,10 @@ class MomentumShadowTest(unittest.TestCase):
         self.assertEqual([row["symbol"] for row in result["selected"]], ["AAA", "BBB"])
         self.assertEqual(result["selected"][0]["rewardMultiple"], "1.5")
         self.assertEqual(result["selected"][0]["targetPrice"], "107.75")
+        self.assertEqual(
+            result["selected"][0]["entryAt"],
+            OPEN.replace(hour=10, minute=1).isoformat(),
+        )
 
     def test_opening_spike_and_wrong_market_direction_are_rejected(self) -> None:
         repository = FakeRepository(
@@ -218,7 +223,7 @@ class MomentumShadowTest(unittest.TestCase):
                 return run_id
 
         ledger = Ledger()
-        first = {"sessionDate": DAY.isoformat(), "ruleVersion": "momentum-shadow-v1"}
+        first = {"sessionDate": DAY.isoformat(), "ruleVersion": "momentum-shadow-v2"}
         second = dict(first)
 
         first_id = _record_momentum_shadow_once(
@@ -261,6 +266,50 @@ class MomentumShadowTest(unittest.TestCase):
         )
 
         self.assertEqual(result, ("SEEN",))
+
+    def test_shadow_outcome_uses_target_and_conservative_same_bar_stop(self) -> None:
+        plan = {
+            "symbol": "AAA",
+            "entryAt": OPEN.replace(hour=10).isoformat(),
+            "entryPrice": "100",
+            "stopPrice": "98",
+            "targetPrice": "103",
+        }
+        target_rows = [
+            Candle(
+                symbol="AAA",
+                interval="1m",
+                timestamp=OPEN.replace(hour=10),
+                open_price=Decimal(100),
+                high_price=Decimal(103),
+                low_price=Decimal(99),
+                close_price=Decimal(102),
+                volume=Decimal(1),
+                currency="KRW",
+            )
+        ]
+        ambiguous_rows = [
+            Candle(
+                symbol="AAA",
+                interval="1m",
+                timestamp=OPEN.replace(hour=10),
+                open_price=Decimal(100),
+                high_price=Decimal(104),
+                low_price=Decimal(97),
+                close_price=Decimal(102),
+                volume=Decimal(1),
+                currency="KRW",
+            )
+        ]
+
+        target = evaluate_momentum_shadow_outcome(plan, target_rows)
+        ambiguous = evaluate_momentum_shadow_outcome(plan, ambiguous_rows)
+
+        self.assertEqual(target["status"], "target")
+        self.assertEqual(target["returnRate"], "0.03")
+        self.assertEqual(target["rMultiple"], "1.5")
+        self.assertEqual(ambiguous["status"], "stopped")
+        self.assertEqual(ambiguous["returnRate"], "-0.02")
 
 
 if __name__ == "__main__":

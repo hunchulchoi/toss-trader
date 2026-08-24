@@ -334,6 +334,47 @@ function renderDecisions() {
   $("decisions-empty").hidden = events.length !== 0;
 }
 
+function renderHunter() {
+  const session = (state.data.momentumShadow?.sessions || []).find((item) => item.sessionDate === selectedDate());
+  const list = $("hunter-list"); list.replaceChildren();
+  const candidates = session?.candidates || [];
+  $("hunter-count").textContent = `${candidates.length}건`;
+  $("hunter-empty").hidden = candidates.length !== 0;
+  const summary = $("hunter-summary"); summary.replaceChildren();
+  if (session) {
+    const values = [
+      `전체 ${session.meanReturnRate == null ? "계산 대기" : percent(session.meanReturnRate)}`,
+      `Hermes 승인 ${session.hermesApprovedCount}건`,
+      `승인군 ${session.hermesApprovedMeanReturnRate == null ? "표본 없음" : percent(session.hermesApprovedMeanReturnRate)}`,
+      `목표 ${session.targetCount} · 손절 ${session.stoppedCount}`,
+    ];
+    values.forEach((value) => { const chip = document.createElement("span"); chip.textContent = value; summary.append(chip); });
+  }
+  candidates.forEach((candidate) => {
+    const item = document.createElement("li"); item.className = "hunter-item";
+    const head = document.createElement("div"); head.className = "decision-item-head";
+    const title = document.createElement("div"); title.className = "decision-title";
+    const link = stockOrderNode(candidate.symbol); link.textContent = candidate.name || candidate.symbol;
+    title.append(link, ` · ${candidate.symbol}`);
+    const outcome = candidate.outcome || {};
+    const badge = document.createElement("span"); badge.className = `hunter-badge ${outcome.status || "waiting-data"}`;
+    badge.textContent = { target: "1.5R 목표", stopped: "손절", marked: "평가 중", "waiting-data": "봉 대기", "invalid-plan": "계산 오류" }[outcome.status] || outcome.status;
+    head.append(title, badge);
+    const plan = document.createElement("p"); plan.className = "decision-detail";
+    plan.textContent = `가상 진입 ${money(candidate.entryPrice)} · 손절 ${money(candidate.stopPrice)} · 목표 ${money(candidate.targetPrice)}`;
+    const performance = document.createElement("p"); performance.className = "decision-reason";
+    performance.textContent = outcome.returnRate == null
+      ? "수익률: 저장된 진입 이후 1분봉 대기"
+      : `수익률 ${percent(outcome.returnRate)} · ${number(outcome.rMultiple).toFixed(2)}R · ${localTime(outcome.exitAt)} 기준`;
+    if (outcome.returnRate != null) tone(performance, outcome.returnRate);
+    const hermes = document.createElement("p"); hermes.className = "decision-detail hermes";
+    hermes.textContent = candidate.hermes
+      ? `Hermes ${String(candidate.hermes.verdict).toUpperCase()} · ${candidate.hermes.rationale} · token ${candidate.hermes.totalTokens}`
+      : "Hermes: 의견 대기 또는 호출 없음";
+    item.append(head, plan, performance, hermes); list.append(item);
+  });
+}
+
 function renderErrors() {
   const list = $("error-list"); list.replaceChildren();
   const errors = state.data.errors.filter((error) => {
@@ -394,7 +435,7 @@ function renderPage() {
   if (state.view === "compare") renderComparison();
   if (state.view === "minute") renderMinute();
   if (state.view !== "minute") renderEquityChart();
-  renderDecisions(); renderErrors();
+  renderHunter(); renderDecisions(); renderErrors();
 }
 
 function selectDay(index) {

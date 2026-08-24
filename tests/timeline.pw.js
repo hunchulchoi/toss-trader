@@ -12,6 +12,10 @@ test('Rule과 Hermes paper 장부를 독립 탐색한다', async ({ page }) => {
   await expect(page.getByTestId('equity-chart').locator('svg')).toBeVisible();
   await expect(page.locator('#positions-body')).toContainText('삼성전자');
   await expect(page.locator('#positions-body .sparkline')).toHaveCount(1);
+  await expect(page.getByTestId('hunter-shadow')).toContainText('삼성전자');
+  await expect(page.getByTestId('hunter-shadow')).toContainText('1.5R 목표');
+  await expect(page.getByTestId('hunter-shadow')).toContainText('Hermes APPROVE');
+  await expect(page.getByTestId('hunter-shadow')).toContainText('2.14%');
   await expect(page.locator('#positions-body a').first()).toHaveAttribute(
     'href',
     'https://www.tossinvest.com/stocks/A005930/order',
@@ -39,6 +43,7 @@ test('모바일에서도 포트폴리오 전환과 날짜 레일이 보인다', 
   await expect(page.getByText('READ ONLY')).toBeVisible();
 
   await page.goto('/cycles');
+  await page.locator('#date-filter').selectOption('2026-08-13');
   await expect(page.locator('.cycle-universe')).toBeVisible();
   await page.locator('.cycle-universe').click();
   await expect(page.locator('.universe-list')).toContainText('삼성전자');
@@ -75,6 +80,7 @@ test('cycle 실행 결과와 종목별 차단 사유를 조회한다', async ({ 
   expect(response.status()).toBe(200);
 
   await expect(page.getByTestId('cycle-timeline')).toBeVisible();
+  await page.locator('#date-filter').selectOption('2026-08-13');
   await expect(page.locator('.cycle-row')).toHaveCount(1);
   await expect(page.locator('.cycle-card.rule')).toContainText('성공');
   await expect(page.locator('.cycle-card.hermes')).toContainText('Hermes API timeout');

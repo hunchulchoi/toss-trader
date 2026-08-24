@@ -1985,6 +1985,8 @@ def _automation_run_values(
         "daily_panel",
         "market_scan",
         "hermes_trade",
+        "momentum-shadow",
+        "momentum-shadow-advice",
         "n8n_flow",
     }:
         raise ValueError("unknown automation run type")
@@ -2092,6 +2094,8 @@ def _validate_automation_query(
         "daily_panel",
         "market_scan",
         "hermes_trade",
+        "momentum-shadow",
+        "momentum-shadow-advice",
         "n8n_flow",
     }:
         raise ValueError("unknown automation run type")

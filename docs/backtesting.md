@@ -126,6 +126,9 @@ PYTHONPATH=src python3 -m toss_trader serve-paper-timeline \
   `signal_id`로 연결한다.
 - 오류 로그는 실패/부분 실패 cycle과 Hermes 분석 오류를 날짜별로 표시한다.
 - `1MIN`은 저장된 1분 OHLC 봉 위에 Rule/Hermes 매수·매도 시점을 표시한다.
+- `HUNTER SHADOW`는 10:00 가상 진입 뒤 stop 우선·1.5R 목표·마지막 저장봉 기준
+  수익률과 Hermes `approve/watch/reject` 의견·token을 날짜별로 표시한다. 실제
+  체결이나 paper 장부 수익률에는 합산하지 않는다.
 - 외부 CDN이나 분석 스크립트를 사용하지 않는다.
 - 서버 시작 때 paper 장부를 읽어 결과를 생성한다. POST와 주문·장부 쓰기 API는 없다.
 - PostgreSQL은 `default_transaction_read_only=on` 연결을 강제한다.

@@ -25,6 +25,16 @@ HERMES_TRADE_PROMPT = (
     '"rationale": "한국어 1~3문장"}. 직접적인 투자 권유와 수익 보장은 금지한다.'
 )
 
+HERMES_MOMENTUM_SHADOW_PROMPT = (
+    "너는 장중 눌림 재돌파 Hunter의 비매매 검토자다. 제공된 JSON만 보고 "
+    "각 후보를 approve, watch, reject 중 하나로 분류하라. Hunter 신호와 "
+    "setup-v2.3 위반은 참고 근거일 뿐이며 주문을 만들거나 수익을 보장하지 마라. "
+    "시장 동조, 상승 후 눌림의 질, 재돌파 유지력, 거래대금 가속, 손절 거리를 "
+    "함께 검토하라. 도구를 호출하지 마라. JSON 한 개만 응답하라: "
+    '{"decisions":[{"symbol":"종목코드","verdict":"approve|watch|reject",'
+    '"rationale":"한국어 1~2문장"}]}'
+)
+
 
 class HermesTradeAdvisor:
     def __init__(
@@ -222,6 +232,100 @@ def create_hermes_trade_advisor(
     )
 
 
+def review_momentum_shadow_once(
+    *,
+    api_key: str,
+    base_url: str,
+    audit: PaperLedgerStore,
+    payload: Mapping[str, Any],
+    symbol_names: Mapping[str, str],
+) -> dict[str, Any]:
+    session_date = str(payload.get("sessionDate") or "")
+    rule_version = str(payload.get("ruleVersion") or "")
+    selected = payload.get("selected")
+    if not session_date or not rule_version:
+        raise ValueError("momentum shadow identity is required")
+    if not isinstance(selected, Sequence) or isinstance(selected, (str, bytes)):
+        raise TypeError("momentum shadow selected candidates must be an array")
+    candidates = [dict(item) for item in selected if isinstance(item, Mapping)]
+    if not candidates:
+        return {"status": "not-requested", "decisions": []}
+    for run in audit.recent_automation_runs(
+        limit=100, run_type="momentum-shadow-advice"
+    ):
+        details = run.get("details")
+        if (
+            run.get("status") == "succeeded"
+            and isinstance(details, Mapping)
+            and details.get("sessionDate") == session_date
+            and details.get("ruleVersion") == rule_version
+        ):
+            return {**dict(details), "cacheHit": True}
+    requested_symbols = [str(item.get("symbol") or "") for item in candidates]
+    request_payload = {
+        "sessionDate": session_date,
+        "ruleVersion": rule_version,
+        "strategyInput": False,
+        "shadowOnly": True,
+        "candidates": [
+            {**item, "name": symbol_names.get(str(item.get("symbol") or ""))}
+            for item in candidates
+        ],
+    }
+    analyzer = HermesAnalyzer(
+        api_key=api_key,
+        base_url=base_url,
+        timeout_seconds=90,
+        system_prompt=HERMES_MOMENTUM_SHADOW_PROMPT,
+    )
+    started_at = datetime.now(UTC)
+    usage = HermesAnalysis(content="")
+    try:
+        usage = analyzer.analyze(request_payload)
+        decisions = _parse_momentum_shadow_advice(
+            usage.content, expected_symbols=requested_symbols
+        )
+        details: dict[str, Any] = {
+            "sessionDate": session_date,
+            "ruleVersion": rule_version,
+            "strategyInput": False,
+            "shadowOnly": True,
+            "decisions": decisions,
+        }
+        run_id = audit.record_automation_run(
+            run_type="momentum-shadow-advice",
+            status="succeeded",
+            stage="decision",
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+            details=details,
+        )
+        return {**details, "auditRunId": run_id, "cacheHit": False}
+    except Exception as error:
+        audit.record_automation_run(
+            run_type="momentum-shadow-advice",
+            status="failed",
+            stage="hermes",
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+            error=str(error),
+            details={
+                "sessionDate": session_date,
+                "ruleVersion": rule_version,
+                "strategyInput": False,
+                "shadowOnly": True,
+                "symbols": requested_symbols,
+            },
+        )
+        raise
+
+
 def _parse_advice(content: str) -> TradeAdvice:
     normalized = content.strip()
     if normalized.startswith("```"):
@@ -237,3 +341,39 @@ def _parse_advice(content: str) -> TradeAdvice:
     if not isinstance(rationale, str) or not rationale.strip():
         raise RuntimeError("Hermes trade response is missing rationale")
     return TradeAdvice(approved=value["approved"], rationale=rationale.strip()[:1000])
+
+
+def _parse_momentum_shadow_advice(
+    content: str, *, expected_symbols: Sequence[str]
+) -> list[dict[str, str]]:
+    normalized = content.strip()
+    if normalized.startswith("```"):
+        lines = normalized.splitlines()
+        normalized = "\n".join(lines[1:-1]).strip()
+    try:
+        value: Any = json.loads(normalized)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("Hermes momentum response is not JSON") from error
+    rows = value.get("decisions") if isinstance(value, Mapping) else None
+    if not isinstance(rows, list):
+        raise TypeError("Hermes momentum response is missing decisions")
+    expected = list(dict.fromkeys(expected_symbols))
+    parsed: dict[str, dict[str, str]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise TypeError("Hermes momentum decision must be an object")
+        symbol = str(row.get("symbol") or "")
+        verdict = str(row.get("verdict") or "").lower()
+        rationale = str(row.get("rationale") or "").strip()
+        if symbol not in expected or symbol in parsed:
+            raise ValueError("Hermes momentum decision symbol is invalid")
+        if verdict not in {"approve", "watch", "reject"} or not rationale:
+            raise ValueError("Hermes momentum decision content is invalid")
+        parsed[symbol] = {
+            "symbol": symbol,
+            "verdict": verdict,
+            "rationale": rationale[:1000],
+        }
+    if set(parsed) != set(expected):
+        raise ValueError("Hermes momentum decisions are incomplete")
+    return [parsed[symbol] for symbol in expected]

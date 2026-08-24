@@ -7,7 +7,8 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .models import Side
+from .models import Candle, Side
+from .momentum_shadow import evaluate_momentum_shadow_outcome
 from .paper import _position_accountings
 
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -185,6 +186,38 @@ class PostgresPaperTimelineStore:
                     hermes_log_rows = cursor.fetchall()
                     cursor.execute(
                         """
+                        SELECT run_id, run_type, status, stage, started_at,
+                               finished_at, prompt_tokens, completion_tokens,
+                               total_tokens, error, details
+                        FROM automation_run_logs
+                        WHERE run_type IN (
+                            'momentum-shadow', 'momentum-shadow-advice'
+                        )
+                        ORDER BY finished_at DESC, run_id DESC
+                        LIMIT 200
+                        """
+                    )
+                    momentum_log_rows = cursor.fetchall()
+                    momentum_symbols, momentum_start = _momentum_log_scope(
+                        momentum_log_rows
+                    )
+                    if momentum_symbols and momentum_start is not None:
+                        cursor.execute(
+                            """
+                            SELECT symbol, open_price, high_price, low_price,
+                                   close_price, volume, currency, timestamp
+                            FROM market_candles
+                            WHERE symbol = ANY(%s) AND interval = '1m'
+                              AND timestamp >= %s
+                            ORDER BY timestamp, symbol
+                            """,
+                            (momentum_symbols, momentum_start),
+                        )
+                        momentum_minute_rows = cursor.fetchall()
+                    else:
+                        momentum_minute_rows = ()
+                    cursor.execute(
+                        """
                         SELECT p.panel_id, p.status, p.created_at, p.finished_at,
                                p.context, p.error,
                                o.stage, o.role, o.provider, o.model, o.content,
@@ -212,6 +245,8 @@ class PostgresPaperTimelineStore:
             minute_rows=minute_rows,
             trend_rows=trend_rows,
             hermes_log_rows=hermes_log_rows,
+            momentum_log_rows=momentum_log_rows,
+            momentum_minute_rows=momentum_minute_rows,
             panel_rows=panel_rows,
             default_initial_cash=self._initial_cash,
         )
@@ -229,6 +264,8 @@ def build_paper_timeline(
     minute_rows: Sequence[Sequence[Any]] = (),
     trend_rows: Sequence[Sequence[Any]] = (),
     hermes_log_rows: Sequence[Sequence[Any]] = (),
+    momentum_log_rows: Sequence[Sequence[Any]] = (),
+    momentum_minute_rows: Sequence[Sequence[Any]] = (),
     panel_rows: Sequence[Sequence[Any]] = (),
     default_initial_cash: Decimal,
 ) -> dict[str, Any]:
@@ -362,12 +399,167 @@ def build_paper_timeline(
         "hermesConversations": _hermes_conversations(
             hermes_log_rows, names, panel_rows=panel_rows
         ),
+        "momentumShadow": _momentum_shadow_timeline(
+            log_rows=momentum_log_rows,
+            minute_rows=momentum_minute_rows,
+            names=names,
+        ),
         "errors": _error_events(
             cycle_rows=cycle_rows,
             advice_rows=advice_rows,
             names=names,
         ),
     }
+
+
+def _momentum_log_scope(
+    rows: Sequence[Sequence[Any]],
+) -> tuple[list[str], datetime | None]:
+    symbols: dict[str, None] = {}
+    session_dates: list[date] = []
+    for row in rows:
+        if len(row) < 11 or str(row[1]) != "momentum-shadow":
+            continue
+        details = _json_mapping(row[10])
+        try:
+            session_dates.append(date.fromisoformat(str(details.get("sessionDate"))))
+        except ValueError:
+            continue
+        selected = details.get("selected")
+        if not isinstance(selected, Sequence) or isinstance(selected, (str, bytes)):
+            continue
+        for item in selected:
+            if isinstance(item, Mapping) and item.get("symbol"):
+                symbols[str(item["symbol"])] = None
+    if not session_dates:
+        return list(symbols), None
+    return (
+        list(symbols),
+        datetime.combine(min(session_dates), datetime.min.time(), tzinfo=SEOUL),
+    )
+
+
+def _momentum_shadow_timeline(
+    *,
+    log_rows: Sequence[Sequence[Any]],
+    minute_rows: Sequence[Sequence[Any]],
+    names: Mapping[str, str],
+) -> dict[str, Any]:
+    advice_by_date: dict[str, dict[str, Any]] = {}
+    evaluations: dict[str, tuple[Sequence[Any], Mapping[str, Any]]] = {}
+    for row in log_rows:
+        if len(row) < 11:
+            continue
+        run_type = str(row[1])
+        status = str(row[2])
+        details = _json_mapping(row[10])
+        session_date = str(details.get("sessionDate") or "")
+        if not session_date:
+            continue
+        if run_type == "momentum-shadow" and status == "succeeded":
+            evaluations.setdefault(session_date, (row, details))
+        elif run_type == "momentum-shadow-advice" and status == "succeeded":
+            advice_by_date.setdefault(session_date, {})
+            decisions = details.get("decisions")
+            if isinstance(decisions, Sequence) and not isinstance(
+                decisions, (str, bytes)
+            ):
+                for decision in decisions:
+                    if isinstance(decision, Mapping) and decision.get("symbol"):
+                        advice_by_date[session_date].setdefault(
+                            str(decision["symbol"]),
+                            {
+                                "verdict": decision.get("verdict"),
+                                "rationale": decision.get("rationale"),
+                                "promptTokens": int(row[6] or 0),
+                                "completionTokens": int(row[7] or 0),
+                                "totalTokens": int(row[8] or 0),
+                            },
+                        )
+    candles_by_date_symbol: dict[tuple[str, str], list[Candle]] = {}
+    for row in minute_rows:
+        timestamp = _datetime(row[7])
+        symbol = str(row[0])
+        key = (timestamp.astimezone(SEOUL).date().isoformat(), symbol)
+        candles_by_date_symbol.setdefault(key, []).append(
+            Candle(
+                symbol=symbol,
+                interval="1m",
+                timestamp=timestamp,
+                open_price=Decimal(row[1]),
+                high_price=Decimal(row[2]),
+                low_price=Decimal(row[3]),
+                close_price=Decimal(row[4]),
+                volume=Decimal(row[5]),
+                currency=str(row[6]),
+            )
+        )
+    sessions = []
+    for session_date, (row, details) in sorted(evaluations.items()):
+        selected = details.get("selected")
+        candidates = []
+        if isinstance(selected, Sequence) and not isinstance(selected, (str, bytes)):
+            for raw_candidate in selected:
+                if not isinstance(raw_candidate, Mapping):
+                    continue
+                candidate = dict(raw_candidate)
+                symbol = str(candidate.get("symbol") or "")
+                try:
+                    outcome = evaluate_momentum_shadow_outcome(
+                        candidate,
+                        candles_by_date_symbol.get((session_date, symbol), ()),
+                    )
+                except (TypeError, ValueError) as error:
+                    outcome = {"status": "invalid-plan", "error": str(error)}
+                candidates.append(
+                    {
+                        **candidate,
+                        "name": names.get(symbol),
+                        "hermes": advice_by_date.get(session_date, {}).get(symbol),
+                        "outcome": outcome,
+                    }
+                )
+        returns = [
+            Decimal(str(item["outcome"]["returnRate"]))
+            for item in candidates
+            if item["outcome"].get("returnRate") is not None
+        ]
+        approved_returns = [
+            Decimal(str(item["outcome"]["returnRate"]))
+            for item in candidates
+            if item.get("hermes", {}).get("verdict") == "approve"
+            and item["outcome"].get("returnRate") is not None
+        ]
+        sessions.append(
+            {
+                "sessionDate": session_date,
+                "ruleVersion": details.get("ruleVersion"),
+                "evaluatedAt": _datetime(row[5]).isoformat(),
+                "candidateCount": len(candidates),
+                "meanReturnRate": str(sum(returns, Decimal(0)) / len(returns))
+                if returns
+                else None,
+                "hermesApprovedCount": sum(
+                    item.get("hermes", {}).get("verdict") == "approve"
+                    for item in candidates
+                ),
+                "hermesApprovedMeanReturnRate": str(
+                    sum(approved_returns, Decimal(0)) / len(approved_returns)
+                )
+                if approved_returns
+                else None,
+                "targetCount": sum(
+                    item["outcome"].get("status") == "target"
+                    for item in candidates
+                ),
+                "stoppedCount": sum(
+                    item["outcome"].get("status") == "stopped"
+                    for item in candidates
+                ),
+                "candidates": candidates,
+            }
+        )
+    return {"sessions": sessions}
 
 
 def _cycle_timeline(
@@ -744,9 +936,10 @@ def _hermes_conversations(
                 panels_by_id[panel_id]["completionTokens"] += int(row[14] or 0)
             if len(row) > 15:
                 panels_by_id[panel_id]["totalTokens"] += int(row[15] or 0)
-            if stage == "judge:hermes" and content:
-                panels_by_id[panel_id]["assistant"] = content
-            elif not panels_by_id[panel_id]["assistant"] and content:
+            if content and (
+                stage == "judge:hermes"
+                or not panels_by_id[panel_id]["assistant"]
+            ):
                 panels_by_id[panel_id]["assistant"] = content
 
     for panel in panels_by_id.values():

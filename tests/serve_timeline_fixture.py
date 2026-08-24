@@ -201,6 +201,68 @@ payload = build_paper_timeline(
             },
         ),
     ),
+    momentum_log_rows=(
+        (
+            "hunter-1",
+            "momentum-shadow",
+            "succeeded",
+            "evaluated",
+            datetime(2026, 8, 14, 1, 1, tzinfo=UTC),
+            datetime(2026, 8, 14, 1, 1, tzinfo=UTC),
+            0,
+            0,
+            0,
+            None,
+            {
+                "sessionDate": "2026-08-14",
+                "ruleVersion": "momentum-shadow-v2",
+                "selected": [
+                    {
+                        "symbol": "005930",
+                        "entryAt": datetime(2026, 8, 14, 1, tzinfo=UTC).isoformat(),
+                        "entryPrice": "70000",
+                        "stopPrice": "69000",
+                        "targetPrice": "71500",
+                    }
+                ],
+            },
+        ),
+        (
+            "hunter-advice-1",
+            "momentum-shadow-advice",
+            "succeeded",
+            "decision",
+            datetime(2026, 8, 14, 1, 1, tzinfo=UTC),
+            datetime(2026, 8, 14, 1, 1, 1, tzinfo=UTC),
+            40,
+            10,
+            50,
+            None,
+            {
+                "sessionDate": "2026-08-14",
+                "ruleVersion": "momentum-shadow-v2",
+                "decisions": [
+                    {
+                        "symbol": "005930",
+                        "verdict": "approve",
+                        "rationale": "재돌파 유지력이 확인됐습니다.",
+                    }
+                ],
+            },
+        ),
+    ),
+    momentum_minute_rows=(
+        (
+            "005930",
+            "70000",
+            "71600",
+            "69800",
+            "71400",
+            "1000",
+            "KRW",
+            datetime(2026, 8, 14, 1, tzinfo=UTC),
+        ),
+    ),
     default_initial_cash=Decimal(1000000),
 )
 

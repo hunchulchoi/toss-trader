@@ -7,6 +7,21 @@
 
 ## 2026-08-24
 
+### Hunter shadow Hermes 검토·가상 수익률 timeline
+
+- 기록 시각: 2026-08-24 17:31 KST
+- 동작: Hunter 상위 2개를 Hermes가 한 번에 `approve/watch/reject`로 검토하고
+  의견과 input/output/total token을 `momentum-shadow-advice` 감사 로그에 저장
+- 성과: 10:00 가상 진입 뒤 stop 우선, 1.5R 목표, 미도달 시 마지막 저장 1분봉으로
+  수익률·R배수·최대 유리/불리 변동을 계산. timeline에서 전체 Hunter와 Hermes
+  승인군 평균, 종목별 계획·판정·성과를 표시
+- 시점 교정: 판단 직전 09:59 완결봉까지만 신호에 사용하고 10:01 표기 봉의
+  시가(10:00 이후 첫 실행 가능 가격)를 진입가로 써 v1의 시점 편향을 제거.
+  규칙 버전은 `momentum-shadow-v2`
+- 안전: 실제 signal·RiskManager·paper fill·주문에는 연결하지 않으며 Hermes 실패도
+  실제 cycle을 막지 않음
+- 운영: 미배포
+
 ### 장중 눌림 재돌파 Hunter 비매매 shadow 표본
 
 - 기록 시각: 2026-08-24 17:05 KST

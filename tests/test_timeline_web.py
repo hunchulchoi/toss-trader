@@ -337,6 +337,66 @@ class TimelineWebTest(unittest.TestCase):
         self.assertEqual(payload["decisions"], [])
         self.assertEqual(payload["hermesConversations"], [])
 
+    def test_hunter_timeline_calculates_outcome_and_hermes_subset(self) -> None:
+        evaluated_at = datetime(2026, 8, 25, 1, 1, tzinfo=UTC)
+        plan = {
+            "sessionDate": "2026-08-25",
+            "ruleVersion": "momentum-shadow-v2",
+            "selected": [
+                {
+                    "symbol": "005930",
+                    "entryAt": datetime(2026, 8, 25, 1, tzinfo=UTC).isoformat(),
+                    "entryPrice": "100",
+                    "stopPrice": "98",
+                    "targetPrice": "103",
+                }
+            ],
+        }
+        logs = (
+            (
+                "eval-1", "momentum-shadow", "succeeded", "evaluated",
+                evaluated_at, evaluated_at, 0, 0, 0, None, plan,
+            ),
+            (
+                "advice-1", "momentum-shadow-advice", "succeeded", "decision",
+                evaluated_at, evaluated_at, 40, 10, 50, None,
+                {
+                    "sessionDate": "2026-08-25",
+                    "ruleVersion": "momentum-shadow-v2",
+                    "decisions": [
+                        {
+                            "symbol": "005930",
+                            "verdict": "approve",
+                            "rationale": "재돌파 유지",
+                        }
+                    ],
+                },
+            ),
+        )
+        minutes = (
+            (
+                "005930", "100", "103", "99", "102", "1000", "KRW",
+                datetime(2026, 8, 25, 1, tzinfo=UTC),
+            ),
+        )
+
+        payload = build_paper_timeline(
+            initial_rows=(("rule", "1000000"), ("hermes", "1000000")),
+            fill_rows=(),
+            mark_rows=(),
+            cycle_rows=(),
+            name_rows=(("005930", "삼성전자"),),
+            momentum_log_rows=logs,
+            momentum_minute_rows=minutes,
+            default_initial_cash=Decimal(1000000),
+        )
+
+        session = payload["momentumShadow"]["sessions"][0]
+        self.assertEqual(session["meanReturnRate"], "0.03")
+        self.assertEqual(session["hermesApprovedMeanReturnRate"], "0.03")
+        self.assertEqual(session["candidates"][0]["outcome"]["status"], "target")
+        self.assertEqual(session["candidates"][0]["hermes"]["totalTokens"], 50)
+
     def test_serves_read_only_page_assets_api_and_health(self) -> None:
         payload = _payload()
 
@@ -353,12 +413,14 @@ class TimelineWebTest(unittest.TestCase):
 
         self.assertEqual(root[0], 200)
         self.assertIn(b'data-portfolio="rule"', root[2])
+        self.assertIn(b'data-testid="hunter-shadow"', root[2])
         self.assertIn(b'data-testid="cycle-timeline"', cycles[2])
         self.assertIn(b'data-testid="hermes-log"', hermes[2])
         self.assertIn(b".sparkline", css[2])
         self.assertIn(b".cycle-row", cycle_css[2])
         self.assertIn(b".hermes-body", hermes_css[2])
         self.assertIn(b"state.data.portfolios", script[2])
+        self.assertIn(b"momentumShadow", script[2])
         self.assertIn(b"cycleTimeline", cycle_script[2])
         self.assertIn(b"hour12: false", cycle_script[2])
         self.assertIn(b"seoulToday", cycle_script[2])
@@ -454,7 +516,7 @@ class _Cursor:
         self.queries.append(query)
 
     def fetchall(self):
-        rows = [(), (), (), (), (), (), (), ()]
+        rows = [(), (), (), (), (), (), (), (), ()]
         value = rows[self._index]
         self._index += 1
         return value

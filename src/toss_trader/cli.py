@@ -14,7 +14,7 @@ from enum import Enum
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .advisor import create_hermes_trade_advisor
+from .advisor import create_hermes_trade_advisor, review_momentum_shadow_once
 from .automation import (
     AlertmanagerReporter,
     _market_session_lookup_from_env,
@@ -1452,12 +1452,6 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                     session=momentum_session,
                     observed_at=now,
                 )
-                if momentum_shadow.get("status") == "evaluated":
-                    _record_momentum_shadow_once(
-                        paper_ledger,
-                        payload=momentum_shadow,
-                        observed_at=now,
-                    )
             except (OSError, RuntimeError, TossApiError, TypeError, ValueError) as error:
                 momentum_shadow = {
                     "status": "unavailable",
@@ -1494,6 +1488,31 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
         symbol_names = (
             collector.resolve_symbol_names(name_symbols) if name_symbols else {}
         )
+        if (
+            args.portfolio == "rule"
+            and isinstance(momentum_shadow, dict)
+            and momentum_shadow.get("status") == "evaluated"
+        ):
+            try:
+                momentum_shadow["hermes"] = review_momentum_shadow_once(
+                    api_key=os.environ.get("HERMES_API_KEY", ""),
+                    base_url=os.environ.get(
+                        "HERMES_API_BASE_URL", "http://hermes-analysis:8642"
+                    ),
+                    audit=paper_ledger,
+                    payload=momentum_shadow,
+                    symbol_names=symbol_names,
+                )
+            except Exception as error:  # noqa: BLE001
+                momentum_shadow["hermes"] = {
+                    "status": "unavailable",
+                    "error": f"{type(error).__name__}: {error}",
+                }
+            _record_momentum_shadow_once(
+                paper_ledger,
+                payload=momentum_shadow,
+                observed_at=now,
+            )
         result = PaperCycleRunner(
             collector=collector,
             strategy=StoredMaStrategy(market_repository),

@@ -144,3 +144,14 @@ The canonical checkout remains the integration point for `main`.
 Git branches do not provide real-time shared files. `docs/tasks.md` on `main` is
 canonical; agents fetch/rebase before claiming work and hand off with a commit
 hash. Herdr prompts carry urgent state between sync points.
+## ADR-009 Hermes reviews Hunter without execution authority
+
+Status: accepted 2026-08-24
+
+- Hunter remains `strategyInput=false` and `shadowOnly=true`.
+- Hermes reviews the daily selected set once as `approve/watch/reject`; it cannot
+  call RiskManager, create a signal, fill an order, or change Hunter ranking.
+- Persist the full opinion and token usage separately from the deterministic plan.
+- Compare all Hunter plans with the Hermes-approved subset using stored 1m candles.
+  Same-bar stop/target ambiguity resolves to stop and no fees or slippage are claimed.
+- Hermes unavailability is an audit event, never a paper-cycle failure.

@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-019 Add Hermes review and returns to Hunter shadow
+
+- Owner: codex
+- Status: DONE
+- Result: batch-review up to two Hunter plans with non-trading Hermes
+  `approve/watch/reject`, persist opinions and token usage, calculate conservative
+  stop-first/1.5R/mark returns from the first executable 10:00 price, and display
+  all-vs-approved results on the paper timeline as `momentum-shadow-v2`
+- Checks: 402 unit tests; changed-file Ruff and Git whitespace
+- Risks: shadow-only; returns omit fees/slippage and same-bar stop/target ambiguity
+  is resolved conservatively as stop; Hermes failure never blocks the trading cycle
+- 기록 시각: 2026-08-24 17:31 KST
+
 ### STRAT-018 Add a non-trading momentum shadow sample
 
 - Owner: codex

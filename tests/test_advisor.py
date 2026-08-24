@@ -1,8 +1,13 @@
 import unittest
 from datetime import UTC, datetime
 from decimal import Decimal
+from unittest.mock import patch
 
-from toss_trader.advisor import HermesTradeAdvisor, hermes_market_review
+from toss_trader.advisor import (
+    HermesTradeAdvisor,
+    hermes_market_review,
+    review_momentum_shadow_once,
+)
 from toss_trader.automation import HermesAnalysis
 from toss_trader.models import Candle, Side, TradeSignal
 from toss_trader.paper import PaperLedger
@@ -151,6 +156,54 @@ class PortfolioIsolationTest(unittest.TestCase):
             quantity=Decimal(1),
             reason="test",
         )
+
+
+class MomentumShadowAdvisorTest(unittest.TestCase):
+    def test_records_one_batched_non_trading_review_with_tokens(self) -> None:
+        ledger = PaperLedger(":memory:", portfolio_id="rule")
+        analyzer = StubAnalyzer(
+            HermesAnalysis(
+                content=(
+                    '{"decisions":['
+                    '{"symbol":"AAA","verdict":"approve","rationale":"유지력 확인"},'
+                    '{"symbol":"BBB","verdict":"watch","rationale":"가속 확인 필요"}'
+                    "]}"
+                ),
+                prompt_tokens=50,
+                completion_tokens=20,
+                total_tokens=70,
+            )
+        )
+        payload = {
+            "sessionDate": "2026-08-25",
+            "ruleVersion": "momentum-shadow-v2",
+            "selected": [{"symbol": "AAA"}, {"symbol": "BBB"}],
+        }
+        with patch("toss_trader.advisor.HermesAnalyzer", return_value=analyzer):
+            first = review_momentum_shadow_once(
+                api_key="x" * 20,
+                base_url="http://hermes",
+                audit=ledger,
+                payload=payload,
+                symbol_names={"AAA": "에이", "BBB": "비"},
+            )
+            second = review_momentum_shadow_once(
+                api_key="x" * 20,
+                base_url="http://hermes",
+                audit=ledger,
+                payload=payload,
+                symbol_names={"AAA": "에이", "BBB": "비"},
+            )
+
+        self.assertEqual(first["decisions"][0]["verdict"], "approve")
+        self.assertTrue(second["cacheHit"])
+        self.assertEqual(len(analyzer.payloads), 1)
+        run = ledger.recent_automation_runs(
+            run_type="momentum-shadow-advice"
+        )[0]
+        self.assertEqual(run["totalTokens"], 70)
+        self.assertFalse(run["details"]["strategyInput"])
+        ledger.close()
 
 
 if __name__ == "__main__":
