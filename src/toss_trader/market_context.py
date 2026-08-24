@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -27,6 +27,8 @@ def build_market_context(
     now: datetime,
     names: Mapping[str, str] | None = None,
     max_symbols: int = SYMBOL_CAP,
+    entry_arm_window: timedelta = timedelta(minutes=10),
+    first_bar_offset: timedelta = timedelta(minutes=1),
 ) -> dict[str, Any]:
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must include a timezone offset")
@@ -65,6 +67,19 @@ def build_market_context(
         "sessionOpenAt": session.market_open_at.isoformat(),
         "observedAt": now.isoformat(),
         "sessionEndAt": session_end.isoformat(),
+        "entryWindow": {
+            "sessionOpenAt": session.market_open_at.isoformat(),
+            "firstBarAt": (
+                session.market_open_at + first_bar_offset
+            ).isoformat(),
+            "entryWindowCloseAt": (
+                session.market_open_at + entry_arm_window
+            ).isoformat(),
+            "observedAt": now.isoformat(),
+            "meaning": (
+                "D+1 BUY only after firstBarAt and at or before entryWindowCloseAt"
+            ),
+        },
         "purpose": (
             "Compare skip/idle reasons with stored KR session prices. "
             "Do not invent missed buys."

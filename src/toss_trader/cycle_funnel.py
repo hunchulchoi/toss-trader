@@ -59,6 +59,9 @@ def aggregate_intraday_review(
                     "lastObservedAt": None,
                     "reasonCounts": Counter(),
                     "transitionCount": 0,
+                    "reasonPath": [],
+                    "armRejectDetail": None,
+                    "armRejectAt": None,
                 },
             )
             fill_side = row.get("fillSide")
@@ -85,12 +88,22 @@ def aggregate_intraday_review(
                 if state["firstReason"] is None:
                     state["firstReason"] = reason
                     state["firstObservedAt"] = observed_at
+                    state["reasonPath"] = [reason]
                 elif state["lastReason"] != reason:
                     state["transitionCount"] += 1
+                    state["reasonPath"].append(reason)
                 state["lastReason"] = reason
                 state["lastReasonClass"] = reason_class
                 state["lastObservedAt"] = observed_at
                 state["reasonCounts"][reason] += 1
+                skip_detail = row.get("skipDetail")
+                if (
+                    state["armRejectDetail"] is None
+                    and isinstance(skip_detail, dict)
+                    and "below-one-lot" in reason
+                ):
+                    state["armRejectDetail"] = skip_detail
+                    state["armRejectAt"] = observed_at
 
     last_reasons = Counter(
         str(state["lastReason"])
@@ -110,6 +123,9 @@ def aggregate_intraday_review(
             or _reason_class(state["lastReason"]),
             "buyFills": state["buyFills"],
             "sellFills": state["sellFills"],
+            "reasonPath": list(state["reasonPath"]),
+            "armRejectDetail": state["armRejectDetail"],
+            "armRejectAt": state["armRejectAt"],
         }
         for symbol, state in sorted(latest.items())
     )

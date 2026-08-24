@@ -1461,6 +1461,16 @@ def _compact_panel_cycle(value: object) -> dict[str, Any]:
         )
         if key in value
     }
+    universe = compact.get("universe")
+    if isinstance(universe, dict):
+        compact["universe"] = {
+            **universe,
+            "cacheHit": universe.get("runId") is None
+            and universe.get("refreshed") is False,
+            "cacheMeaning": (
+                "same-day freeze. runId is set only when the selector refreshes."
+            ),
+        }
     return compact
 
 
@@ -1499,6 +1509,9 @@ def _compact_intraday_review(value: object) -> dict[str, Any] | None:
                         "reasonClass",
                         "buyFills",
                         "sellFills",
+                        "reasonPath",
+                        "armRejectDetail",
+                        "armRejectAt",
                     )
                 },
                 "reasonCounts": dict(

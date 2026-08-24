@@ -23,9 +23,13 @@ neither Docker access nor Cursor authentication.
    performance.
 
 The 1d cycle attaches `marketContext` from stored KR 1m bars (benchmark plus
-watched symbols). The panel must contrast skip/idle reasons with those session
-moves. It must not turn empty `changedFacts` into strategy debate, and it must
-not invent missed buys from news.
+watched symbols) and fetches missing session minutes for those symbols first.
+`entryWindow` is the actual D+1 arm clock. `universe.cacheHit` means same-day
+freeze, not a missing run. `intradaySample.applicable=false` on the 1d cycle is
+expected; use `intradayReview.reasonPath` and `armRejectDetail` for
+`below-one-lot`. The panel must contrast skip reasons with those facts. It must
+not invent missed buys from news, and must not treat zero fills as strategy
+proof.
 
 Full model text and exact reported input, output, cache-read, and cache-write
 tokens are stored in `daily_analysis_opinions`. Telegram receives only the

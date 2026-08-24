@@ -60,6 +60,54 @@ class IntradayReviewTest(unittest.TestCase):
         self.assertEqual(review["changedFacts"][0]["symbol"], "005930")
         self.assertIn("005930 BUY 1", " ".join(format_intraday_review_lines(review)))
 
+    def test_keeps_below_one_lot_detail_after_later_skip(self) -> None:
+        review = aggregate_intraday_review(
+            [
+                {
+                    "_observedAt": "t1",
+                    "symbols": [
+                        {
+                            "symbol": "278470",
+                            "skipReason": "setup-v2:waiting:first-session-bar",
+                        }
+                    ],
+                },
+                {
+                    "_observedAt": "t2",
+                    "symbols": [
+                        {
+                            "symbol": "278470",
+                            "skipReason": "setup-v2:violation:below-one-lot",
+                            "skipDetail": {
+                                "quantity": "0",
+                                "limitingFactors": ["below-one-lot"],
+                            },
+                        }
+                    ],
+                },
+                {
+                    "_observedAt": "t3",
+                    "symbols": [
+                        {
+                            "symbol": "278470",
+                            "skipReason": "setup-v2:blocked:late-entry-window",
+                        }
+                    ],
+                },
+            ]
+        )
+        row = review["symbolsDetail"][0]
+        self.assertEqual(
+            row["reasonPath"],
+            [
+                "setup-v2:waiting:first-session-bar",
+                "setup-v2:violation:below-one-lot",
+                "setup-v2:blocked:late-entry-window",
+            ],
+        )
+        self.assertEqual(row["armRejectDetail"]["quantity"], "0")
+        self.assertEqual(row["armRejectAt"], "t2")
+
     def test_empty_insights_report_no_intraday_cycles(self) -> None:
         review = aggregate_intraday_review([])
 

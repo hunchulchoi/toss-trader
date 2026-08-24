@@ -27,7 +27,7 @@ from .backtest import run_ma_backtest
 from .calendar import MarketCalendarService, previous_kr_business_date
 from .client import TossClient
 from .config import Settings
-from .cycle import PaperCycleRunner, PaperCycleSnapshot
+from .cycle import PaperCycleRunner, PaperCycleSnapshot, V2_ENTRY_ARM_WINDOW
 from .cycle_funnel import aggregate_intraday_review, insights_from_runs
 from .cycle_state import CycleStateStore, open_cycle_state_store
 from .errors import TossApiError
@@ -63,11 +63,13 @@ from .setup_screening import OfficialSetupContextFactory
 from .strategy import MaCrossoverEvaluation, ma_crossover_signal
 from .timeline_web import serve_timeline
 from .universe import DynamicUniverseSelector, open_universe_store
+from .v2_engine import COMPLETED_ONE_MINUTE_OFFSET
 from .v2_runtime import OfficialV2CycleStrategy
 from .v2_screening import V2MarketScanner, v2_market_scan_to_dict
 from .walk_forward import WalkForwardResult, run_ma_walk_forward
 
 INTRADAY_SAMPLE_CANDLE_COUNT = 30
+SESSION_MINUTE_FETCH_COUNT = 200
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1353,6 +1355,8 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 collector,
                 cycle_symbols=symbols,
                 collection_symbols=universe_result.collection_symbols,
+                extra_symbols=settings.market_benchmark_symbols,
+                extra_count=SESSION_MINUTE_FETCH_COUNT,
             )
         name_symbols = tuple(
             dict.fromkeys(
@@ -1363,6 +1367,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                         if universe_result is not None
                         else ()
                     ),
+                    *settings.market_benchmark_symbols,
                 )
             )
         )
@@ -1458,6 +1463,16 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                         )
                     )
                 )
+                fill_symbols = tuple(
+                    dict.fromkeys(
+                        (*settings.market_benchmark_symbols, *watched)
+                    )
+                )
+                _collect_session_minutes(
+                    collector,
+                    fill_symbols,
+                    count=SESSION_MINUTE_FETCH_COUNT,
+                )
                 market_context = build_market_context(
                     market_repository,
                     symbols=watched,
@@ -1465,11 +1480,18 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                     session=session,
                     now=now,
                     names=symbol_names,
+                    entry_arm_window=V2_ENTRY_ARM_WINDOW,
+                    first_bar_offset=COMPLETED_ONE_MINUTE_OFFSET,
                 )
             except (OSError, RuntimeError, TypeError, ValueError) as error:
                 market_context = {
                     "status": "unavailable",
                     "error": type(error).__name__,
+                }
+            if intraday_sample is None:
+                intraday_sample = {
+                    "applicable": False,
+                    "reason": "1d-cycle-reads-stored-1m-via-marketContext",
                 }
     _emit(
         {
@@ -1499,6 +1521,11 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 {
                     "runId": universe_result.run_id,
                     "refreshed": universe_result.refreshed,
+                    "cacheHit": universe_result.run_id is None
+                    and not universe_result.refreshed,
+                    "cacheMeaning": (
+                        "same-day freeze. runId is set only when the selector refreshes."
+                    ),
                     "symbols": list(universe_result.symbols),
                     "newBuysAllowed": universe_result.new_buys_allowed,
                     "entrySymbols": list(universe_result.entry_symbols),
@@ -1841,9 +1868,12 @@ def _collect_intraday_sample(
     *,
     cycle_symbols: tuple[str, ...],
     collection_symbols: tuple[str, ...],
+    extra_symbols: Sequence[str] = (),
+    extra_count: int = SESSION_MINUTE_FETCH_COUNT,
 ) -> dict[str, Any]:
-    target_symbols = tuple(dict.fromkeys(collection_symbols))
+    target_symbols = tuple(dict.fromkeys((*collection_symbols, *extra_symbols)))
     cycle_set = frozenset(cycle_symbols)
+    extra_set = frozenset(extra_symbols)
     background_symbols = tuple(
         symbol for symbol in target_symbols if symbol not in cycle_set
     )
@@ -1851,11 +1881,12 @@ def _collect_intraday_sample(
     upserted = 0
     failures: list[dict[str, str]] = []
     for symbol in background_symbols:
+        count = extra_count if symbol in extra_set else INTRADAY_SAMPLE_CANDLE_COUNT
         try:
             result = collector.collect(
                 symbol=symbol,
                 interval="1m",
-                count=INTRADAY_SAMPLE_CANDLE_COUNT,
+                count=count,
             )
             received += result.received
             upserted += result.upserted
@@ -1868,10 +1899,25 @@ def _collect_intraday_sample(
         "cycleSymbols": list(cycle_symbols),
         "backgroundSymbols": list(background_symbols),
         "requestedPerBackgroundSymbol": INTRADAY_SAMPLE_CANDLE_COUNT,
+        "requestedPerExtraSymbol": extra_count,
+        "extraSymbols": [symbol for symbol in extra_symbols if symbol not in cycle_set],
         "receivedCandles": received,
         "upsertedCandles": upserted,
         "failures": failures,
     }
+
+
+def _collect_session_minutes(
+    collector: MarketCollector,
+    symbols: Sequence[str],
+    *,
+    count: int,
+) -> None:
+    for symbol in dict.fromkeys(symbols):
+        try:
+            collector.collect(symbol=symbol, interval="1m", count=count)
+        except (OSError, RuntimeError, TossApiError, TypeError, ValueError):
+            continue
 
 
 def _serve_metrics(settings: Settings, args: argparse.Namespace) -> int:

@@ -123,6 +123,14 @@ class MarketContextTest(unittest.TestCase):
         self.assertEqual(stock["vsOpen"], "-0.0300")
         self.assertEqual(stock["vsPrevClose"], "-0.0396")
         self.assertEqual(stock["coverage"], "session-1m")
+        self.assertEqual(
+            payload["entryWindow"]["firstBarAt"],
+            "2026-08-24T09:01:00+09:00",
+        )
+        self.assertEqual(
+            payload["entryWindow"]["entryWindowCloseAt"],
+            "2026-08-24T09:10:00+09:00",
+        )
 
     def test_closed_session_does_not_invent_prices(self) -> None:
         session = MarketSession(

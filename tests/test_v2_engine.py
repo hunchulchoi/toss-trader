@@ -191,6 +191,9 @@ class V2EngineTest(unittest.TestCase):
         self.assertFalse(decision.armed)
         self.assertEqual(decision.reason, "setup-v2:violation:below-one-lot")
         self.assertIsNone(decision.plan)
+        assert decision.detail is not None
+        self.assertIn("below-one-lot", decision.detail["limitingFactors"])
+        self.assertEqual(decision.detail["quantity"], "0")
 
     def test_arm_rejects_daily_bar_naive_time_and_timestamp_mismatch(self) -> None:
         history = pullback_candles()

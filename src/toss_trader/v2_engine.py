@@ -4,10 +4,12 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from itertools import pairwise
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from .models import Candle
 from .setup_screening import (
+    PositionSizeReference,
     SetupContext,
     SetupDecision,
     SetupType,
@@ -58,6 +60,7 @@ class CandidateDecision:
     armed: bool
     reason: str
     plan: ArmedTradePlan | None
+    detail: dict[str, Any] | None = None
 
 
 def build_daily_candidate(
@@ -135,6 +138,14 @@ def arm_candidate(
             armed=False,
             reason="setup-v2:violation:below-one-lot",
             plan=None,
+            detail=_below_one_lot_detail(
+                sizing,
+                equity=equity,
+                available_cash=available_cash,
+                reference_price=execution_open,
+                stop_price=candidate.setup_low,
+                atr14=candidate.atr14,
+            ),
         )
     entry_price = execution_open * (Decimal(1) + ADVERSE_SLIPPAGE.entry_rate)
     stop_price = execution_open - sizing.effective_stop_distance
@@ -221,3 +232,28 @@ def _setup_v2_reason(decision: SetupDecision) -> str:
     if not parts:
         return "setup-v2:rejected"
     return "setup-v2:" + ",".join(parts)
+
+
+def _below_one_lot_detail(
+    sizing: PositionSizeReference,
+    *,
+    equity: Decimal,
+    available_cash: Decimal,
+    reference_price: Decimal,
+    stop_price: Decimal,
+    atr14: Decimal,
+) -> dict[str, Any]:
+    return {
+        "limitingFactors": list(sizing.limiting_factors),
+        "equity": str(equity),
+        "availableCash": str(available_cash),
+        "referencePrice": str(reference_price),
+        "stopPrice": str(stop_price),
+        "atr14": str(atr14),
+        "quantity": str(sizing.quantity),
+        "usableRiskBudget": str(sizing.usable_risk_budget),
+        "requiredCash": str(sizing.required_cash),
+        "effectiveStopDistance": str(sizing.effective_stop_distance),
+        "atrStopFloor": str(sizing.atr_stop_floor),
+        "structuralStopDistance": str(sizing.structural_stop_distance),
+    }

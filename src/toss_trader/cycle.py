@@ -55,6 +55,7 @@ class SymbolCycleResult:
     decision_id: str | None = None
     fill: PaperFill | None = None
     skip_reason: str | None = None
+    skip_detail: dict[str, Any] | None = None
     error: str | None = None
     idle_reason: str | None = None
     close_price: Decimal | None = None
@@ -380,6 +381,7 @@ class PaperCycleRunner:
         collections = list(snapshot.collections)
         signals = list(snapshot.signals)
         skips = list(snapshot.skips)
+        skip_details: list[dict[str, Any] | None] = [None] * size
         executions: list[PaperExecutionResult | None] = [None] * size
         errors = list(snapshot.errors)
         api_failed = snapshot.api_failed
@@ -457,7 +459,7 @@ class PaperCycleRunner:
                             now=now,
                             collection=collections[index],
                         )
-                    signal, reason, plan = self._v2_runtime_signal(
+                    packed = self._v2_runtime_signal(
                         symbol=symbol,
                         candidate=v2_candidates[index],
                         session=session,
@@ -469,10 +471,13 @@ class PaperCycleRunner:
                         ),
                         reserved_cash=reserved_cash,
                     )
+                    signal, reason, plan = packed[0], packed[1], packed[2]
+                    skip_detail = packed[3] if len(packed) > 3 else None
                     signals[index] = signal
                     v2_plans_to_store[index] = plan
                     if signal is None and reason is not None:
                         skips[index] = reason
+                        skip_details[index] = skip_detail
                     if signal is not None and plan is not None:
                         cluster_id = self._v2_strategy.cluster_id(symbol)
                         reserved_open_heat += plan.planned_heat
@@ -590,6 +595,7 @@ class PaperCycleRunner:
                 signal=signals[index],
                 execution=executions[index],
                 skip_reason=skips[index],
+                skip_detail=skip_details[index],
                 error=errors[index],
                 sell_dropped=sell_dropped[index],
                 already_held=already_held[index],
@@ -851,7 +857,9 @@ class PaperCycleRunner:
         if not candidate.decision.approved:
             return None, _v2_rejection_reason(candidate), None
         if now > session.market_open_at + V2_ENTRY_ARM_WINDOW:
-            return None, "setup-v2:blocked:late-entry-window", None
+            return None, "setup-v2:blocked:late-entry-window", None, _entry_window_detail(
+                session, now
+            )
         first_bar = next(
             (
                 bar
@@ -862,7 +870,9 @@ class PaperCycleRunner:
             None,
         )
         if first_bar is None:
-            return None, "setup-v2:waiting:first-session-bar", None
+            return None, "setup-v2:waiting:first-session-bar", None, _entry_window_detail(
+                session, now
+            )
         cluster_id = self._v2_strategy.cluster_id(symbol)
         decision = arm_candidate(
             candidate,
@@ -878,7 +888,9 @@ class PaperCycleRunner:
             ),
         )
         if not decision.armed or decision.plan is None:
-            return None, decision.reason, None
+            detail = dict(decision.detail or {})
+            detail.update(_entry_window_detail(session, now))
+            return None, decision.reason, None, detail
         plan = decision.plan
         return (
             TradeSignal(
@@ -936,6 +948,18 @@ def _validate_snapshot(
         raise ValueError("paper snapshot item counts do not match symbols")
     if snapshot.v2_candidates and len(snapshot.v2_candidates) != size:
         raise ValueError("paper snapshot item counts do not match symbols")
+
+
+def _entry_window_detail(session: MarketSession, now: datetime) -> dict[str, Any]:
+    opened_at = session.market_open_at
+    if opened_at is None:
+        return {"observedAt": now.isoformat()}
+    return {
+        "sessionOpenAt": opened_at.isoformat(),
+        "firstBarAt": (opened_at + COMPLETED_ONE_MINUTE_OFFSET).isoformat(),
+        "entryWindowCloseAt": (opened_at + V2_ENTRY_ARM_WINDOW).isoformat(),
+        "observedAt": now.isoformat(),
+    }
 
 
 def _v2_rejection_reason(candidate: DailySetupCandidate) -> str:
@@ -1026,6 +1050,7 @@ def _symbol_result(
     sell_dropped: bool,
     already_held: bool,
     ma_state: MaCrossoverEvaluation | None,
+    skip_detail: dict[str, Any] | None = None,
 ) -> SymbolCycleResult:
     decision = execution.decision if execution else None
     fill = execution.fill if execution else None
@@ -1037,6 +1062,7 @@ def _symbol_result(
         decision_id=execution.decision_id if execution else None,
         fill=fill,
         skip_reason=skip_reason,
+        skip_detail=skip_detail,
         error=error,
         idle_reason=_idle_reason(
             skip_reason=skip_reason,
@@ -1142,6 +1168,8 @@ def _symbol_insight(item: SymbolCycleResult) -> dict[str, Any]:
         "error": item.error,
         "fillSide": item.fill.side.value if item.fill is not None else None,
     }
+    if item.skip_detail:
+        payload["skipDetail"] = item.skip_detail
     if item.close_price is not None:
         payload["close"] = str(item.close_price)
     if item.short_ma is not None:

@@ -960,6 +960,25 @@ class PaperCycleNoticeTest(unittest.TestCase):
             payload["cycle"]["middaySnapshotV2"]["portfolios"]["rule"],
         )
 
+    def test_comparison_payload_explains_universe_cache_hit(self) -> None:
+        payload = _comparison_payload(
+            {
+                "briefingKind": "midday",
+                "briefingObservedAt": "2026-08-24T11:50:00+09:00",
+                "rule": {
+                    "exitCode": 0,
+                    "cycle": {
+                        "summary": {},
+                        "universe": {"runId": None, "refreshed": False, "symbols": []},
+                    },
+                },
+                "hermes": {"exitCode": 0, "cycle": {"summary": {}}},
+            }
+        )
+        universe = payload["cycle"]["middaySnapshotV2"]["portfolios"]["rule"]["universe"]
+        self.assertTrue(universe["cacheHit"])
+        self.assertIn("same-day freeze", universe["cacheMeaning"])
+
     def test_comparison_payload_rejects_close_kind_at_midday(self) -> None:
         with self.assertRaisesRegex(ValueError, "midday briefingKind"):
             _comparison_payload(

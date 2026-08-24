@@ -50,6 +50,10 @@ MARKET_CRITIQUE = (
     "marketContext가 있으면 스킵/유휴 사유를 벤치마크·감시종목 vsOpen/vsPrevClose와 "
     "먼저 대조하라. 퍼널 코드만 반복하는 전략 토론은 금지. changedFacts가 비어도 "
     "시장 대비 괴리를 짧게 적어라. JSON에 없는 뉴스·사후 매수 기회는 만들지 마라. "
+    "universe.runId=null 이고 refreshed=false면 당일 freeze cacheHit이지 데이터 오류가 아니다. "
+    "1d cycle의 intradaySample.applicable=false는 설계다. marketContext와 "
+    "intradayReview.reasonPath/armRejectDetail을 써라. below-one-lot은 사이징 0주 사실이지 "
+    "전략 무효 선언이 아니다. 무체결·무오류만으로 리스크 해소를 말하지 마라. "
 )
 
 

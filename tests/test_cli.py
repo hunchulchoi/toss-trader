@@ -94,6 +94,30 @@ class IntradaySampleCollectionTest(unittest.TestCase):
         self.assertEqual(result["upsertedCandles"], 30)
         self.assertEqual(result["failures"][0]["symbol"], "035420")
 
+    def test_collects_benchmark_session_bars_outside_cycle(self) -> None:
+        class Collector:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str, int]] = []
+
+            def collect(self, *, symbol: str, interval: str, count: int):
+                self.calls.append((symbol, interval, count))
+                return CollectionResult(symbol, interval, count, count, None)
+
+        collector = Collector()
+        result = _collect_intraday_sample(
+            collector,  # type: ignore[arg-type]
+            cycle_symbols=("278470",),
+            collection_symbols=("278470",),
+            extra_symbols=("069500", "229200"),
+            extra_count=200,
+        )
+
+        self.assertEqual(
+            collector.calls,
+            [("069500", "1m", 200), ("229200", "1m", 200)],
+        )
+        self.assertEqual(result["extraSymbols"], ["069500", "229200"])
+
     def test_builds_expanded_hermes_pool_and_keeps_held_symbol(self) -> None:
         base = PaperCycleSnapshot(
             evaluated_at=datetime(2026, 8, 20, 0, 5, tzinfo=UTC),
