@@ -7,6 +7,21 @@
 
 ## 2026-08-24
 
+### 현재 process를 과거 확정 데이터에 적용한 반사실 표본
+
+- 기록 시각: 2026-08-24 14:10 KST
+- 복원: 8월 18일 12종 4,750봉, 19일 12종 4,425봉, 24일 추가
+  2종 738봉을 백필했다. 합계 9,913봉, 실패 0, 전부 `session-open-reached`
+- 조건: current static metadata와 D-1 DataGo 전종목 거래대금, 최종 KRX 수급·
+  DART 이벤트에 현재 Rule strict 선발 및 Hermes 참고형 Top30, 거래당 2%,
+  UNKNOWN heat 6%, 현금 100만원, 주문 70만원, 09:01 갭·stop 규칙을 적용
+- 결과: 8월 18·19·20·21·24일 deterministic pre-advisor 신호가 각각
+  5·3·4·4·5건으로 총 21건. 당일 마지막 값 상승 7건, 단순 시가 대비 평균
+  -2.43%. 5거래일 Hermes pool 30종의 분봉 공백 0
+- 한계: `counterfactual-final-data`. 당시 process/PIT 재현이 아니며 현재 metadata
+  survivorship bias가 있다. Hermes LLM 승인, 실제 v2 exit, 수수료·shared portfolio
+  PnL을 적용한 성과 백테스트가 아니다
+
 ### Toss Open API 일시적 DNS 질의 실패 및 네트워크 오류 1회 재시도 적용
 
 - 기록 시각: 2026-08-24 14:01 KST
