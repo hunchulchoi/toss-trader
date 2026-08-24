@@ -15,8 +15,9 @@
 - 동작: 1d cycle이 저장된 1분봉으로 `marketContext`를 만들고, 패널 JSON과
   프롬프트가 스킵 사유를 vsOpen/vsPrevClose와 대조하게 한다. 뉴스·사후 매수
   기회는 만들지 않는다
-- 운영: 코드만, 배포 대기. Hermes 컨테이너 스크립트 복사 후 다음 브리핑부터
-  적용
+- 운영: 반영함. 2026-08-24 11:41 KST automation 재빌드·기동, Hermes
+  `/opt/data/scripts/toss-trader-daily-panel.py` 복사. `TRADING_ENABLED=false`,
+  `/healthz` ok. 다음 11:50/15:40 브리핑부터 적용
 
 ### Hermes 대화 화면에 11:50 중간(점심) 및 15:40 마감 패널 브리핑 연동
 
