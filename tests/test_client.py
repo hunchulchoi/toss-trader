@@ -310,6 +310,63 @@ class TossClientTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.prices(["AAPL"] * 201)
 
+    def test_urllib_transport_retries_transient_dns_error_and_succeeds(self) -> None:
+        from urllib.error import URLError
+        from toss_trader.client import HttpRequest, UrllibTransport
+
+        sleeps: list[float] = []
+        call_count = [0]
+
+        class FakeHttpResponse:
+            status = 200
+            headers = {}
+
+            def read(self):
+                return b'{"ok": true}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        def fake_urlopen(_req, timeout):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise URLError("[Errno -2] Name or service not known")
+            return FakeHttpResponse()
+
+        transport = UrllibTransport(
+            max_retries=1,
+            retry_delay=0.5,
+            sleeper=sleeps.append,
+            urlopen_fn=fake_urlopen,
+        )
+        res = transport.send(HttpRequest(method="GET", url="https://openapi.tossinvest.com", headers={}), timeout=5.0)
+        self.assertEqual(res.status, 200)
+        self.assertEqual(res.body, b'{"ok": true}')
+        self.assertEqual(call_count[0], 2)
+        self.assertEqual(sleeps, [0.5])
+
+    def test_urllib_transport_raises_when_all_retries_exhausted(self) -> None:
+        from urllib.error import URLError
+        from toss_trader.client import HttpRequest, UrllibTransport
+
+        sleeps: list[float] = []
+
+        def fake_urlopen_fail(_req, timeout):
+            raise URLError("[Errno -2] Name or service not known")
+
+        transport = UrllibTransport(
+            max_retries=1,
+            retry_delay=0.5,
+            sleeper=sleeps.append,
+            urlopen_fn=fake_urlopen_fail,
+        )
+        with self.assertRaises(URLError):
+            transport.send(HttpRequest(method="GET", url="https://openapi.tossinvest.com", headers={}), timeout=5.0)
+        self.assertEqual(sleeps, [0.5])
+
 
 if __name__ == "__main__":
     unittest.main()

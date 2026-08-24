@@ -7,6 +7,16 @@
 
 ## 2026-08-24
 
+### Toss Open API 일시적 DNS 질의 실패 및 네트워크 오류 1회 재시도 적용
+
+- 기록 시각: 2026-08-24 14:01 KST
+- 배포 시각: 2026-08-24 14:00 KST
+- 구멍: `UrllibTransport`가 일시적 DNS 해석 실패(`URLError: [Errno -2] Name or service not known`)나
+  소켓 타임아웃 발생 시 즉시 실패하여 장중 사이클이 부분 실패(`exitCode: 3`)로 종료됨
+- 동작: `UrllibTransport`에 일시적 네트워크/DNS 오류(`URLError`, `TimeoutError`,
+  `OSError`) 발생 시 0.5초 대기 후 1회 자동 재시도(`max_retries=1`) 로직 추가
+- 배포: `automation` 컨테이너 재빌드 및 배포 완료
+
 ### 휴장 18:30 KIS 수급 알림
 
 - 기록 시각: 2026-08-24 13:05 KST

@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Protocol
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -37,6 +37,19 @@ class Transport(Protocol):
 
 
 class UrllibTransport:
+    def __init__(
+        self,
+        *,
+        max_retries: int = 1,
+        retry_delay: float = 0.5,
+        sleeper: Callable[[float], None] = time.sleep,
+        urlopen_fn: Callable[..., Any] = urlopen,
+    ) -> None:
+        self._max_retries = max_retries
+        self._retry_delay = retry_delay
+        self._sleeper = sleeper
+        self._urlopen = urlopen_fn
+
     def send(self, request: HttpRequest, timeout: float) -> HttpResponse:
         urllib_request = Request(
             request.url,
@@ -44,19 +57,27 @@ class UrllibTransport:
             headers=dict(request.headers),
             method=request.method,
         )
-        try:
-            with urlopen(urllib_request, timeout=timeout) as response:
+        attempts = 0
+        while True:
+            try:
+                with self._urlopen(urllib_request, timeout=timeout) as response:
+                    return HttpResponse(
+                        status=response.status,
+                        headers=dict(response.headers.items()),
+                        body=response.read(),
+                    )
+            except HTTPError as error:
                 return HttpResponse(
-                    status=response.status,
-                    headers=dict(response.headers.items()),
-                    body=response.read(),
+                    status=error.code,
+                    headers=dict(error.headers.items()),
+                    body=error.read(),
                 )
-        except HTTPError as error:
-            return HttpResponse(
-                status=error.code,
-                headers=dict(error.headers.items()),
-                body=error.read(),
-            )
+            except (URLError, TimeoutError, OSError):
+                if attempts < self._max_retries:
+                    attempts += 1
+                    self._sleeper(self._retry_delay)
+                    continue
+                raise
 
 
 class TossClient:

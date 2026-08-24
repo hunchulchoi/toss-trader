@@ -24,6 +24,17 @@ No tasks awaiting review.
 
 ## DONE
 
+### DATA-012 Retry transient DNS and network errors on Toss Open API
+
+- Owner: codex
+- Status: DONE
+- Result: added 1-retry fallback (`max_retries=1`, 0.5s backoff) for transient DNS
+  resolution failures (`[Errno -2] Name or service not known`), socket timeouts, and
+  OS network errors in `UrllibTransport`
+- Checks: 390 unit tests; scoped Ruff and Git whitespace; live container build and deployment
+- Risks: none; idempotent GET/token requests with bounded 1-retry
+- 기록 시각: 2026-08-24 14:01 KST
+
 ### STRAT-017 Give Hermes a paper-only risk budget
 
 - Owner: codex
