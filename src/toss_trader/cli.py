@@ -1417,6 +1417,9 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             signal_namespace=(
                 args.portfolio if args.portfolio in {"rule", "hermes"} else None
             ),
+            experimental_strategy_reference=(
+                args.portfolio == "hermes" and args.hermes_advisor
+            ),
             snapshot=snapshot,
         )
         cash_balance = paper_ledger.cash_balance(settings.paper_initial_cash)
@@ -1446,7 +1449,11 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             "startedAt": result.started_at,
             "finishedAt": result.finished_at,
             "interval": result.interval,
-            "entryStrategy": "setup-v2.3-independent-daily",
+            "entryStrategy": (
+                "hermes-experimental-v2.3-reference-gates"
+                if args.portfolio == "hermes" and args.hermes_advisor
+                else "setup-v2.3-independent-daily"
+            ),
             "dailyReturnRate": result.daily_return_rate,
             "currencyReturns": result.currency_returns,
             "equity": result.equity,
@@ -1484,7 +1491,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             ),
             "evaluationPool": {
                 "role": (
-                    "hermes-expanded-top30"
+                    "hermes-experimental-static-top30"
                     if snapshot is not None and args.portfolio == "hermes"
                     else "rule-top15"
                 ),

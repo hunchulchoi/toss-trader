@@ -24,6 +24,22 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-016 Split Hermes into a reference-gate paper strategy
+
+- Owner: codex
+- Status: DONE
+- Result: kept Rule strict while giving Hermes a selected-first, static-eligible
+  D-1 liquidity pool of up to 30 names; only `missing-price-setup`, `rsi-chase`,
+  and `falling-knife` became advisor evidence, with all Hermes entries labeled
+  `hermes-experimental`
+- Checks: 376 unit tests; changed-file Ruff and Git whitespace checks; explicit
+  coverage for cache reload, price-strategy relaxation, mandatory data/event
+  rejection, unknown future gate fail-closed, plan labeling, and no Rule changes
+- Risks: candidate and strategy denominators differ, so Rule/Hermes is not direct
+  A/B evidence; unchanged integer-share 0.5% sizing can still yield zero Hermes
+  signals; this is paper-only and has not been deployed
+- 기록 시각: 2026-08-24 12:29 KST
+
 ### STRAT-015 Expand paper entry observation without loosening setup gates
 
 - Owner: codex

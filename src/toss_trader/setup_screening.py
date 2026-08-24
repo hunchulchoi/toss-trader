@@ -19,6 +19,7 @@ class SetupType(StrEnum):
     PULLBACK = "pullback"
     OVERSOLD_REVERSAL = "oversold-reversal"
     FLOW_REVERSAL = "flow-reversal"
+    HERMES_EXPERIMENTAL = "hermes-experimental-reference"
 
 
 class ValuationTier(StrEnum):

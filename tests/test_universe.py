@@ -233,12 +233,12 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         self.assertEqual(first.symbols, ("005930", "207940"))
         self.assertEqual(first.entry_symbols, ("005930", "207940"))
         self.assertEqual(
-            first.collection_symbols, ("005930", "207940")
+            first.collection_symbols, ("005930", "207940", "000660")
         )
         self.assertFalse(second.refreshed)
         self.assertEqual(second.symbols, ("005930", "207940", "035420"))
         self.assertEqual(
-            second.collection_symbols, ("005930", "207940")
+            second.collection_symbols, ("005930", "207940", "000660")
         )
         self.assertTrue(third.refreshed)
         self.assertEqual(
@@ -425,7 +425,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
 
         self.assertEqual(result.symbols, ("207940",))
-        self.assertEqual(result.collection_symbols, ("207940",))
+        self.assertEqual(result.collection_symbols, ("207940", "005930"))
 
     def test_opening_pool_missing_pit_data_fails_without_cache(self) -> None:
         client = FakeRankingClient(rows=(DEFAULT_ROWS[0],))
@@ -593,6 +593,9 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         )
 
         self.assertEqual(result.symbols, ())
+        self.assertEqual(
+            result.collection_symbols, ("005930", "000660", "207940")
+        )
         self.assertFalse(cached.refreshed)
         self.assertEqual(client.ranking_calls, [("MARKET_TRADING_AMOUNT", 5)])
         row = self.store._connection.execute(
@@ -613,6 +616,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
 
         self.assertEqual(result.symbols, ())
+        self.assertEqual(result.collection_symbols, ())
         row = self.store._connection.execute(
             "SELECT status, selected_count FROM dynamic_universe_runs"
         ).fetchone()
@@ -653,6 +657,7 @@ class DynamicUniverseSelectorTest(unittest.TestCase):
         ).resolve(now=NOW, held_symbols=(), risk_context=self._context())
 
         self.assertEqual(result.symbols, ("005930",))
+        self.assertEqual(result.collection_symbols, ("005930",))
         self.assertEqual(collector.calls, [expected_before])
         decision = self.store._connection.execute(
             "SELECT violations FROM dynamic_universe_decisions WHERE symbol='035420'"

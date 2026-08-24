@@ -150,7 +150,9 @@
 
 ### Hermes LLM Advisor
 - **정의**: `hermes-analysis` 모델을 사용하여 장전 브리핑 작성, 장중 진입 신호 2차 검토, 장 마감 일일 요약을 생성하는 AI 분석 컴포넌트.
-- **Hard Preflight**: 룰과 한도를 통과하지 못한 신호는 불필요한 LLM 호출을 하지 않고 즉시 사전 스킵하여 토큰 낭비 방지.
+- **Hard Preflight**: 필수 데이터·이벤트·갭·수량·현금·시간·Risk를 통과하지
+  못한 신호는 LLM 호출 없이 차단. Hermes experimental paper에서는 가격
+  셋업·RSI·낙하 칼날 판정만 advisor 참고 근거로 사용.
 - **관련 문서**: [automatic-trading-scenario.md](automatic-trading-scenario.md#hermes-연동)
 
 ### Paper MCP (Model Context Protocol)

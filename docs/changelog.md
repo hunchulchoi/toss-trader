@@ -7,6 +7,18 @@
 
 ## 2026-08-24
 
+### Hermes를 v2.3 참고형 독립 paper 전략으로 분리
+
+- 기록 시각: 2026-08-24 12:20 KST
+- 후보: Rule 선택종목을 우선 보존하고 D-1 유동성 순 정적 적격 보통주로
+  Hermes 관찰 풀을 최대 30종까지 구성
+- 전략: Rule은 strict setup-v2.3 유지. Hermes는 `missing-price-setup`,
+  `rsi-chase`, `falling-knife`를 advisor 참고 근거로 사용
+- 안전: PIT·이벤트 결손, 임박 이벤트, 갭, 정수주 수량, 0.5% 위험, heat,
+  현금·70만원 주문 상한, 계좌 Risk, 장 시간, 09:30 진입 제한은 하드 차단 유지
+- 감사: 모든 Hermes 진입은 `hermes-experimental` signal·position setup으로
+  기록. Rule과 후보·전략 계약이 달라 직접 A/B·성과 개선 근거로 사용 금지
+
 ### Paper entry 관찰창과 주문 상한 조정
 
 - 기록 시각: 2026-08-24 11:18 KST

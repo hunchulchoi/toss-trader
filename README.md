@@ -224,10 +224,11 @@ API 오류 같은 가변 Risk는 membership이 아니라 BUY 실행 단계에서
 cycle 15종은 기존 전략 조회량(기본 61봉)을 저장하고, 나머지 후보는 cycle마다
 최근 30봉을 별도로 upsert한다. 이는 배포 이후 표본 공백을 줄이는 forward 수집이며
 과거 누락 구간을 복원하는 백필은 아니다.
-Rule은 D-1 setup-first 통과자 상위 15종을 평가하고, Hermes는 같은 통과 풀을
-최대 30종까지 관찰한다. 다만
-가격 셋업·PIT 6세션·이벤트·갭·Risk·개장 후 30분 제한은 동일하게 강제하고,
-Hermes가 이 하드 게이트를 우회하지 못한다. 후보 수가 달라 직접 A/B는 아니다.
+Rule은 D-1 setup-first 통과자 상위 15종을 strict v2.3으로 평가한다. Hermes는
+Rule 종목을 우선 포함하고 D-1 유동성 순 정적 적격 보통주로 최대 30종을 채운다.
+Hermes에서 `missing-price-setup`·`rsi-chase`·`falling-knife`는 advisor 참고
+근거다. PIT·이벤트 데이터 결손, 임박 이벤트, 갭, 수량·현금·Risk, 개장 후
+30분 제한은 계속 deterministic hard gate다. 후보·전략 계약이 달라 직접 A/B가 아니다.
 BUY 후보는 MA 교차가 아니라 직전 완결 일봉의 setup-v2.3 가격 조건과 PIT
 수급·이벤트에서 직접 만든다. PIT 6세션 이력은 필수지만 외국인 수급 반전은
 가점으로 쓰며 미반전만으로 막지 않는다. D+1 첫 완결 1분봉에서 3% 갭과 위험 수량을 다시
@@ -314,7 +315,7 @@ Telegram 비밀값으로 생성한 Alertmanager 설정은 container tmpfs에만 
 | 시각(KST) | 작업 | Hermes | Telegram |
 |---|---|---|---|
 | 평일 08:30 | 시장분석·종목발굴 | 시장 의견 생성 | 리포트 전송 |
-| 평일 09:00~15:20, 5분 간격 | setup-v2.3 D+1 rule/Hermes 비교 | v2·한도 통과 신호만 advisor | 특이사항만 전송 |
+| 평일 09:00~15:20, 5분 간격 | Rule strict v2.3 / Hermes experimental paper | 데이터·이벤트·실행 hard gate 통과 신호 검토 | 특이사항만 전송 |
 | 평일 11:50 | 일봉 paper + 당일 1m v2 퍼널 중간 분석 | 장중 미완결 자료의 독립·교차 검토 | 중간 브리핑 전송 |
 | 평일 15:40 | 일봉 paper + 당일 1m v2 퍼널 마감 분석 | 규칙 준수 요약 | 마감 리포트 전송 |
 
