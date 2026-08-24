@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-017 Give Hermes a paper-only risk budget
+
+- Owner: codex
+- Status: DONE
+- Result: preserved Rule sizing at 0.5% per trade, 2% open heat, and 1%
+  UNKNOWN-cluster heat while applying 2%/6%/6% only to Hermes experimental
+  entries through an explicit `arm_candidate` sizing policy
+- Checks: 377 unit tests; changed-file Ruff and Git whitespace; one-share fixture
+  with planned loss above KRW 5,000 and at or below KRW 20,000 rejected by Rule
+  sizing and accepted by Hermes sizing
+- Risks: one-share planned loss above KRW 20,000 still yields zero quantity;
+  paper-only, asymmetric strategy experiment, not deployed or profitability evidence
+- 기록 시각: 2026-08-24 12:38 KST
+
 ### STRAT-016 Split Hermes into a reference-gate paper strategy
 
 - Owner: codex

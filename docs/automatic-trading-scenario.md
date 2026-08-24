@@ -148,6 +148,9 @@ n8n의 각 task 호출마다 automation service가 별도 프로세스로
 Hermes: 정적 적격·유동성 Top30에서 가격 셋업·RSI·수급 방향은 참고 근거로
 advisor가 판단한다. 필수 데이터·이벤트·갭·수량·시간·로컬 hard preflight는
 계속 deterministic 차단이다. 한도 거부 → 판단 1행, token 0.
+Hermes experimental sizing은 거래당 2%, 전체 open heat 6%, 단일 UNKNOWN
+cluster heat 6%다. Rule의 0.5%/2%/1%와 분리되며 주문 70만원·현금·계좌
+RiskManager 한도는 동일하다.
 Rule: preflight 없이 n8n 1회. advisor payload는 신호+RiskContext에 cycle이 이미
 수집한 최근 완결 일봉 30개·분봉 60개·setup-v2·PIT 수급 요약을 붙인다. Hermes가
 Toss API를 직접 조회하지 않는다. 뉴스·호가 없음.

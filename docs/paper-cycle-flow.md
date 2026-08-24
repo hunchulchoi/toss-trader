@@ -123,16 +123,17 @@ timestamp는 session open과 같아야 한다.
 4. 진입·청산 각각 5bp 불리한 slippage와 국내 거래비용을 반영한다.
 5. 수량은 다음 한도의 최솟값을 정수 주식 단위로 내림한다.
 
-| 제한 | 값 |
-|---|---:|
-| 1회 위험 예산 | equity의 0.5% |
-| 전체 open heat | equity의 2% |
-| cluster heat | equity의 1% |
-| 주문 금액 | 700,000원 |
-| 가용 현금 | 비용 포함 초과 금지 |
+| 제한 | Rule | Hermes experimental |
+|---|---:|---:|
+| 1회 위험 예산 | equity의 0.5% | equity의 2% |
+| 전체 open heat | equity의 2% | equity의 6% |
+| cluster heat | equity의 1% | equity의 6% |
+| 주문 금액 | 700,000원 | 700,000원 |
+| 가용 현금 | 비용 포함 초과 금지 | 비용 포함 초과 금지 |
 
 신뢰 가능한 sector master가 아직 없어서 모든 종목을 `UNKNOWN` 단일 cluster로
-취급한다. 같은 cycle의 앞선 후보가 fill되기 전이라도 heat와 cash를 임시
+취급한다. Hermes의 6% cluster heat는 이 단일 UNKNOWN bucket 전체 한도다.
+같은 cycle의 앞선 후보가 fill되기 전이라도 heat와 cash를 임시
 예약해 뒤 후보의 중복 사용을 막는다. 계산 결과가 1주 미만이면 BUY하지 않는다.
 
 ## Position and exit state machine

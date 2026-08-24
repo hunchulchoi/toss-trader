@@ -97,7 +97,9 @@
 - **관련 문서**: [docs/2026-08-19/universe-strategy-debate.md](2026-08-19/universe-strategy-debate.md), [README.md](../README.md#실행)
 
 ### Position Sizing (포지션 사이징)
-- **기본 원칙**: 총자산 대비 단일 거래 리스크 한도(0.5%), 동시 보유 한도(최대 10종목), 일일 최대 매수 횟수(5회), ATR14 기반 손절폭 계산.
+- **기본 원칙**: Rule 단일 거래 리스크 0.5%. Hermes experimental paper만 2%.
+  동시 보유 최대 10종목, 일일 최대 매수 5회, ATR14 기반 손절폭 계산과
+  RiskManager는 공통 적용.
 - **정수 주식 수**: 최소 1주 단위 계산 후 현금 잔고 및 종목별 한도 내 절사.
 
 ---

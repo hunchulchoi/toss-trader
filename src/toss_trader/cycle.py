@@ -25,7 +25,12 @@ from .paper import toss_trade_costs
 from .portfolio import DailyPortfolioPerformance, PortfolioPerformance
 from .risk import RiskDecision
 from .screening import MarketRegime, analyze_market
-from .setup_screening import EntryGateDecision, SetupType
+from .setup_screening import (
+    DEFAULT_POSITION_SIZING_POLICY,
+    EntryGateDecision,
+    PositionSizingPolicy,
+    SetupType,
+)
 from .strategy import MaCrossoverEvaluation, ma_trend_continuation_signal
 from .v2_engine import (
     ADVERSE_SLIPPAGE,
@@ -42,6 +47,11 @@ HANDLED_CYCLE_ERRORS = (OSError, RuntimeError, TossApiError, TypeError, ValueErr
 V2_ENTRY_ARM_WINDOW = timedelta(minutes=30)
 HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS = frozenset(
     {"falling-knife", "missing-price-setup", "rsi-chase"}
+)
+HERMES_EXPERIMENTAL_SIZING_POLICY = PositionSizingPolicy(
+    per_trade_risk_rate=Decimal("0.02"),
+    max_open_heat_rate=Decimal("0.06"),
+    max_cluster_heat_rate=Decimal("0.06"),
 )
 
 
@@ -908,6 +918,11 @@ class PaperCycleRunner:
             current_open_heat=self._trading.open_v2_heat() + reserved_open_heat,
             current_cluster_heat=(
                 self._trading.cluster_v2_heat(cluster_id) + reserved_cluster_heat
+            ),
+            sizing_policy=(
+                HERMES_EXPERIMENTAL_SIZING_POLICY
+                if experimental_strategy_reference
+                else DEFAULT_POSITION_SIZING_POLICY
             ),
         )
         if not decision.armed or decision.plan is None:

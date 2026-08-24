@@ -7,6 +7,17 @@
 
 ## 2026-08-24
 
+### Hermes experimental 수량 위험 예산 분리
+
+- 기록 시각: 2026-08-24 12:37 KST
+- Rule: 거래당 0.5%, 전체 open heat 2%, UNKNOWN cluster heat 1% 유지
+- Hermes: paper experimental만 거래당 2%, 전체 open heat 6%, 단일 UNKNOWN
+  cluster heat 6% 적용
+- 공통 안전: ATR14 ×1.5 stop, 정수주 내림, 주문 700,000원, 가용 현금,
+  일일 손실·API·시장시간·09:30·RiskManager 차단 유지
+- 한계: 100만원 장부에서 1주 예상손실 20,000원을 넘는 종목은 Hermes도
+  `below-one-lot`; 실거래·성과 개선 근거 아님
+
 ### Hermes를 v2.3 참고형 독립 paper 전략으로 분리
 
 - 기록 시각: 2026-08-24 12:20 KST

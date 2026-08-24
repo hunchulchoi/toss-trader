@@ -229,6 +229,9 @@ Rule 종목을 우선 포함하고 D-1 유동성 순 정적 적격 보통주로 
 Hermes에서 `missing-price-setup`·`rsi-chase`·`falling-knife`는 advisor 참고
 근거다. PIT·이벤트 데이터 결손, 임박 이벤트, 갭, 수량·현금·Risk, 개장 후
 30분 제한은 계속 deterministic hard gate다. 후보·전략 계약이 달라 직접 A/B가 아니다.
+Rule sizing은 거래당 0.5%·전체 heat 2%·UNKNOWN cluster 1%다. Hermes
+experimental paper만 거래당 2%·전체/UNKNOWN cluster 6%를 사용한다. 양쪽 모두
+정수주, ATR stop, 주문 70만원, 현금·계좌 Risk는 동일하게 강제한다.
 BUY 후보는 MA 교차가 아니라 직전 완결 일봉의 setup-v2.3 가격 조건과 PIT
 수급·이벤트에서 직접 만든다. PIT 6세션 이력은 필수지만 외국인 수급 반전은
 가점으로 쓰며 미반전만으로 막지 않는다. D+1 첫 완결 1분봉에서 3% 갭과 위험 수량을 다시

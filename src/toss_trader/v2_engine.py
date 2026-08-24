@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 
 from .models import Candle
 from .setup_screening import (
+    DEFAULT_POSITION_SIZING_POLICY,
+    PositionSizingPolicy,
     SetupContext,
     SetupDecision,
     SetupType,
@@ -85,6 +87,7 @@ def arm_candidate(
     available_cash: Decimal,
     current_open_heat: Decimal = Decimal(0),
     current_cluster_heat: Decimal = Decimal(0),
+    sizing_policy: PositionSizingPolicy = DEFAULT_POSITION_SIZING_POLICY,
 ) -> CandidateDecision:
     """Arm D+1 entry from the first regular-session 1m bar.
 
@@ -128,6 +131,7 @@ def arm_candidate(
         available_cash=available_cash,
         current_open_heat=current_open_heat,
         current_cluster_heat=current_cluster_heat,
+        policy=sizing_policy,
         slippage=ADVERSE_SLIPPAGE,
     )
     if sizing.quantity <= 0:

@@ -556,6 +556,9 @@ class PaperCycleRunnerTest(unittest.TestCase):
         candidate = _v2_candidate()
         candidate = replace(
             candidate,
+            close_price=Decimal(100000),
+            setup_low=Decimal(90000),
+            atr14=Decimal(10000),
             decision=replace(
                 candidate.decision,
                 approved=False,
@@ -568,8 +571,8 @@ class PaperCycleRunnerTest(unittest.TestCase):
             [
                 _minute_bar(
                     market_open + timedelta(minutes=1),
-                    open_price="10",
-                    low_price="9.5",
+                    open_price="100000",
+                    low_price="95000",
                 )
             ],
         )
@@ -602,6 +605,8 @@ class PaperCycleRunnerTest(unittest.TestCase):
         plan = self.paper_ledger.v2_position_plan("005930")
         assert plan is not None
         self.assertIn("hermes-experimental-reference", plan.setups)
+        self.assertGreater(plan.planned_heat, Decimal(5000))
+        self.assertLessEqual(plan.planned_heat, Decimal(20000))
 
     def test_hermes_experimental_keeps_missing_data_and_event_hard(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)

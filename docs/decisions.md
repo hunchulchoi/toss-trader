@@ -16,6 +16,9 @@ Mandatory PIT/event data, imminent events, gap checks, integer-share sizing,
 heat, cash, order/account Risk, market session, and the 09:30 entry cutoff stay
 deterministic and fail-closed. Every Hermes entry is labeled
 `hermes-experimental` and remains isolated from Rule results and real trading.
+Rule retains 0.5% per-trade, 2% open, and 1% UNKNOWN-cluster heat. Hermes paper
+uses 2% per-trade and 6% open/UNKNOWN-cluster heat; both retain ATR stops,
+integer shares, the KRW 700,000 order ceiling, cash, and account RiskManager.
 
 ### Reason
 
