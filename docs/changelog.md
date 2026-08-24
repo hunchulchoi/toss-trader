@@ -20,7 +20,10 @@
   규칙 버전은 `momentum-shadow-v2`
 - 안전: 실제 signal·RiskManager·paper fill·주문에는 연결하지 않으며 Hermes 실패도
   실제 cycle을 막지 않음
-- 운영: 미배포
+- 배포 시각: 2026-08-24 17:37 KST
+- 운영: `automation`·`timeline` 이미지를 재빌드·교체했다. 두 서비스 healthy,
+  `momentum-shadow-v2`·Hermes review 함수·Hunter timeline 패널 로드,
+  `TRADING_ENABLED=false`를 확인했다
 
 ### 장중 눌림 재돌파 Hunter 비매매 shadow 표본
 
