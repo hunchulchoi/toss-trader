@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from .calendar import MarketSession
 from .cycle_state import PaperCycleRun
 
 RUN_STATUSES = ("running", "succeeded", "partial_failure", "failed")
@@ -34,6 +35,8 @@ class MetricsSnapshot:
     paper_fill_count: int
     position_quantities: dict[str, Decimal]
     paper_cash_change: Decimal = Decimal(0)
+    kr_calendar_ok: int = 1
+    kr_intraday_cycle_expected: int = 1
 
 
 class MetricsStore(Protocol):
@@ -182,18 +185,52 @@ class MetricsService:
         *,
         initial_cash: Decimal = Decimal(1000000),
         clock: Callable[[], datetime] | None = None,
+        session_lookup: Callable[[datetime], MarketSession] | None = None,
+        session_cache_seconds: float = 600,
     ) -> None:
         if initial_cash <= 0:
             raise ValueError("paper initial cash must be positive")
         self._store = store
         self._initial_cash = initial_cash
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._session_lookup = session_lookup
+        self._session_cache_seconds = session_cache_seconds
+        self._cached_session: tuple[datetime, MarketSession] | None = None
 
     def render(self) -> str:
+        generated_at = self._clock()
+        snapshot = self._store.snapshot(generated_at=generated_at)
+        calendar_ok, expected = self._kr_session_flags(generated_at)
         return render_prometheus(
-            self._store.snapshot(generated_at=self._clock()),
+            replace(
+                snapshot,
+                kr_calendar_ok=calendar_ok,
+                kr_intraday_cycle_expected=expected,
+            ),
             initial_cash=self._initial_cash,
         )
+
+    def _kr_session_flags(self, now: datetime) -> tuple[int, int]:
+        if self._session_lookup is None:
+            return 0, 1
+        session = self._cached_kr_session(now)
+        if session is None:
+            return 0, 1
+        return 1, int(kr_intraday_cycle_expected(session, now=now))
+
+    def _cached_kr_session(self, now: datetime) -> MarketSession | None:
+        cached = self._cached_session
+        if (
+            cached is not None
+            and (now - cached[0]) <= timedelta(seconds=self._session_cache_seconds)
+        ):
+            return cached[1]
+        try:
+            session = self._session_lookup(now)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return None
+        self._cached_session = (now, session)
+        return session
 
 
 def render_prometheus(
@@ -233,6 +270,18 @@ def render_prometheus(
             "# HELP toss_trader_cycle_last_success Whether latest cycle succeeded.",
             "# TYPE toss_trader_cycle_last_success gauge",
             f"toss_trader_cycle_last_success {success}",
+            "# HELP toss_trader_kr_calendar_ok Toss KR calendar lookup succeeded.",
+            "# TYPE toss_trader_kr_calendar_ok gauge",
+            f"toss_trader_kr_calendar_ok {snapshot.kr_calendar_ok}",
+            (
+                "# HELP toss_trader_kr_intraday_cycle_expected "
+                "1 while a KR regular session should be producing 1m cycles."
+            ),
+            "# TYPE toss_trader_kr_intraday_cycle_expected gauge",
+            (
+                "toss_trader_kr_intraday_cycle_expected "
+                f"{snapshot.kr_intraday_cycle_expected}"
+            ),
         ]
     )
     _append_latest(lines, latest)
@@ -260,6 +309,18 @@ def render_prometheus(
         for symbol, quantity in sorted(snapshot.position_quantities.items())
     )
     return "\n".join(lines) + "\n"
+
+
+def kr_intraday_cycle_expected(session: MarketSession, *, now: datetime) -> bool:
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("now must include a timezone offset")
+    if (
+        not session.is_business_day
+        or session.market_open_at is None
+        or session.market_close_at is None
+    ):
+        return False
+    return session.market_open_at <= now <= session.market_close_at
 
 
 def _append_latest(lines: list[str], latest: PaperCycleRun | None) -> None:

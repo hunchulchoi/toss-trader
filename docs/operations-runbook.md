@@ -173,6 +173,23 @@ Tailscale `19094` 502는 `toss-trader-timeline-1`이 죽은 것이다. 활성 Ru
 
 한도 preflight. `paper_risk_decisions` 위반 코드 확인. `hermes_trade` 없음이 정상.
 
+### TossTraderCycleStale 휴장 알림
+
+원인: n8n은 휴장·주말에 cycle을 안 돌리는데, 알림이 `25시간 동안 완료 cycle 없음`만
+봤다. 금요일 마감 이후 토·일·월 휴장이면 `TossTraderCycleStale`이 정상 침묵을
+장애로 울린다.
+
+조치: `toss_trader_kr_intraday_cycle_expected == 1`(한국 정규장 중)일 때만
+평가한다. 휴장·주말·장후에는 울리지 않는다. calendar 조회 실패 시 expected는
+1로 남아 기존처럼 울린다. 장중 stale는 계속 장애다.
+
+확인:
+
+```bash
+curl -sS http://127.0.0.1:9108/metrics |
+  rg 'toss_trader_kr_(calendar_ok|intraday_cycle_expected)'
+```
+
 ### n8n workflow failure 알림
 
 Telegram에는 원본 cycle JSON·shared snapshot·캔들 목록을 보내지 않는다. 다음처럼

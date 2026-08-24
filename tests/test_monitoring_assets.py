@@ -206,6 +206,7 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("TossTraderMetricsDown", alerts)
         self.assertIn("toss_trader_cycle_last_daily_return_ratio <= -0.03", alerts)
         self.assertIn("toss_trader_cycle_last_finished_timestamp_seconds", alerts)
+        self.assertIn("toss_trader_kr_intraday_cycle_expected == 1", alerts)
         self.assertIn("job_name: toss-trader", scrape)
         self.assertIn("/metrics", scrape)
         self.assertIn("alertmanager:9093", scrape)

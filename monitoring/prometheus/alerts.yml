@@ -47,10 +47,15 @@ groups:
           description: Worst currency bucket return is at or below -3%.
 
       - alert: TossTraderCycleStale
-        expr: (toss_trader_cycle_last_present == 1) and (time() - toss_trader_cycle_last_finished_timestamp_seconds > 90000)
+        expr: |
+          (toss_trader_cycle_last_present == 1)
+          and (toss_trader_kr_intraday_cycle_expected == 1)
+          and (time() - toss_trader_cycle_last_finished_timestamp_seconds > 90000)
         for: 10m
         labels:
           severity: warning
         annotations:
           summary: Toss Trader cycle is stale
-          description: No completed cycle has been recorded for more than 25 hours.
+          description: >-
+            No completed cycle during a KR regular session for more than 25 hours.
+            Closed-market days are excluded.

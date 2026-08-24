@@ -7,6 +7,15 @@
 
 ## 2026-08-24
 
+### 휴장일에 TossTraderCycleStale이 울리던 문제
+
+- 기록 시각: 2026-08-24 13:00 KST
+- 구멍: 알림이 마지막 완료 cycle 시각만 봐서, n8n이 안 도는 휴장·주말도
+  25시간 stale로 취급했다
+- 동작: metrics가 Toss KR calendar로 `toss_trader_kr_intraday_cycle_expected`를
+  내고, 정규장 중에만 CycleStale을 평가한다. calendar 실패는 fail-open
+- 운영: 코드만, 배포 대기. metrics·prometheus 둘 다 올려야 한다
+
 ### 중간 패널이 벤치마크 결측·사이징 맥락 없이 구멍만 말하던 문제
 
 - 기록 시각: 2026-08-24 12:30 KST

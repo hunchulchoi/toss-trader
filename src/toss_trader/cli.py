@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 from .advisor import create_hermes_trade_advisor
 from .automation import (
     AlertmanagerReporter,
+    _market_session_lookup_from_env,
     create_daily_automation_from_env,
     create_intraday_paper_automation_from_env,
     create_market_scan_automation_from_env,
@@ -1856,6 +1857,12 @@ def _run_market_scan(settings: Settings, args: argparse.Namespace) -> int:
     return 3 if result.errors else 0
 
 
+def _optional_kr_session_lookup(settings: Settings):
+    if not settings.client_id or not settings.client_secret:
+        return None
+    return _market_session_lookup_from_env()
+
+
 def _render_metrics(settings: Settings) -> int:
     store = open_metrics_store(
         postgres_parameters=settings.postgres_connection_parameters(),
@@ -1863,7 +1870,11 @@ def _render_metrics(settings: Settings) -> int:
     )
     try:
         sys.stdout.write(
-            MetricsService(store, initial_cash=settings.paper_initial_cash).render()
+            MetricsService(
+                store,
+                initial_cash=settings.paper_initial_cash,
+                session_lookup=_optional_kr_session_lookup(settings),
+            ).render()
         )
     finally:
         store.close()
@@ -1939,7 +1950,11 @@ def _serve_metrics(settings: Settings, args: argparse.Namespace) -> int:
         sqlite_path=settings.paper_db_path,
     )
     try:
-        service = MetricsService(store, initial_cash=settings.paper_initial_cash)
+        service = MetricsService(
+            store,
+            initial_cash=settings.paper_initial_cash,
+            session_lookup=_optional_kr_session_lookup(settings),
+        )
         print(
             json.dumps({"metricsServer": "listening", "host": host, "port": port}),
             flush=True,

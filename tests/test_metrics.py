@@ -4,12 +4,15 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Self
+from zoneinfo import ZoneInfo
 
+from toss_trader.calendar import MarketSession
 from toss_trader.cycle_state import SqliteCycleStateStore
 from toss_trader.metrics import (
     MetricsService,
     PostgresMetricsStore,
     SqliteMetricsStore,
+    kr_intraday_cycle_expected,
     metrics_response,
 )
 from toss_trader.models import Side, TradeSignal
@@ -96,6 +99,97 @@ class SqliteMetricsStoreTest(unittest.TestCase):
         self.assertIn("toss_trader_paper_initial_cash_krw 1000000", output)
         self.assertIn("toss_trader_paper_available_cash_krw 894985.0", output)
         self.assertIn("toss_trader_paper_deployed_cash_krw 105015.0", output)
+        self.assertIn("toss_trader_kr_calendar_ok 0", output)
+        self.assertIn("toss_trader_kr_intraday_cycle_expected 1", output)
+
+    def test_closed_kr_session_does_not_expect_intraday_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = str(Path(directory) / "paper.db")
+            seed_sqlite(database_path)
+            store = SqliteMetricsStore(database_path)
+            now = datetime(2026, 8, 15, 12, 0, tzinfo=ZoneInfo("Asia/Seoul"))
+            closed = MarketSession(
+                country="KR",
+                business_date=now.date(),
+                is_business_day=False,
+                market_open_at=None,
+                market_close_at=None,
+            )
+            service = MetricsService(
+                store,
+                clock=lambda: now,
+                session_lookup=lambda _: closed,
+            )
+
+            output = service.render()
+            store.close()
+
+        self.assertIn("toss_trader_kr_calendar_ok 1", output)
+        self.assertIn("toss_trader_kr_intraday_cycle_expected 0", output)
+
+    def test_open_kr_session_expects_intraday_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = str(Path(directory) / "paper.db")
+            seed_sqlite(database_path)
+            store = SqliteMetricsStore(database_path)
+            now = datetime(2026, 8, 24, 10, 0, tzinfo=ZoneInfo("Asia/Seoul"))
+            open_session = MarketSession(
+                country="KR",
+                business_date=now.date(),
+                is_business_day=True,
+                market_open_at=datetime(
+                    2026, 8, 24, 9, 0, tzinfo=ZoneInfo("Asia/Seoul")
+                ),
+                market_close_at=datetime(
+                    2026, 8, 24, 15, 30, tzinfo=ZoneInfo("Asia/Seoul")
+                ),
+            )
+            service = MetricsService(
+                store,
+                clock=lambda: now,
+                session_lookup=lambda _: open_session,
+            )
+
+            output = service.render()
+            store.close()
+
+        self.assertIn("toss_trader_kr_calendar_ok 1", output)
+        self.assertIn("toss_trader_kr_intraday_cycle_expected 1", output)
+
+
+class KrIntradayCycleExpectedTest(unittest.TestCase):
+    def test_holiday_and_after_hours_are_not_expected(self) -> None:
+        seoul = ZoneInfo("Asia/Seoul")
+        holiday = MarketSession(
+            country="KR",
+            business_date=datetime(2026, 8, 15, tzinfo=seoul).date(),
+            is_business_day=False,
+            market_open_at=None,
+            market_close_at=None,
+        )
+        session = MarketSession(
+            country="KR",
+            business_date=datetime(2026, 8, 24, tzinfo=seoul).date(),
+            is_business_day=True,
+            market_open_at=datetime(2026, 8, 24, 9, 0, tzinfo=seoul),
+            market_close_at=datetime(2026, 8, 24, 15, 30, tzinfo=seoul),
+        )
+
+        self.assertFalse(
+            kr_intraday_cycle_expected(
+                holiday, now=datetime(2026, 8, 15, 12, 0, tzinfo=seoul)
+            )
+        )
+        self.assertFalse(
+            kr_intraday_cycle_expected(
+                session, now=datetime(2026, 8, 24, 16, 0, tzinfo=seoul)
+            )
+        )
+        self.assertTrue(
+            kr_intraday_cycle_expected(
+                session, now=datetime(2026, 8, 24, 10, 0, tzinfo=seoul)
+            )
+        )
 
 
 class FakeMetricsCursor:

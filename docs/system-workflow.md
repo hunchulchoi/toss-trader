@@ -94,7 +94,7 @@ flowchart TB
 | `automation` | default + `openclaw-net` | `paper-data` read/write | 없음 (`8088` expose) | n8n task, paper cycle, RiskManager callback, 알림 감사 |
 | `paper-mcp` | `openclaw-net`만 | 없음 | 없음 (`8090` expose) | 공용 Hermes Telegram용 paper 장부 read-only MCP |
 | `hermes-analysis` | `openclaw-net`만 | `hermes-analysis-data` | 없음 (`8642` expose) | zero-tool 분석 전용 LLM API |
-| `metrics` | default | `paper-data` read-only | Tailscale `:9108` | Prometheus 지표·health |
+| `metrics` | default | `paper-data` read-only | Tailscale `:9108` | Prometheus 지표·health. KR calendar `toss_trader_kr_intraday_cycle_expected` |
 | `prometheus` | default | `prometheus-data` | Tailscale `:19090` | metrics scrape·alert rule 평가 |
 | `alertmanager` | default | `alertmanager-data` | Tailscale `:19093` | Telegram topic 전달·실패 counter |
 

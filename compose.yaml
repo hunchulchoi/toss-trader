@@ -43,6 +43,9 @@ services:
     restart: unless-stopped
     environment:
       TRADING_ENABLED: "false"
+      TOSS_CLIENT_ID: ${TOSS_CLIENT_ID:-}
+      TOSS_CLIENT_SECRET: ${TOSS_CLIENT_SECRET:-}
+      TOSS_API_BASE_URL: https://openapi.tossinvest.com
       PAPER_DB_PATH: /app/data/paper.db
       POSTGRES_HOST: ${POSTGRES_HOST:-}
       POSTGRES_PORT: ${POSTGRES_PORT:-5431}

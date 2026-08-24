@@ -282,7 +282,7 @@ Prometheus가 다음 상태를 감시한다.
 - 마지막 cycle 실패 또는 부분 실패
 - API 오류 3회 이상 연속
 - paper 일일 손실 -3% 이하
-- 완료 cycle이 25시간 이상 오래됨
+- 한국 정규장 중에 완료 cycle이 25시간 이상 오래됨. 휴장·주말·장후는 제외
 
 Grafana는 Tailscale 주소로만 접근한다. 현재 기본 port:
 
