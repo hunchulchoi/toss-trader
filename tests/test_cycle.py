@@ -448,6 +448,34 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(result.fill_count, 1)
         self.assertIsNotNone(self.paper_ledger.v2_position_plan("005930"))
 
+    def test_v2_cycle_allows_entire_thirtieth_minute(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="10",
+                    low_price="9.5",
+                )
+            ],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=30, seconds=59),
+        )
+
+        self.assertEqual(result.fill_count, 1)
+        self.assertIsNotNone(self.paper_ledger.v2_position_plan("005930"))
+
     def test_v2_cycle_records_armable_late_entry_as_shadow_only(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         strategy = FakeV2CycleStrategy(

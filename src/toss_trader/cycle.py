@@ -469,8 +469,7 @@ class PaperCycleRunner:
                         and session.market_open_at is not None
                         and now
                         >= session.market_open_at + COMPLETED_ONE_MINUTE_OFFSET
-                        and now
-                        <= session.market_open_at + V2_ENTRY_ARM_WINDOW
+                        and _entry_arm_window_contains(session, now)
                     ):
                         self._ensure_v2_opening_bar(
                             symbol=symbol,
@@ -937,7 +936,7 @@ class PaperCycleRunner:
             detail = dict(decision.detail or {})
             detail.update(_entry_window_detail(session, now))
             return None, decision.reason, None, detail
-        if now > session.market_open_at + V2_ENTRY_ARM_WINDOW:
+        if not _entry_arm_window_contains(session, now):
             return (
                 None,
                 "setup-v2:shadow:armed-after-entry-window",
@@ -1020,6 +1019,14 @@ def _entry_window_detail(session: MarketSession, now: datetime) -> dict[str, Any
         "entryWindowCloseAt": (opened_at + V2_ENTRY_ARM_WINDOW).isoformat(),
         "observedAt": now.isoformat(),
     }
+
+
+def _entry_arm_window_contains(session: MarketSession, now: datetime) -> bool:
+    opened_at = session.market_open_at
+    if opened_at is None:
+        return False
+    observed_minute = now.replace(second=0, microsecond=0)
+    return observed_minute <= opened_at + V2_ENTRY_ARM_WINDOW
 
 
 def _v2_rejection_reason(candidate: DailySetupCandidate) -> str:
