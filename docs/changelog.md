@@ -21,6 +21,9 @@
 - payload 제한: 중복이 큰 `symbolsDetail`만 전이 상위 5개로 유지해 Rule/Hermes
   30종목 changedFacts 전체를 넣어도 12 KB 이하를 지킨다
 - 검증: 417 unit tests, changed-file Ruff, Git whitespace 통과
+- 배포 시각: 2026-08-26 08:26 KST automation 재빌드·재생성. 08:29 KST
+  health `ok`, restart 0, `TRADING_ENABLED=false`, `changedFacts=30`, 현금 3필드
+  산식 smoke 통과
 
 ## 2026-08-25
 
