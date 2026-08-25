@@ -10,8 +10,10 @@ itself.
 
 The main Hermes container polls that queue with
 `automation/hermes-panel-runner.py`. The script is intentionally fixed-purpose:
-Cursor runs in `--mode ask`, no prompt becomes a shell command, and n8n receives
-neither Docker access nor Cursor authentication.
+Cursor runs in `--mode ask` from a disposable empty workspace, no prompt becomes
+a shell command, and n8n receives neither Docker access nor Cursor
+authentication. Each Cursor subprocess gets one ephemeral MCP server:
+`toss-panel`, whose `/panel-mcp` endpoint exposes only the cutoff evidence tool.
 
 ## Rounds
 
@@ -21,6 +23,26 @@ neither Docker access nor Cursor authentication.
 3. Hermes receives the briefing JSON plus all six responses and produces the
    Telegram report. Midday output must not claim a closing price or final daily
    performance.
+
+## Evidence research
+
+JSON is still the primary evidence. When a fill timestamp, ledger cash, full
+reason transition, Risk decision, D-1 bar, or key 1m bar is omitted or conflicts,
+an agent may call `toss_paper_panel_evidence` at most twice. The fixed tool accepts
+only the claimed `panelId`, `session-summary`, or up to ten exact symbols for
+`symbol-trace`. PostgreSQL is session read-only and every query is bounded by the
+panel's stored `briefing.observedAt`; no arbitrary SQL or order path exists.
+The Hermes judge runs with explicit toolsets `web,toss-panel`; terminal, file,
+code execution, Grafana, the current-status `toss-paper` tools, and plugins are
+not in that invocation.
+
+Public research is limited to KRX, KIS Developers, OpenDART, and the Korean public
+data portal. The opinion must include the official URL and publication/observation
+time. Anything published after the panel cutoff is labeled
+`post-cutoff-research` and cannot become a historical trading input or proof of a
+missed trade. Every opinion distinguishes panel omission, absent source data, and
+facts it did not search. `missing-price-setup` remains a normal pattern rejection,
+not missing price data.
 
 The 1d cycle attaches `marketContext` from stored KR 1m bars (benchmark plus
 watched symbols) and fetches missing session minutes for those symbols first.
@@ -62,3 +84,5 @@ is unrelated and remains `false`; the panel cannot place orders.
 - exactly seven unique opinion stages exist for the panel.
 - every stage has non-negative provider token fields.
 - the final `judge:hermes` content matches the Telegram report.
+- tool-backed claims name the MCP topic or official URL and preserve the panel
+  cutoff.

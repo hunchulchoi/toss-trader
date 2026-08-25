@@ -24,6 +24,22 @@ No tasks awaiting review.
 
 ## DONE
 
+### AI-006 Give panel agents bounded evidence search
+
+- Owner: codex
+- Status: DONE
+- Result: added one panel-cutoff read-only MCP tool for session and up-to-ten-symbol
+  evidence on a separate `/panel-mcp` endpoint; connected each disposable Cursor
+  workspace and the explicitly restricted Hermes judge to only that MCP;
+  allowed official KRX/KIS/OpenDART/public-data research with source-time and
+  post-cutoff labels
+- Checks: 425 unit tests; changed-file Ruff and Git whitespace; Infisical reader
+  smoke against the latest succeeded production panel
+- Risks: external official-site search availability depends on each model
+  provider; this adds explanation evidence only and cannot alter paper decisions
+- 운영 읽기 검증 시각: 2026-08-26 08:49 KST; DB write/deploy 없음
+- 기록 시각: 2026-08-26 08:39 KST
+
 ### AI-005 Preserve full changed facts and explain reserved cash
 
 - Owner: codex

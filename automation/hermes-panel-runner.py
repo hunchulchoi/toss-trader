@@ -17,6 +17,9 @@ AUTOMATION_URL = os.environ.get(
 ).rstrip("/")
 CURSOR_AGENT = os.environ.get("CURSOR_AGENT_BIN", "/usr/local/bin/cursor-agent")
 HERMES = os.environ.get("HERMES_BIN", "/opt/hermes/.venv/bin/hermes")
+PAPER_MCP_URL = os.environ.get(
+    "TOSS_PAPER_MCP_URL", "http://toss-trader-paper-mcp:8090/panel-mcp"
+)
 
 ROLES = {
     "gpt": {
@@ -56,6 +59,23 @@ MARKET_CRITIQUE = (
     "전략 무효 선언이 아니다. 무체결·무오류만으로 리스크 해소를 말하지 마라. "
 )
 
+PANEL_RESEARCH_RULES = (
+    "먼저 제공 JSON으로 판단하라. 내부 paper 사실이 생략됐거나 서로 충돌할 때만 "
+    "toss_paper_panel_evidence를 최대 2회 호출하라. panelId는 아래 PANEL_ID를 그대로 "
+    "쓰고, 전체 장부는 session-summary, 원인 검증은 symbol-trace(종목 최대 10개)를 쓴다. "
+    "임의 SQL·terminal·파일·Grafana·Toss API·주문/쓰기 도구는 금지한다. 외부 시장 사실이 "
+    "꼭 필요하면 KRX·KIS Developers·OpenDART·공공데이터포털 공식 웹만 최대 3개 문서를 "
+    "검색하고 URL·게시/관측 시각을 적어라. 패널 cutoff 뒤 공개된 사실은 "
+    "post-cutoff-research로 표시하고 당시 매매 입력이나 놓친 매수의 증거로 쓰지 마라. "
+    "검색 결과는 [검색 근거]에 tool/topic 또는 공식 URL과 cutoff 적합성을 남겨라. "
+    "찾지 못한 정보는 '패널 JSON 생략', '원천 데이터 없음', '검색 안 함' 중 하나로 "
+    "구분하라. missing-price-setup은 가격 자료 누락이 아니라 정상 패턴 미충족이다. "
+)
+
+
+def _cursor_mcp_config() -> dict[str, Any]:
+    return {"mcpServers": {"toss-panel": {"url": PAPER_MCP_URL}}}
+
 
 def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     request = urllib.request.Request(
@@ -77,30 +97,39 @@ def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
 def _cursor_call(name: str, prompt: str) -> dict[str, Any]:
     spec = ROLES[name]
     started_at = datetime.now(UTC)
-    process = subprocess.run(
-        [
-            CURSOR_AGENT,
-            "-p",
-            "--trust",
-            "--mode",
-            "ask",
-            "--model",
-            str(spec["model"]),
-            "--output-format",
-            "json",
-            prompt,
-        ],
-        cwd="/tmp",
-        env={
-            **os.environ,
-            "HOME": "/opt/data",
-            "XDG_CONFIG_HOME": "/opt/data/.config",
-        },
-        capture_output=True,
-        text=True,
-        timeout=300,
-        check=False,
-    )
+    with tempfile.TemporaryDirectory(prefix=f"toss-panel-{name}-") as temp_dir:
+        cursor_dir = Path(temp_dir) / ".cursor"
+        cursor_dir.mkdir()
+        (cursor_dir / "mcp.json").write_text(
+            json.dumps(_cursor_mcp_config(), separators=(",", ":"))
+        )
+        process = subprocess.run(
+            [
+                CURSOR_AGENT,
+                "-p",
+                "--trust",
+                "--mode",
+                "ask",
+                "--approve-mcps",
+                "--workspace",
+                temp_dir,
+                "--model",
+                str(spec["model"]),
+                "--output-format",
+                "json",
+                prompt,
+            ],
+            cwd=temp_dir,
+            env={
+                **os.environ,
+                "HOME": "/opt/data",
+                "XDG_CONFIG_HOME": "/opt/data/.config",
+            },
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
     finished_at = datetime.now(UTC)
     if process.returncode != 0:
         detail = (process.stderr or process.stdout).strip()
@@ -162,26 +191,34 @@ def _briefing(context: dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
-def _independent_prompt(name: str, context: dict[str, Any]) -> str:
+def _independent_prompt(
+    name: str, context: dict[str, Any], *, panel_id: str
+) -> str:
     spec = ROLES[name]
     title, timing_guard, _ = _briefing(context)
     return (
         f"너는 Toss Trader paper {title} 패널의 "
         f"{spec['role']}다. {spec['instruction']} "
         f"{timing_guard} "
-        "제공 JSON만 사용하고 도구를 호출하지 마라. 다른 분석가 의견은 아직 없다. "
+        "다른 분석가 의견은 아직 없다. "
+        f"{PANEL_RESEARCH_RULES}"
         "middaySnapshotV2가 있으면 마지막 사유만 반복하지 말고 firstReason→lastReason "
         "변화, transitionCount, reasonClass, changedFacts를 우선 분석하라. "
         "changedFacts가 비었으면 '새로 바뀐 핵심 사실 없음'이라고 짧게 쓰고 같은 결론을 "
         "늘여 쓰지 마라. 정상 조건 탈락과 실제 missing-data/error를 구분하라. "
         f"{MARKET_CRITIQUE}"
         "매매 지시·수익 보장 금지. 핵심 근거와 불확실성을 한국어 1200자 이내로 작성.\n"
+        f"PANEL_ID={panel_id}\n"
         f"TODAY_JSON={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}"
     )
 
 
 def _review_prompt(
-    name: str, context: dict[str, Any], independent: dict[str, dict[str, Any]]
+    name: str,
+    context: dict[str, Any],
+    independent: dict[str, dict[str, Any]],
+    *,
+    panel_id: str,
 ) -> str:
     spec = ROLES[name]
     title, timing_guard, _ = _briefing(context)
@@ -192,8 +229,11 @@ def _review_prompt(
         f"{timing_guard} "
         "합의점, 충돌, 틀린 주장/과잉해석, 최종 judge가 남겨야 할 불확실성을 "
         "사유 변화와 changedFacts 중심으로 검토하고 새 사실이 없으면 반복을 지적하라. "
+        "독립 의견의 [검색 근거]를 먼저 재사용하고, 아직 풀리지 않은 충돌에만 "
+        f"{PANEL_RESEARCH_RULES}"
         f"{MARKET_CRITIQUE}"
-        "제공 JSON만으로 한국어 900자 이내 작성. 매매 지시 금지.\n"
+        "한국어 900자 이내 작성. 매매 지시 금지.\n"
+        f"PANEL_ID={panel_id}\n"
         f"TODAY_JSON={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}\n"
         f"INDEPENDENT={json.dumps(opinions, ensure_ascii=False, separators=(',', ':'))}"
     )
@@ -203,6 +243,8 @@ def _hermes_call(
     context: dict[str, Any],
     independent: dict[str, dict[str, Any]],
     reviews: dict[str, dict[str, Any]],
+    *,
+    panel_id: str,
 ) -> dict[str, Any]:
     title, timing_guard, sections = _briefing(context)
     evidence = {
@@ -214,9 +256,12 @@ def _hermes_call(
         f"너는 Toss Trader paper {title} 패널의 최종 judge Hermes다. GPT quant, "
         "Grok skeptic, Gemini Risk의 독립 의견과 상호검토를 판정하라. 제공된 "
         f"evidence 밖의 사실을 만들지 마라. {timing_guard} "
+        "각 의견의 [검색 근거]를 검증하고, 결론에 필요한 내부 충돌이 남았을 때만 "
+        f"{PANEL_RESEARCH_RULES}"
         f"텔레그램용 한국어 평문으로 {sections}을 포함해 2800자 이내 작성하라. "
         f"{MARKET_CRITIQUE}"
         "매매 지시·수익 보장 금지.\n"
+        f"PANEL_ID={panel_id}\n"
         f"EVIDENCE={json.dumps(evidence, ensure_ascii=False, separators=(',', ':'))}"
     )
     started_at = datetime.now(UTC)
@@ -225,7 +270,9 @@ def _hermes_call(
         process = subprocess.run(
             [
                 HERMES,
-                "--safe-mode",
+                "--ignore-rules",
+                "--toolsets",
+                "web,toss-panel",
                 "--provider",
                 "openai-codex",
                 "-m",
@@ -306,7 +353,10 @@ def main() -> int:
     opinions: list[dict[str, Any]] = []
     try:
         independent = _run_round(
-            {name: _independent_prompt(name, context) for name in ROLES},
+            {
+                name: _independent_prompt(name, context, panel_id=panel_id)
+                for name in ROLES
+            },
             panel_id=panel_id,
             stage_prefix="independent",
         )
@@ -314,7 +364,9 @@ def main() -> int:
 
         reviews = _run_round(
             {
-                name: _review_prompt(name, context, independent)
+                name: _review_prompt(
+                    name, context, independent, panel_id=panel_id
+                )
                 for name in ROLES
             },
             panel_id=panel_id,
@@ -322,7 +374,7 @@ def main() -> int:
         )
         opinions.extend(reviews.values())
 
-        judge = _hermes_call(context, independent, reviews)
+        judge = _hermes_call(context, independent, reviews, panel_id=panel_id)
         opinions.append(judge)
         _post(
             "/workflow/daily-panel-opinion",

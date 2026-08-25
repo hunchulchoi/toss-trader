@@ -361,13 +361,64 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertNotIn('"gpt-5.6-sol-medium"', source)
         self.assertGreaterEqual(source.count('"cursor-grok-4.6-high-fast"'), 2)
         self.assertIn('"gemini-3.7-flash-high"', source)
-        self.assertIn('"--mode",\n            "ask"', source)
+        self.assertIn('"--mode"', source)
+        self.assertIn('"ask"', source)
+        self.assertIn('"--approve-mcps"', source)
+        self.assertIn('"--workspace"', source)
+        self.assertIn('"toss-panel"', source)
+        self.assertIn("toss-trader-paper-mcp:8090/panel-mcp", source)
+        self.assertIn('"web,toss-panel"', source)
+        self.assertIn('"--ignore-rules"', source)
+        self.assertNotIn('"--safe-mode"', source)
         self.assertNotIn('"--sandbox"', source)
         self.assertNotIn("docker exec", source)
         self.assertIn('"HOME": "/opt/data"', source)
         self.assertIn('"XDG_CONFIG_HOME": "/opt/data/.config"', source)
         self.assertIn("process.stderr or process.stdout", source)
         self.assertIn("/workflow/daily-panel-complete", source)
+
+    def test_hermes_panel_agents_can_research_only_cutoff_evidence(self) -> None:
+        namespace = runpy.run_path(
+            str(ROOT / "automation" / "hermes-panel-runner.py")
+        )
+        panel_id = "11111111-1111-4111-8111-111111111111"
+        context = {
+            "briefing": {
+                "kind": "close",
+                "observedAt": "2026-08-25T15:40:00+09:00",
+            }
+        }
+
+        independent = namespace["_independent_prompt"](
+            "gpt", context, panel_id=panel_id
+        )
+        review = namespace["_review_prompt"](
+            "gpt",
+            context,
+            {"gpt": {"content": "독립 의견"}},
+            panel_id=panel_id,
+        )
+        config = namespace["_cursor_mcp_config"]()
+
+        self.assertEqual(
+            config,
+            {
+                "mcpServers": {
+                    "toss-panel": {
+                        "url": "http://toss-trader-paper-mcp:8090/panel-mcp"
+                    }
+                }
+            },
+        )
+        for prompt in (independent, review):
+            self.assertIn(f"PANEL_ID={panel_id}", prompt)
+            self.assertIn("toss_paper_panel_evidence", prompt)
+            self.assertIn("최대 2회", prompt)
+            self.assertIn("공식 웹", prompt)
+            self.assertIn("post-cutoff-research", prompt)
+            self.assertIn("임의 SQL·terminal", prompt)
+            self.assertIn("missing-price-setup", prompt)
+            self.assertNotIn("제공 JSON만 사용하고 도구를 호출하지 마라", prompt)
 
     def test_hermes_panel_runner_distinguishes_midday_from_close(self) -> None:
         namespace = runpy.run_path(

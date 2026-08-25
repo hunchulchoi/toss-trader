@@ -7,6 +7,29 @@
 
 ## 2026-08-26
 
+### 패널 agent 제한 검색과 데이터 누락 의미 분리
+
+- 기록 시각: 2026-08-26 08:39 KST
+- 내부 검색: 패널 UUID에 저장된 `observedAt`까지만 cycle·체결·현금·Risk·D-1·
+  핵심 1분봉을 고정 SELECT로 읽는 `toss_paper_panel_evidence`를 추가한다.
+  임의 SQL·쓰기·주문은 없고 종목 trace는 한 번에 10개까지다
+- endpoint 격리: 기존 Telegram `/mcp`에는 상태·보유·손익 3개만 유지하고,
+  `/panel-mcp`에는 cutoff 근거 도구 하나만 노출한다
+- agent 연결: GPT/Grok/Gemini Cursor subprocess는 빈 임시 workspace에서 해당
+  MCP 하나만 자동 승인한다. Hermes judge도 `web,toss-panel`만 명시적으로 열며
+  terminal·file·Grafana·현재 상태 도구는 받지 않는다. 검색은 JSON 생략이나 의견
+  충돌이 있을 때 단계당 최대 2회다
+- 외부 검색: KRX·KIS Developers·OpenDART·공공데이터포털 공식 문서만 허용하고
+  URL·게시/관측 시각을 남긴다. panel cutoff 뒤 사실은 `post-cutoff-research`로
+  표시해 과거 매매 입력이나 놓친 매수 증거로 쓰지 않는다
+- 의미: `missing-price-setup`은 계속 데이터 누락이 아닌 정상 가격 패턴 미충족이다.
+  보고서가 패널 생략·원천 없음·미검색을 구분하도록 지침을 강화했다
+- 검증: 425 unit tests, changed-file Ruff, Git whitespace 통과. 운영 배포는
+  별도다
+- 운영 읽기 검증 시각: 2026-08-26 08:49 KST. 최신 성공 panel에서 cutoff 고정,
+  Rule 2체결, 장전 1회 포함 cycle 80회, 2종목 trace SQL을 확인했다. DB write와
+  배포는 하지 않았다
+
 ### Hermes changedFacts 완전성·cycle 예약 현금 의미 분리
 
 - 기록 시각: 2026-08-26 08:24 KST

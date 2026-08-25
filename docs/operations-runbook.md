@@ -105,7 +105,7 @@ docker exec toss-trader-paper-mcp-1 \
 
 - `automation`, `metrics`, `hermes-analysis`, `paper-mcp`, `alertmanager`: healthy
 - automation health: HTTP `200`
-- paper-mcp healthz: `{"status": "ok", "tools": 3}`
+- paper-mcp healthz: `{"status": "ok", "tools": 4}`
 - `TRADING_ENABLED`: `false`
 
 Telegram에서 보유·손익을 물으려면 공용 Hermes에 `toss-paper` MCP가 등록돼 있어야

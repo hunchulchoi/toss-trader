@@ -1,5 +1,31 @@
 # Architecture Decisions
 
+## ADR-014 Give panel agents cutoff-bound evidence search
+
+Status: accepted 2026-08-26
+
+- Keep the supplied panel JSON as the primary evidence. Allow GPT/Grok/Gemini
+  reviewers and the Hermes judge to search only when a required fact is omitted
+  or opinions conflict.
+- Expose one fixed read-only MCP tool with two topics: session ledger summary and
+  a trace for at most ten explicit symbols. Resolve the cutoff from the claimed
+  panel's stored `briefing.observedAt`; reject future, unknown, or over-age panel
+  IDs and never accept SQL text.
+- Run Cursor in an empty temporary workspace with only the internal panel MCP.
+  Split `/mcp` (three Telegram status tools) from `/panel-mcp` (one cutoff tool).
+  Run the Hermes judge with explicit `web,toss-panel` toolsets so terminal, file,
+  code execution, Grafana, and current-status tools are absent.
+  Permit public research only from KRX, KIS Developers, OpenDART, and the Korean
+  public data portal, with source time and post-cutoff labeling.
+- Never convert post-cutoff research into historical strategy input or missed-buy
+  evidence. Distinguish omitted panel fields, missing source data, and unsearched
+  facts. `missing-price-setup` is a normal rejection, not a data outage.
+
+Reason: compact panel JSON intentionally omits full transitions and fills. Forcing
+agents to use only that JSON produced repeated “data missing” prose even when the
+read-only ledger contained the answer. Arbitrary DB, terminal, Grafana, Toss API,
+write, and order access remain outside the panel boundary.
+
 ## ADR-008 Hermes uses strategy gates as paper evidence
 
 - Status: accepted
