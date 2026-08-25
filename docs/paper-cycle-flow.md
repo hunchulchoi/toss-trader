@@ -114,14 +114,17 @@ valuation tier는 기록하지만 현재 실제 수량 배수는 항상 `1.0`이
 
 ## D+1 entry and sizing
 
-승인 후보는 다음 거래일 첫 정규장 1분봉이 완결될 때까지 대기한다. 첫 봉의
-timestamp는 session open과 같아야 한다.
+승인 후보는 다음 거래일 첫 정규장 1분봉이 완결될 때까지 대기한다. Toss가
+완료시각으로 라벨링하므로 09:00~09:01 첫 봉 timestamp는 `09:01`이다.
 
 1. 첫 봉 시가가 signal close보다 3% 이상 높으면 `gap-up-chase`로 차단한다.
-2. 구조적 stop은 setup 일봉 저가다.
-3. 실제 stop 거리는 `max(시가-stop, ATR14 × 1.5)`다.
-4. 진입·청산 각각 5bp 불리한 slippage와 국내 거래비용을 반영한다.
-5. 수량은 다음 한도의 최솟값을 정수 주식 단위로 내림한다.
+2. 첫 봉 시가가 setup 일봉 저가 이하이면 authoritative entry를 차단한다.
+3. 각 cycle의 최신 완결 1분봉 종가를 실행 참조가로 쓴다. 현재 분봉이 없으면
+   첫 봉 시가로 소급 체결하지 않고 `waiting:current-bar`로 대기한다.
+4. 구조적 stop은 setup 일봉 저가이며 실제 stop 거리는
+   `max(현재 완결 종가-stop, ATR14 × 1.5)`다.
+5. 진입·청산 각각 5bp 불리한 slippage와 국내 거래비용을 반영한다.
+6. 수량은 다음 한도의 최솟값을 정수 주식 단위로 내림한다.
 
 | 제한 | Rule | Hermes experimental |
 |---|---:|---:|
@@ -163,6 +166,11 @@ armed 신호도 최종 RiskManager를 통과해야 한다. 주요 제한은 주�
 신규 entry는 09:30분 전체(`09:30:59`까지)를 주문 후보로 본다. 그 뒤 같은 첫 봉 기준으로
 arm 가능한 후보는 `setup-v2:shadow:armed-after-entry-window`로만 기록하며,
 RiskManager·Hermes advisor·paper fill 경로로 보내지 않는다.
+
+첫 봉이 setup low 이하라 무효화된 Rule 후보는 09:15~09:30에 setup low를
+회복하고 다음 3개 연속 완결봉 종가가 setup low의 99.5% 이상을 유지했는지
+별도 기록한다. `setup-v2:shadow:invalid-stop-reclaim`은 연구 표본이며 signal,
+RiskManager, paper fill을 만들지 않는다.
 
 별도 `momentum-shadow-v2`는 09:00~10:00 `TOP_GAINERS`와 known research pool의
 1분봉을 모은다. 10:00 첫 평가 직전 research pool 전체를 200봉씩 한 번 보강한 뒤

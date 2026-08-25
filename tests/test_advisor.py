@@ -97,7 +97,7 @@ class HermesTradeAdvisorTest(unittest.TestCase):
         plan = ArmedTradePlan(
             symbol="005930",
             quantity=Decimal(1),
-            execution_open=Decimal(100),
+            execution_reference=Decimal(100),
             entry_price=Decimal(100),
             stop_price=Decimal(97),
             planned_heat=Decimal(3),

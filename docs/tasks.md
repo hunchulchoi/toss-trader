@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-022 Stop backfilling Rule entries to the opening price
+
+- Owner: codex
+- Status: DONE
+- Result: keep the 09:01 completed bar open for the D+1 gap and structural-stop
+  checks, but size and paper-fill v2.3 entries from the current completed 1m
+  close; wait instead of reusing a stale opening price when that current bar is
+  missing; record a 09:15~09:30 opening-stop reclaim with three-bar hold as a
+  Rule research shadow only
+- Checks: 414 unit tests; changed-file Ruff and Git whitespace
+- Risks: invalid-stop reclaim remains non-trading and has no profitability
+  evidence; the 0.5% Rule risk budget and every RiskManager limit are unchanged
+- 기록 시각: 2026-08-25 17:26 KST
+
 ### STRAT-021 Separate Hunter direction from execution liquidity
 
 - Owner: codex

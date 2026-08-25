@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from .models import Candle
@@ -49,7 +49,7 @@ class OfficialV2CycleStrategy:
         return tuple(
             candle
             for candle in candles
-            if candle.timestamp + timedelta(minutes=1) <= now
+            if candle.timestamp <= now
         )
 
     def completed_daily_bars(

@@ -24,7 +24,7 @@ from .market_data import (
     MarketCollector,
     StoredMaStrategy,
 )
-from .models import PaperFill, Side, TradeSignal, V2PositionPlan
+from .models import Candle, PaperFill, Side, TradeSignal, V2PositionPlan
 from .paper import toss_trade_costs
 from .portfolio import DailyPortfolioPerformance, PortfolioPerformance
 from .risk import RiskDecision
@@ -50,6 +50,9 @@ from .v2_runtime import OfficialV2CycleStrategy
 
 HANDLED_CYCLE_ERRORS = (OSError, RuntimeError, TossApiError, TypeError, ValueError)
 V2_ENTRY_ARM_WINDOW = timedelta(minutes=30)
+RULE_INVALID_STOP_RECLAIM_START = timedelta(minutes=15)
+RULE_INVALID_STOP_RECLAIM_HOLD_BARS = 3
+RULE_INVALID_STOP_RECLAIM_HOLD_FLOOR = Decimal("0.995")
 HERMES_HUNTER_ENTRY_START = timedelta(minutes=61)
 HERMES_HUNTER_ENTRY_WINDOW = timedelta(minutes=65)
 HERMES_HUNTER_STOP_DISTANCE_MAX = Decimal("0.03")
@@ -947,7 +950,7 @@ class PaperCycleRunner:
         plan = ArmedTradePlan(
             symbol=symbol,
             quantity=sizing.quantity,
-            execution_open=reference_price,
+            execution_reference=reference_price,
             entry_price=entry_price,
             stop_price=reference_price - sizing.effective_stop_distance,
             planned_heat=sizing.planned_heat,
@@ -1008,14 +1011,22 @@ class PaperCycleRunner:
         reserved_cluster_heat: Decimal,
         reserved_cash: Decimal,
         experimental_strategy_reference: bool,
-    ) -> tuple[TradeSignal | None, str | None, ArmedTradePlan | None]:
+    ) -> (
+        tuple[TradeSignal | None, str | None, ArmedTradePlan | None]
+        | tuple[
+            TradeSignal | None,
+            str | None,
+            ArmedTradePlan | None,
+            dict[str, Any] | None,
+        ]
+    ):
         assert self._v2_strategy is not None
         if not session.is_business_day or session.market_open_at is None:
             return None, "setup-v2:market-closed", None
         bars = tuple(
             bar
             for bar in self._v2_strategy.completed_one_minute_bars(symbol, now=now)
-            if bar.timestamp >= session.market_open_at
+            if session.market_open_at <= bar.timestamp <= now
         )
         stored = self._trading.v2_position_plan(symbol)
         if stored is not None:
@@ -1136,10 +1147,17 @@ class PaperCycleRunner:
             return None, "setup-v2:waiting:first-session-bar", None, _entry_window_detail(
                 session, now
             )
+        current_bar = max(bars, key=lambda bar: bar.timestamp)
+        observed_minute = now.replace(second=0, microsecond=0)
+        if current_bar.timestamp < observed_minute:
+            return None, "setup-v2:waiting:current-bar", None, _entry_window_detail(
+                session, now
+            )
         cluster_id = self._v2_strategy.cluster_id(symbol)
         decision = arm_candidate(
             arm_candidate_input,
             first_completed_bar=first_bar,
+            execution_bar=current_bar,
             session_open_at=session.market_open_at,
             equity=performance.equity,
             available_cash=max(
@@ -1156,6 +1174,24 @@ class PaperCycleRunner:
             ),
         )
         if not decision.armed or decision.plan is None:
+            if (
+                decision.reason == "setup-v2:violation:invalid-stop"
+                and not experimental_strategy_reference
+            ):
+                shadow_detail = _invalid_stop_reclaim_shadow(
+                    candidate,
+                    bars=bars,
+                    session=session,
+                    now=now,
+                )
+                if shadow_detail is not None:
+                    shadow_detail.update(_entry_window_detail(session, now))
+                    return (
+                        None,
+                        "setup-v2:shadow:invalid-stop-reclaim",
+                        None,
+                        shadow_detail,
+                    )
             detail = dict(decision.detail or {})
             detail.update(_entry_window_detail(session, now))
             return None, decision.reason, None, detail
@@ -1252,6 +1288,75 @@ def _entry_arm_window_contains(session: MarketSession, now: datetime) -> bool:
     return observed_minute <= opened_at + V2_ENTRY_ARM_WINDOW
 
 
+def _invalid_stop_reclaim_shadow(
+    candidate: DailySetupCandidate,
+    *,
+    bars: tuple[Candle, ...],
+    session: MarketSession,
+    now: datetime,
+) -> dict[str, Any] | None:
+    opened_at = session.market_open_at
+    if opened_at is None:
+        return None
+    observed_minute = now.replace(second=0, microsecond=0)
+    if not (
+        opened_at + RULE_INVALID_STOP_RECLAIM_START
+        <= observed_minute
+        <= opened_at + V2_ENTRY_ARM_WINDOW
+    ):
+        return None
+    ordered = tuple(sorted(bars, key=lambda bar: bar.timestamp))
+    first_bar = next(
+        (
+            bar
+            for bar in ordered
+            if bar.timestamp == opened_at + COMPLETED_ONE_MINUTE_OFFSET
+        ),
+        None,
+    )
+    if first_bar is None or first_bar.open_price > candidate.setup_low:
+        return None
+    eligible = tuple(
+        bar
+        for bar in ordered
+        if opened_at + RULE_INVALID_STOP_RECLAIM_START
+        <= bar.timestamp
+        <= observed_minute
+    )
+    reclaimed = next(
+        (bar for bar in eligible if bar.close_price >= candidate.setup_low),
+        None,
+    )
+    if reclaimed is None:
+        return None
+    following = tuple(bar for bar in eligible if bar.timestamp > reclaimed.timestamp)
+    held = following[:RULE_INVALID_STOP_RECLAIM_HOLD_BARS]
+    if len(held) != RULE_INVALID_STOP_RECLAIM_HOLD_BARS:
+        return None
+    expected = tuple(
+        reclaimed.timestamp + timedelta(minutes=offset)
+        for offset in range(1, RULE_INVALID_STOP_RECLAIM_HOLD_BARS + 1)
+    )
+    floor = candidate.setup_low * RULE_INVALID_STOP_RECLAIM_HOLD_FLOOR
+    if tuple(bar.timestamp for bar in held) != expected:
+        return None
+    if any(bar.close_price < floor for bar in following):
+        return None
+    current = max(ordered, key=lambda bar: bar.timestamp)
+    if current.timestamp != observed_minute or current.close_price < floor:
+        return None
+    return {
+        "researchOnly": True,
+        "setupLow": str(candidate.setup_low),
+        "sessionOpenPrice": str(first_bar.open_price),
+        "reclaimedAt": reclaimed.timestamp.isoformat(),
+        "heldBars": RULE_INVALID_STOP_RECLAIM_HOLD_BARS,
+        "holdFloor": str(floor),
+        "referencePrice": str(current.close_price),
+        "intradayStop": str(min(bar.low_price for bar in ordered)),
+    }
+
+
 def _hunter_entry_window_contains(session: MarketSession, now: datetime) -> bool:
     opened_at = session.market_open_at
     if opened_at is None:
@@ -1344,7 +1449,9 @@ def _armed_v2_plan(plan: V2PositionPlan) -> ArmedTradePlan:
     return ArmedTradePlan(
         symbol=plan.symbol,
         quantity=plan.quantity,
-        execution_open=plan.entry_price / (Decimal(1) + ADVERSE_SLIPPAGE.entry_rate),
+        execution_reference=(
+            plan.entry_price / (Decimal(1) + ADVERSE_SLIPPAGE.entry_rate)
+        ),
         entry_price=plan.entry_price,
         stop_price=plan.stop_price,
         planned_heat=plan.planned_heat,

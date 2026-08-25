@@ -182,18 +182,20 @@ def _minute_bar(
     *,
     open_price: str,
     low_price: str,
+    close_price: str | None = None,
     volume: str = "1000",
 ) -> Candle:
     open_value = Decimal(open_price)
     low_value = Decimal(low_price)
+    close_value = Decimal(close_price) if close_price is not None else open_value
     return Candle(
         symbol="005930",
         interval="1m",
         timestamp=timestamp,
         open_price=open_value,
-        high_price=open_value + 1,
+        high_price=max(open_value, close_value) + 1,
         low_price=low_value,
-        close_price=open_value,
+        close_price=close_value,
         volume=Decimal(volume),
         currency="KRW",
     )
@@ -401,7 +403,13 @@ class PaperCycleRunnerTest(unittest.TestCase):
                     market_open + timedelta(minutes=1),
                     open_price="10",
                     low_price="9.5",
-                )
+                ),
+                _minute_bar(
+                    market_open + timedelta(minutes=5),
+                    open_price="12",
+                    close_price="12",
+                    low_price="11.5",
+                ),
             ],
         )
         client = WatchlistCandleClient(
@@ -420,6 +428,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(result.fill_count, 1)
         assert result.items[0].fill is not None
         self.assertEqual(result.items[0].fill.side, Side.BUY)
+        self.assertEqual(result.items[0].fill.price, Decimal("12.0060"))
         self.assertGreater(result.items[0].fill.quantity, Decimal(1))
         plan = self.paper_ledger.v2_position_plan("005930")
         assert plan is not None
@@ -435,7 +444,12 @@ class PaperCycleRunnerTest(unittest.TestCase):
                     market_open + timedelta(minutes=1),
                     open_price="10",
                     low_price="9.5",
-                )
+                ),
+                _minute_bar(
+                    market_open + timedelta(minutes=30),
+                    open_price="10",
+                    low_price="9.5",
+                ),
             ],
         )
         client = WatchlistCandleClient(
@@ -454,7 +468,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(result.fill_count, 1)
         self.assertIsNotNone(self.paper_ledger.v2_position_plan("005930"))
 
-    def test_v2_cycle_allows_entire_thirtieth_minute(self) -> None:
+    def test_v2_cycle_waits_instead_of_backfilling_the_opening_price(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         strategy = FakeV2CycleStrategy(
             _v2_candidate(),
@@ -464,6 +478,45 @@ class PaperCycleRunnerTest(unittest.TestCase):
                     open_price="10",
                     low_price="9.5",
                 )
+            ],
+        )
+
+        result = self._runner(
+            WatchlistCandleClient(
+                {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+            ),
+            v2_strategy=strategy,
+        ).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=5, seconds=59),
+        )
+
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "setup-v2:waiting:current-bar",
+        )
+        self.assertEqual(self.paper_ledger.recent_risk_decisions(), [])
+
+    def test_v2_cycle_allows_entire_thirtieth_minute(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="10",
+                    low_price="9.5",
+                ),
+                _minute_bar(
+                    market_open + timedelta(minutes=30),
+                    open_price="10",
+                    low_price="9.5",
+                ),
             ],
         )
         client = WatchlistCandleClient(
@@ -491,7 +544,12 @@ class PaperCycleRunnerTest(unittest.TestCase):
                     market_open + timedelta(minutes=1),
                     open_price="10",
                     low_price="9.5",
-                )
+                ),
+                _minute_bar(
+                    market_open + timedelta(minutes=31),
+                    open_price="10",
+                    low_price="9.5",
+                ),
             ],
         )
         client = WatchlistCandleClient(
@@ -516,6 +574,60 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(result.items[0].idle_reason, "shadow-signal")
         self.assertEqual(result.insight["funnel"]["shadowSignals"], 1)
         self.assertIsNone(self.paper_ledger.v2_position_plan("005930"))
+        self.assertEqual(self.paper_ledger.recent_risk_decisions(), [])
+
+    def test_v2_cycle_records_opening_stop_reclaim_as_research_shadow(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="8.5",
+                    close_price="8.5",
+                    low_price="8.2",
+                ),
+                *(
+                    _minute_bar(
+                        market_open + timedelta(minutes=minute),
+                        open_price=price,
+                        close_price=price,
+                        low_price="8.9",
+                    )
+                    for minute, price in (
+                        (15, "9.1"),
+                        (16, "9.05"),
+                        (17, "9.04"),
+                        (18, "9.1"),
+                    )
+                ),
+            ],
+        )
+
+        result = self._runner(
+            WatchlistCandleClient(
+                {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+            ),
+            v2_strategy=strategy,
+        ).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=18, seconds=59),
+        )
+
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "setup-v2:shadow:invalid-stop-reclaim",
+        )
+        self.assertEqual(result.items[0].idle_reason, "shadow-signal")
+        assert result.items[0].skip_detail is not None
+        self.assertEqual(result.items[0].skip_detail["heldBars"], 3)
+        self.assertEqual(result.items[0].skip_detail["referencePrice"], "9.1")
         self.assertEqual(self.paper_ledger.recent_risk_decisions(), [])
 
     def test_hermes_hunter_can_enter_at_current_price_after_opening_window(
@@ -697,7 +809,12 @@ class PaperCycleRunnerTest(unittest.TestCase):
                     market_open + timedelta(minutes=1),
                     open_price="11",
                     low_price="10",
-                )
+                ),
+                _minute_bar(
+                    market_open + timedelta(minutes=31),
+                    open_price="11",
+                    low_price="10",
+                ),
             ],
         )
         client = WatchlistCandleClient(
@@ -777,7 +894,12 @@ class PaperCycleRunnerTest(unittest.TestCase):
                     market_open + timedelta(minutes=1),
                     open_price="100000",
                     low_price="95000",
-                )
+                ),
+                _minute_bar(
+                    market_open + timedelta(minutes=5),
+                    open_price="100000",
+                    low_price="95000",
+                ),
             ],
         )
 
@@ -934,7 +1056,7 @@ class PaperCycleRunnerTest(unittest.TestCase):
                 self.interval_calls.append((symbol, interval, count))
                 self.before_calls.append((symbol, interval, before))
                 if before is None:
-                    timestamp = market_open + timedelta(hours=3)
+                    timestamp = market_open + timedelta(minutes=5)
                     next_before = "older-minute-page"
                     strategy.bars.append(
                         _minute_bar(
@@ -990,7 +1112,12 @@ class PaperCycleRunnerTest(unittest.TestCase):
                     market_open + timedelta(minutes=1),
                     open_price="10",
                     low_price="9.5",
-                )
+                ),
+                _minute_bar(
+                    market_open + timedelta(minutes=5),
+                    open_price="10",
+                    low_price="9.5",
+                ),
             ],
         )
         client = WatchlistCandleClient(
@@ -1042,7 +1169,12 @@ class PaperCycleRunnerTest(unittest.TestCase):
                     market_open + timedelta(minutes=1),
                     open_price="10",
                     low_price="9.5",
-                )
+                ),
+                _minute_bar(
+                    market_open + timedelta(minutes=5),
+                    open_price="10",
+                    low_price="9.5",
+                ),
             ],
         )
         client = WatchlistCandleClient(
@@ -1072,7 +1204,12 @@ class PaperCycleRunnerTest(unittest.TestCase):
                     market_open + timedelta(minutes=1),
                     open_price="10",
                     low_price="9.5",
-                )
+                ),
+                _minute_bar(
+                    market_open + timedelta(minutes=5),
+                    open_price="10",
+                    low_price="9.5",
+                ),
             ],
         )
         client = WatchlistCandleClient(

@@ -110,7 +110,8 @@ discovery universe 안에서 발굴한다.
 - n8n이 `paper-rule-1m`, `paper-hermes-1m` task를 순차 호출
 - task endpoint는 host port 없이 `openclaw-net` 내부에서만 접근
 - 종목별 1분봉과 완결 일봉 200개 수집
-- 직전 완결 일봉의 setup-v2.3 후보를 D+1 첫 완결 1분봉에서 arm. PIT 수급
+- 직전 완결 일봉의 setup-v2.3 후보를 D+1 첫 완결 1분봉으로 gap·setup-low
+  유효성을 확인하고, 각 cycle 최신 완결 1분봉 종가에서 arm. PIT 수급
   6세션은 필수지만 외국인 반전은 가점이며 미반전만으로 차단하지 않음
 - 보유 포지션은 persisted stop·structure invalidation으로 SELL 관리
 - Rule은 Hermes 없음. Hermes는 신호+한도 통과 때만. 한도 거부는 판단 행만
@@ -167,7 +168,9 @@ Toss API를 직접 조회하지 않는다. 뉴스·호가 없음.
 3. Rule은 직전 완결 일봉의 가격 setup과 PostgreSQL PIT 수급 6세션·이벤트를
    strict 평가한다. Hermes는 가격 전략 판정을 근거로 보되 데이터·이벤트 hard
    gate는 동일하게 강제한다.
-4. 다음 거래일 첫 완결 1분봉에서 3% 갭, stop, ATR, heat, cash로 BUY를 arm한다.
+4. 다음 거래일 첫 완결 1분봉에서 3% 갭과 setup-low 훼손을 확인한다. 실제
+   BUY arm은 현재 완결 1분봉 종가로 stop, ATR, heat, cash를 다시 계산하며
+   현재 봉 누락 시 시초가로 소급 체결하지 않는다.
 5. 기존 v2 포지션은 structure invalidation 또는 stop touch 다음 봉 시가로
    SELL 후보를 만든다.
 6. BUY plan을 먼저 저장하고 국가별 정규장 일정과 시장 휴장 여부를 확인한다.

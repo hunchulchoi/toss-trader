@@ -80,13 +80,14 @@ class OfficialV2CycleStrategyTest(unittest.TestCase):
             [
                 candle("005930", "1m", now - timedelta(minutes=2), 100),
                 candle("005930", "1m", now, 101),
+                candle("005930", "1m", now + timedelta(minutes=1), 102),
             ]
         )
 
         bars = self.strategy.completed_one_minute_bars("005930", now=now)
 
-        self.assertEqual(len(bars), 1)
-        self.assertEqual(bars[0].close_price, Decimal(100))
+        self.assertEqual(len(bars), 2)
+        self.assertEqual(bars[-1].close_price, Decimal(101))
 
     def test_unknown_symbols_share_conservative_cluster(self) -> None:
         self.assertEqual(self.strategy.cluster_id("005930"), "UNKNOWN")

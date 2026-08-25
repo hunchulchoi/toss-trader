@@ -200,7 +200,7 @@ def hermes_market_review(
     if plan is not None:
         payload["plan"] = {
             "quantity": str(plan.quantity),
-            "executionOpen": str(plan.execution_open),
+            "executionReference": str(plan.execution_reference),
             "entryPrice": str(plan.entry_price),
             "stopPrice": str(plan.stop_price),
             "plannedHeat": str(plan.planned_heat),

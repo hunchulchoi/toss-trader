@@ -47,7 +47,7 @@ class DailySetupCandidate:
 class ArmedTradePlan:
     symbol: str
     quantity: Decimal
-    execution_open: Decimal
+    execution_reference: Decimal
     entry_price: Decimal
     stop_price: Decimal
     planned_heat: Decimal
@@ -85,6 +85,7 @@ def arm_candidate(
     candidate: DailySetupCandidate,
     *,
     first_completed_bar: Candle,
+    execution_bar: Candle,
     session_open_at: datetime,
     equity: Decimal,
     available_cash: Decimal,
@@ -92,12 +93,11 @@ def arm_candidate(
     current_cluster_heat: Decimal = Decimal(0),
     sizing_policy: PositionSizingPolicy = DEFAULT_POSITION_SIZING_POLICY,
 ) -> CandidateDecision:
-    """Arm D+1 entry from the first regular-session 1m bar.
+    """Arm D+1 entry from a current completed regular-session 1m bar.
 
-    The caller must pass a completed 1m bar. This function cannot observe
-    whether the bar is closed; it only checks interval, timezone, timestamp
-    completion timestamp, and that the KST session date is after
-    ``signal_session``.
+    The first bar supplies the actual opening gap and structural-stop validity.
+    The execution bar supplies the current completed close used for sizing and
+    paper execution. The caller owns completion/freshness checks.
     """
     _require_session_open_bar(
         first_completed_bar,
@@ -105,21 +105,32 @@ def arm_candidate(
         signal_session=candidate.signal_session,
         symbol=candidate.symbol,
     )
-    execution_open = first_completed_bar.open_price
+    _require_execution_bar(
+        execution_bar,
+        first_completed_bar=first_completed_bar,
+        session_open_at=session_open_at,
+        symbol=candidate.symbol,
+    )
+    session_open_price = first_completed_bar.open_price
+    execution_reference = execution_bar.close_price
     if not candidate.decision.approved:
         return CandidateDecision(
             armed=False,
             reason=_setup_v2_reason(candidate.decision),
             plan=None,
         )
-    gap = execution_open / candidate.close_price - Decimal(1)
+    gap = session_open_price / candidate.close_price - Decimal(1)
     if gap >= GAP_UP_THRESHOLD:
         return CandidateDecision(
             armed=False,
             reason="setup-v2:violation:gap-up-chase",
             plan=None,
         )
-    if not Decimal(0) < candidate.setup_low < execution_open:
+    if not (
+        Decimal(0)
+        < candidate.setup_low
+        < min(session_open_price, execution_reference)
+    ):
         return CandidateDecision(
             armed=False,
             reason="setup-v2:violation:invalid-stop",
@@ -128,7 +139,7 @@ def arm_candidate(
     sizing = position_size_reference(
         symbol=candidate.symbol,
         equity=equity,
-        reference_price=execution_open,
+        reference_price=execution_reference,
         stop_price=candidate.setup_low,
         atr=candidate.atr14,
         available_cash=available_cash,
@@ -146,20 +157,20 @@ def arm_candidate(
                 sizing,
                 equity=equity,
                 available_cash=available_cash,
-                reference_price=execution_open,
+                reference_price=execution_reference,
                 stop_price=candidate.setup_low,
                 atr14=candidate.atr14,
             ),
         )
-    entry_price = execution_open * (Decimal(1) + ADVERSE_SLIPPAGE.entry_rate)
-    stop_price = execution_open - sizing.effective_stop_distance
+    entry_price = execution_reference * (Decimal(1) + ADVERSE_SLIPPAGE.entry_rate)
+    stop_price = execution_reference - sizing.effective_stop_distance
     return CandidateDecision(
         armed=True,
         reason="setup-v2:armed",
         plan=ArmedTradePlan(
             symbol=candidate.symbol,
             quantity=sizing.quantity,
-            execution_open=execution_open,
+            execution_reference=execution_reference,
             entry_price=entry_price,
             stop_price=stop_price,
             planned_heat=sizing.planned_heat,
@@ -226,6 +237,25 @@ def _require_session_open_bar(
         )
     if bar.timestamp.astimezone(SEOUL).date() <= signal_session:
         raise ValueError("session open must be after the setup signal session")
+
+
+def _require_execution_bar(
+    bar: Candle,
+    *,
+    first_completed_bar: Candle,
+    session_open_at: datetime,
+    symbol: str,
+) -> None:
+    if bar.interval != "1m":
+        raise ValueError("execution bar must be a 1m candle")
+    if bar.symbol != symbol:
+        raise ValueError("execution bar symbol must match the candidate")
+    if bar.timestamp < first_completed_bar.timestamp:
+        raise ValueError("execution bar must not precede the first completed bar")
+    if bar.timestamp.astimezone(SEOUL).date() != session_open_at.astimezone(
+        SEOUL
+    ).date():
+        raise ValueError("execution bar must belong to the regular session date")
 
 
 def _setup_v2_reason(decision: SetupDecision) -> str:

@@ -7,6 +7,27 @@
 
 ## 2026-08-25
 
+### Rule 현재 완결봉 실행가와 invalid-stop 회복 shadow
+
+- 기록 시각: 2026-08-25 17:29 KST
+- 실행가: 첫 완결봉 시가는 D+1 gap·setup-low 훼손 판정에만 유지한다. 실제
+  Rule/Hermes v2.3 paper 진입·수량·stop은 해당 cycle 최신 완결 1분봉 종가와
+  5bp 불리한 slippage로 계산한다
+- stale 차단: 현재 분 완결봉이 없으면 `setup-v2:waiting:current-bar`로 대기하며
+  09:01 시가를 09:05 이후 체결가로 소급 재사용하지 않는다
+- 시각 계약: Toss `09:01` 분봉은 09:00~09:01 완결봉이므로 완료 판정에서
+  추가 1분을 더하던 지연을 제거했다
+- 연구: 시초가가 전일 setup low 이하라 Rule 진입이 무효화된 종목은 09:15 이후
+  setup low 회복 뒤 다음 3봉이 99.5% 이상을 유지하면
+  `setup-v2:shadow:invalid-stop-reclaim`으로만 기록한다. signal·Risk·fill 없음
+- 안전: Rule 거래당 0.5%, 전체 heat 2%, UNKNOWN cluster 1%와 모든 계좌 Risk
+  유지
+- 8월 25일 read-only 반사실: 실제 Rule 2건은 현재 완결봉 기준 체결가가 각각
+  `4762.3800→4752.3750`, `8764.3800→8574.2850`으로 교정된다. invalid-stop
+  2종은 09:30까지 회복 shadow 조건도 통과하지 않아 강제 매수는 늘지 않는다
+- 검증: 414 unit tests, changed-file Ruff, Git whitespace 통과
+- 배포: 미배포
+
 ### Hunter 이중 LLM 승인 제거와 유동성 수량 제한
 
 - 기록 시각: 2026-08-25 16:57 KST

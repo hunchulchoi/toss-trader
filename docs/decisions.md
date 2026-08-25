@@ -194,3 +194,21 @@ Status: accepted 2026-08-25; refines ADR-010
 - Give Trade Hermes normalized liquidity, acceleration, order participation,
   constrained veto codes, and explicit evidence. Qualitative resistance claims
   without evidence remain commentary, not execution authority.
+
+## ADR-012 Use the current completed minute for v2 entry execution
+
+Status: accepted 2026-08-25; refines ADR-007 entry execution
+
+- Keep the first completed bar's open as immutable evidence for the D+1 gap and
+  setup-low validity checks.
+- At each 09:01~09:30 evaluation, use the latest completed 1m close for paper
+  execution, sizing, cash, heat, and slippage. If that minute is unavailable,
+  wait; never reuse the first bar's open as a later-cycle fill.
+- Toss minute timestamps are completion labels. A candle stamped `09:05` is
+  complete at `09:05`; do not add another minute before exposing it to v2.
+- An opening at or below the prior setup low invalidates the authoritative Rule
+  entry for the whole arm window. From 09:15 through 09:30, a reclaim followed
+  by three consecutive closes above 99.5% of the setup low may be stored as
+  `setup-v2:shadow:invalid-stop-reclaim` with no signal, Risk call, or fill.
+- Preserve Rule sizing at 0.5% per trade, 2% total heat, and 1% UNKNOWN-cluster
+  heat. This correction creates no new live-trading authority.

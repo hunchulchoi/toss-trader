@@ -86,17 +86,19 @@ def minute_bar(
     *,
     open_price: Decimal,
     session_open_at: datetime,
+    close_price: Decimal | None = None,
     interval: str = "1m",
     timestamp: datetime | None = None,
 ) -> Candle:
+    close_value = close_price if close_price is not None else open_price
     return Candle(
         symbol="005930",
         interval=interval,
         timestamp=timestamp or session_open_at + timedelta(minutes=1),
         open_price=open_price,
-        high_price=open_price + Decimal(1),
-        low_price=open_price - Decimal(1),
-        close_price=open_price,
+        high_price=max(open_price, close_value) + Decimal(1),
+        low_price=min(open_price, close_value) - Decimal(1),
+        close_price=close_value,
         volume=Decimal(1000),
         currency="KRW",
     )
@@ -117,13 +119,14 @@ def arm(
     policy_kwargs = (
         {"sizing_policy": sizing_policy} if sizing_policy is not None else {}
     )
+    opening_bar = bar or minute_bar(
+        open_price=open_price or candidate.close_price,
+        session_open_at=opened_at,
+    )
     return arm_candidate(
         candidate,
-        first_completed_bar=bar
-        or minute_bar(
-            open_price=open_price or candidate.close_price,
-            session_open_at=opened_at,
-        ),
+        first_completed_bar=opening_bar,
+        execution_bar=opening_bar,
         session_open_at=opened_at,
         equity=equity,
         available_cash=available_cash,
@@ -187,6 +190,41 @@ class V2EngineTest(unittest.TestCase):
         self.assertEqual(decision.plan.ma50, candidate.ma50)
         self.assertEqual(decision.plan.signal_close, candidate.close_price)
 
+    def test_arm_uses_current_completed_close_but_opening_price_for_gap(self) -> None:
+        history = pullback_candles()
+        candidate = build_daily_candidate(
+            history, context=approved_context(history[-1])
+        )
+        opened_at = session_open_after(candidate.signal_session)
+        opening_bar = minute_bar(
+            open_price=candidate.close_price,
+            session_open_at=opened_at,
+        )
+        current_close = candidate.close_price - Decimal("0.5")
+        current_bar = minute_bar(
+            open_price=current_close + Decimal(1),
+            close_price=current_close,
+            session_open_at=opened_at,
+            timestamp=opened_at + timedelta(minutes=5),
+        )
+
+        decision = arm_candidate(
+            candidate,
+            first_completed_bar=opening_bar,
+            execution_bar=current_bar,
+            session_open_at=opened_at,
+            equity=Decimal(1_000_000),
+            available_cash=Decimal(1_000_000),
+        )
+
+        self.assertTrue(decision.armed)
+        assert decision.plan is not None
+        self.assertEqual(decision.plan.execution_reference, current_close)
+        self.assertEqual(
+            decision.plan.entry_price,
+            current_close * (Decimal(1) + ADVERSE_SLIPPAGE.entry_rate),
+        )
+
     def test_arm_does_not_promote_zero_quantity(self) -> None:
         history = pullback_candles()
         candidate = build_daily_candidate(
@@ -243,6 +281,10 @@ class V2EngineTest(unittest.TestCase):
             arm_candidate(
                 candidate,
                 first_completed_bar=minute_bar(
+                    open_price=candidate.close_price,
+                    session_open_at=opened_at,
+                ),
+                execution_bar=minute_bar(
                     open_price=candidate.close_price,
                     session_open_at=opened_at,
                 ),
@@ -305,7 +347,7 @@ class V2EngineTest(unittest.TestCase):
         plan = ArmedTradePlan(
             symbol="005930",
             quantity=Decimal(1),
-            execution_open=Decimal(100),
+            execution_reference=Decimal(100),
             entry_price=Decimal("100.05"),
             stop_price=Decimal(90),
             planned_heat=Decimal(10),
