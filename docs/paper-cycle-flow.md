@@ -173,10 +173,13 @@ entry/stop/1.5R 계획을 감사 로그에 저장한다. 원본 결과는 계속
 Hermes는 최대 2개를 `approve/watch/reject`로 검토하고 의견·token을 별도 감사
 로그에 저장한다. 그중 `approve`만 공유 snapshot의 `hunterEntry`로 승격한다.
 Hermes portfolio는 10:01~10:05 KST에 최신 완결 1분봉으로 가격을 다시 잡고,
-동일 세션·stop 미훼손·목표 미도달·stop 거리 3% 이하를 재검증한다. 그 뒤 Hermes
-trade advisor와 기존 RiskManager를 모두 통과해야 paper fill을 만든다. Rule은 이
-경로를 소비하지 않는다. timeline의 기존 가상 stop/1.5R 성과도 별도 연구 지표로
-계속 남는다.
+동일 세션·stop 미훼손·목표 미도달·stop 거리 3% 이하를 재검증한다. 최근 완결
+5개 1분봉의 평균 거래대금 중 최대 10%만 주문하고 1주 미만이면 거부한다. 직전
+5분 대비 거래대금이 50% 미만으로 꺾이거나 재돌파 가격을 잃어도 코드가 차단한다.
+Trade Hermes는 이 Hunter 경로에서 의견·veto code·token만 저장하며 주문 차단권이
+없다. 기존 RiskManager는 그대로 최종 승인한다. 일반 Hermes v2 신호는 기존처럼
+Trade Hermes 거부·장애를 fail-closed한다. Rule은 이 경로를 소비하지 않는다.
+timeline의 기존 가상 stop/1.5R 성과도 별도 연구 지표로 계속 남는다.
 
 - Rule: 신호를 n8n RiskManager로 직접 보낸다.
 - Hermes: Rule이 수집한 공유 snapshot에서 같은 deterministic setup과 local hard

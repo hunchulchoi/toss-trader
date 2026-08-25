@@ -13,7 +13,11 @@ from .advisor import hermes_market_review
 from .calendar import MarketCalendarService, MarketSession, country_for_symbol
 from .cycle_state import CycleStateStore
 from .errors import TossApiError
-from .execution import PaperExecutionResult, PaperTradingService
+from .execution import (
+    HERMES_HUNTER_SIGNAL_REASON,
+    PaperExecutionResult,
+    PaperTradingService,
+)
 from .market_data import (
     CollectionResult,
     InsufficientCandleHistory,
@@ -49,6 +53,9 @@ V2_ENTRY_ARM_WINDOW = timedelta(minutes=30)
 HERMES_HUNTER_ENTRY_START = timedelta(minutes=61)
 HERMES_HUNTER_ENTRY_WINDOW = timedelta(minutes=65)
 HERMES_HUNTER_STOP_DISTANCE_MAX = Decimal("0.03")
+HERMES_HUNTER_LIQUIDITY_PARTICIPATION_MAX = Decimal("0.10")
+HERMES_HUNTER_TRADING_VALUE_FLOOR = Decimal("0.50")
+HERMES_HUNTER_RECLAIM_HOLD_FLOOR = Decimal("0.995")
 HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS = frozenset(
     {"falling-knife", "missing-price-setup", "rsi-chase"}
 )
@@ -848,6 +855,8 @@ class PaperCycleRunner:
             return None, "hunter:invalidated:stop", None, detail
         if reference_price >= target_price:
             return None, "hunter:blocked:target-already-reached", None, detail
+        if reference_price < planned_entry * HERMES_HUNTER_RECLAIM_HOLD_FLOOR:
+            return None, "hunter:invalidated:reclaim-lost", None, detail
         structural_distance = reference_price - stop_price
         if (
             structural_distance / reference_price
@@ -855,6 +864,52 @@ class PaperCycleRunner:
         ):
             return None, "hunter:blocked:stop-distance", None, detail
 
+        ordered_bars = tuple(sorted(bars, key=lambda bar: bar.timestamp))
+        recent = ordered_bars[-5:]
+        expected_recent = tuple(
+            observed_minute - timedelta(minutes=offset)
+            for offset in reversed(range(5))
+        )
+        if tuple(bar.timestamp for bar in recent) != expected_recent:
+            return None, "hunter:waiting:liquidity-bars", None, detail
+        recent_value = sum(
+            (bar.close_price * bar.volume for bar in recent), Decimal(0)
+        ) / len(recent)
+        if recent_value <= 0:
+            return None, "hunter:blocked:liquidity-below-one-lot", None, detail
+        previous = ordered_bars[-10:-5]
+        previous_value = (
+            sum((bar.close_price * bar.volume for bar in previous), Decimal(0))
+            / len(previous)
+            if previous
+            else Decimal(0)
+        )
+        value_acceleration = (
+            recent_value / previous_value if previous_value > 0 else None
+        )
+        if (
+            value_acceleration is not None
+            and value_acceleration < HERMES_HUNTER_TRADING_VALUE_FLOOR
+        ):
+            detail.update(
+                {
+                    "recentTradingValueAverage": str(recent_value),
+                    "previousTradingValueAverage": str(previous_value),
+                    "tradingValueAcceleration": str(value_acceleration),
+                }
+            )
+            return None, "hunter:blocked:trading-value-collapse", None, detail
+
+        liquidity_notional_cap = (
+            recent_value * HERMES_HUNTER_LIQUIDITY_PARTICIPATION_MAX
+        )
+        liquidity_policy = replace(
+            HERMES_EXPERIMENTAL_SIZING_POLICY,
+            max_order_notional=min(
+                HERMES_EXPERIMENTAL_SIZING_POLICY.max_order_notional,
+                liquidity_notional_cap,
+            ),
+        )
         available_cash = max(
             Decimal(0), self._trading.available_cash() - reserved_cash
         )
@@ -873,7 +928,7 @@ class PaperCycleRunner:
                 self._trading.cluster_v2_heat(self._v2_strategy.cluster_id(symbol))
                 + reserved_cluster_heat
             ),
-            policy=HERMES_EXPERIMENTAL_SIZING_POLICY,
+            policy=liquidity_policy,
             slippage=ADVERSE_SLIPPAGE,
         )
         if sizing.quantity <= 0:
@@ -881,10 +936,12 @@ class PaperCycleRunner:
                 {
                     "referencePrice": str(reference_price),
                     "stopPrice": str(stop_price),
+                    "recentTradingValueAverage": str(recent_value),
+                    "liquidityNotionalCap": str(liquidity_notional_cap),
                     "limitingFactors": list(sizing.limiting_factors),
                 }
             )
-            return None, "hunter:blocked:below-one-lot", None, detail
+            return None, "hunter:blocked:liquidity-below-one-lot", None, detail
 
         entry_price = reference_price * (Decimal(1) + ADVERSE_SLIPPAGE.entry_rate)
         plan = ArmedTradePlan(
@@ -907,6 +964,19 @@ class PaperCycleRunner:
                 "stopPrice": str(plan.stop_price),
                 "targetPrice": str(target_price),
                 "barAt": current.timestamp.isoformat(),
+                "recentTradingValueAverage": str(recent_value),
+                "previousTradingValueAverage": str(previous_value),
+                "tradingValueAcceleration": (
+                    str(value_acceleration)
+                    if value_acceleration is not None
+                    else None
+                ),
+                "liquidityParticipationLimit": str(
+                    HERMES_HUNTER_LIQUIDITY_PARTICIPATION_MAX
+                ),
+                "orderParticipationRate": str(
+                    sizing.executable_notional / recent_value
+                ),
             }
         )
         return (
@@ -919,7 +989,7 @@ class PaperCycleRunner:
                 side=Side.BUY,
                 reference_price=entry_price,
                 quantity=plan.quantity,
-                reason="hermes Hunter momentum reclaim",
+                reason=HERMES_HUNTER_SIGNAL_REASON,
             ),
             None,
             plan,

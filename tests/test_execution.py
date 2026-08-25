@@ -263,6 +263,48 @@ class PaperTradingServiceTest(unittest.TestCase):
         self.assertEqual(calls, ["advisor", "risk"])
         self.assertEqual(len(self.ledger.recent_risk_decisions()), 1)
 
+    def test_hunter_advisor_rejection_is_audited_but_non_blocking(self) -> None:
+        statuses: list[tuple[str | None, str | None]] = []
+
+        class Advisor:
+            def advise(self, signal, context, review=None):  # type: ignore[no-untyped-def]
+                return TradeAdvice(
+                    approved=False,
+                    rationale="거래량 추가 확인",
+                    veto_codes=("LIQUIDITY_TOO_THIN",),
+                )
+
+        class RemoteRisk:
+            def evaluate(self, signal, context):  # type: ignore[no-untyped-def]
+                statuses.append((context.advisor_status, context.advisor_rationale))
+                return RiskManager(RiskLimits()).evaluate(signal, context)
+
+        service = PaperTradingService(
+            ledger=self.ledger,
+            risk_manager=RemoteRisk(),  # type: ignore[arg-type]
+            advisor=Advisor(),
+        )
+
+        result = service.submit(
+            TradeSignal(
+                signal_id="hunter-advisory-reject",
+                symbol="005930",
+                side=Side.BUY,
+                reference_price=Decimal(70000),
+                quantity=Decimal(1),
+                reason="hermes Hunter momentum reclaim",
+            ),
+            now=self.now,
+        )
+
+        self.assertTrue(result.decision.approved)
+        self.assertIsNotNone(result.fill)
+        self.assertEqual(
+            statuses,
+            [("advisory-rejected", "거래량 추가 확인")],
+        )
+        self.assertEqual(self.ledger.recent_risk_decisions()[0]["violations"], [])
+
     def test_rule_path_calls_configured_risk_once_without_preflight(self) -> None:
         risk_calls: list[str] = []
 

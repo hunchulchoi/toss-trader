@@ -22,6 +22,11 @@ class PaperExecutionResult:
 class TradeAdvice:
     approved: bool
     rationale: str
+    veto_codes: tuple[str, ...] = ()
+    evidence: Mapping[str, object] | None = None
+
+
+HERMES_HUNTER_SIGNAL_REASON = "hermes Hunter momentum reclaim"
 
 
 class TradeAdvisor(Protocol):
@@ -146,13 +151,29 @@ class PaperTradingService:
                 advice = self._advisor.advise(
                     signal, context, review=market_review
                 )
+                advisory_only = (
+                    signal.side is Side.BUY
+                    and signal.reason == HERMES_HUNTER_SIGNAL_REASON
+                )
                 context = replace(
                     context,
-                    advisor_status="approved" if advice.approved else "rejected",
+                    advisor_status=(
+                        f"advisory-{'approved' if advice.approved else 'rejected'}"
+                        if advisory_only
+                        else "approved" if advice.approved else "rejected"
+                    ),
                     advisor_rationale=advice.rationale,
                 )
             except Exception:  # noqa: BLE001
-                context = replace(context, advisor_status="unavailable")
+                context = replace(
+                    context,
+                    advisor_status=(
+                        "advisory-unavailable"
+                        if signal.side is Side.BUY
+                        and signal.reason == HERMES_HUNTER_SIGNAL_REASON
+                        else "unavailable"
+                    ),
+                )
         if decision is None:
             decision = self._risk_manager.evaluate(signal, context)
         decision_id = self._ledger.record_risk_decision(

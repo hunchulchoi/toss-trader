@@ -175,3 +175,22 @@ Status: accepted 2026-08-25; supersedes ADR-009 execution authority only
   observation even if the symbol leaves the next shared candidate snapshot.
 - Keep `TRADING_ENABLED=false`; this authority is paper-only and supplies no
   live-trading authorization or profitability claim.
+
+## ADR-011 Make final Hunter review advisory and size by liquidity
+
+Status: accepted 2026-08-25; refines ADR-010
+
+- Keep the batched Hunter `approve` as the only LLM direction decision. The
+  later Trade Hermes call remains persisted with opinion and token usage, but
+  its rejection or unavailability cannot block a Hunter paper signal.
+- Preserve fail-closed Trade Hermes behavior for every non-Hunter signal and
+  preserve the unchanged RiskManager for all signals.
+- Before Hunter sizing, require five consecutive completed one-minute bars,
+  the reclaim floor, at least 50% of the prior five-minute trading value, and
+  untouched stop/target constraints.
+- Limit Hunter notional to 10% of the recent five-minute average per-minute
+  trading value, then apply the existing risk/cash/heat/700,000 KRW limits.
+  Reject a result below one share.
+- Give Trade Hermes normalized liquidity, acceleration, order participation,
+  constrained veto codes, and explicit evidence. Qualitative resistance claims
+  without evidence remain commentary, not execution authority.

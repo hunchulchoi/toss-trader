@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 from .automation import HermesAnalysis, HermesAnalyzer
@@ -24,8 +25,12 @@ HERMES_TRADE_PROMPT = (
     "필수 데이터 결손·임박 이벤트·갭·수량·현금·시간·Risk 차단은 이미 하드 "
     "게이트이므로 우회할 수 없다. "
     "한도 숫자만으로 승인하지 마라. "
+    "거부할 경우 허용 vetoCodes는 LIQUIDITY_TOO_THIN, RECLAIM_LOST, "
+    "MARKET_DIVERGENCE, DATA_MISSING, EVENT_RISK뿐이다. 수치 evidence 없이 "
+    "임의 저항선이나 막연한 힘 부족을 거부 근거로 쓰지 마라. "
     'JSON 한 개만 응답하라: {"approved": true 또는 false, '
-    '"rationale": "한국어 1~3문장"}. 직접적인 투자 권유와 수익 보장은 금지한다.'
+    '"rationale": "한국어 1~3문장", "vetoCodes": [], "evidence": {}}. '
+    "직접적인 투자 권유와 수익 보장은 금지한다."
 )
 
 HERMES_MOMENTUM_SHADOW_PROMPT = (
@@ -109,6 +114,8 @@ class HermesTradeAdvisor:
                     "side": signal.side.value,
                     "approved": advice.approved,
                     "rationale": advice.rationale,
+                    "vetoCodes": list(advice.veto_codes),
+                    "evidence": dict(advice.evidence or {}),
                 },
             )
             return advice
@@ -200,6 +207,38 @@ def hermes_market_review(
             "setups": [str(item) for item in plan.setups],
             "setupSession": plan.setup_session.isoformat(),
         }
+        recent = tuple(minutes[-5:])
+        previous = tuple(minutes[-10:-5])
+        if recent:
+            recent_average = sum(
+                (bar.close_price * bar.volume for bar in recent), Decimal(0)
+            ) / len(recent)
+            previous_average = (
+                sum(
+                    (bar.close_price * bar.volume for bar in previous),
+                    Decimal(0),
+                )
+                / len(previous)
+                if previous
+                else Decimal(0)
+            )
+            order_notional = plan.entry_price * plan.quantity
+            payload["liquidity"] = {
+                "sampleBars": len(recent),
+                "recent5mAverageTradingValue": str(recent_average),
+                "previous5mAverageTradingValue": str(previous_average),
+                "tradingValueAcceleration": (
+                    str(recent_average / previous_average)
+                    if previous_average > 0
+                    else None
+                ),
+                "orderNotional": str(order_notional),
+                "orderParticipationRate": (
+                    str(order_notional / recent_average)
+                    if recent_average > 0
+                    else None
+                ),
+            }
     return payload
 
 
@@ -343,7 +382,27 @@ def _parse_advice(content: str) -> TradeAdvice:
     rationale = value.get("rationale")
     if not isinstance(rationale, str) or not rationale.strip():
         raise RuntimeError("Hermes trade response is missing rationale")
-    return TradeAdvice(approved=value["approved"], rationale=rationale.strip()[:1000])
+    veto_codes = value.get("vetoCodes", [])
+    allowed_veto_codes = {
+        "LIQUIDITY_TOO_THIN",
+        "RECLAIM_LOST",
+        "MARKET_DIVERGENCE",
+        "DATA_MISSING",
+        "EVENT_RISK",
+    }
+    if not isinstance(veto_codes, list) or not all(
+        isinstance(code, str) and code in allowed_veto_codes for code in veto_codes
+    ):
+        raise ValueError("Hermes trade response contains invalid vetoCodes")
+    evidence = value.get("evidence", {})
+    if not isinstance(evidence, Mapping):
+        raise TypeError("Hermes trade response evidence must be an object")
+    return TradeAdvice(
+        approved=value["approved"],
+        rationale=rationale.strip()[:1000],
+        veto_codes=tuple(dict.fromkeys(veto_codes)),
+        evidence=dict(evidence),
+    )
 
 
 def _parse_momentum_shadow_advice(

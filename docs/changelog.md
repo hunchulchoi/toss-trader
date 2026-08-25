@@ -7,6 +7,23 @@
 
 ## 2026-08-25
 
+### Hunter 이중 LLM 승인 제거와 유동성 수량 제한
+
+- 기록 시각: 2026-08-25 16:57 KST
+- 역할 분리: batched Hunter `approve`를 방향 판단으로 유지하고, 이후 Trade
+  Hermes 응답은 Hunter 신호에서 의견·veto code·token 감사만 남긴다. 거부나
+  분석 장애가 Hunter paper 주문을 막지 않으며 일반 Hermes v2의 fail-closed는
+  그대로다
+- 유동성: 10:01~10:05 최신 완결 5개 분봉의 평균 분당 거래대금 중 10%까지만
+  Hunter 주문에 사용한다. 기존 risk/cash/heat/70만원 한도를 추가로 적용하며
+  1주 미만이면 거부한다
+- 재검증: 완결 5분봉 누락, 재돌파 가격 이탈, 직전 5분 대비 거래대금 50% 미만,
+  stop 훼손·목표 도달·stop 거리 3% 초과를 코드가 차단한다
+- 설명력: 최종 Hermes payload에 최근/직전 평균 거래대금, 가속, 주문 참여율을
+  넣고 허용된 veto code와 수치 evidence만 요구한다
+- 검증: 411 unit tests, changed-file Ruff, Git whitespace 통과
+- 배포: 미배포
+
 ### 09:30 경계 복구와 Hermes Hunter paper 진입
 
 - 기록 시각: 2026-08-25 16:19 KST

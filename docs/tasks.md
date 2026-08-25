@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-021 Separate Hunter direction from execution liquidity
+
+- Owner: codex
+- Status: DONE
+- Result: keep the batched Hunter `approve` as the paper direction decision;
+  make the later Trade Hermes response advisory-only for Hunter signals while
+  preserving ordinary Hermes fail-closed behavior; cap Hunter size to 10% of
+  the latest complete five-minute average trading value and block missing bars,
+  a lost reclaim, a 50% trading-value collapse, or a sub-one-share result
+- Checks: 411 unit tests; changed-file Ruff and Git whitespace
+- Risks: paper-only; 10% participation is a conservative execution proxy, not
+  an observed order-book fill model; profitability remains unknown
+- 기록 시각: 2026-08-25 16:57 KST
+
 ### STRAT-020 Add a guarded Hermes Hunter paper entry
 
 - Owner: codex

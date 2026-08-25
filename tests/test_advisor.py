@@ -1,5 +1,5 @@
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -12,6 +12,8 @@ from toss_trader.automation import HermesAnalysis
 from toss_trader.models import Candle, Side, TradeSignal
 from toss_trader.paper import PaperLedger
 from toss_trader.risk import RiskContext
+from toss_trader.setup_screening import SetupType
+from toss_trader.v2_engine import ArmedTradePlan
 
 
 class StubAnalyzer:
@@ -49,7 +51,11 @@ class HermesTradeAdvisorTest(unittest.TestCase):
     def test_records_json_decision_and_token_usage(self) -> None:
         analyzer = StubAnalyzer(
             HermesAnalysis(
-                content='{"approved": false, "rationale": "거래량 확인 필요"}',
+                content=(
+                    '{"approved": false, "rationale": "거래량 확인 필요",'
+                    '"vetoCodes":["LIQUIDITY_TOO_THIN"],'
+                    '"evidence":{"orderParticipationRate":"0.66"}}'
+                ),
                 prompt_tokens=30,
                 completion_tokens=10,
                 total_tokens=40,
@@ -64,11 +70,56 @@ class HermesTradeAdvisorTest(unittest.TestCase):
         advice = advisor.advise(self.signal, self.context)
 
         self.assertFalse(advice.approved)
+        self.assertEqual(advice.veto_codes, ("LIQUIDITY_TOO_THIN",))
         self.assertEqual(analyzer.payloads[0]["signal"]["name"], "삼성전자")  # type: ignore[index]
         self.assertNotIn("apiKey", str(analyzer.payloads[0]))
         run = self.ledger.recent_automation_runs(run_type="hermes_trade")[0]
         self.assertEqual(run["totalTokens"], 40)
         self.assertEqual(run["details"]["rationale"], "거래량 확인 필요")
+        self.assertEqual(run["details"]["vetoCodes"], ["LIQUIDITY_TOO_THIN"])
+
+    def test_market_review_includes_normalized_liquidity(self) -> None:
+        start = datetime(2026, 8, 25, 0, 1, tzinfo=UTC)
+        minutes = tuple(
+            Candle(
+                symbol="005930",
+                interval="1m",
+                timestamp=start + timedelta(minutes=index),
+                open_price=Decimal(100),
+                high_price=Decimal(101),
+                low_price=Decimal(99),
+                close_price=Decimal(100),
+                volume=Decimal(100 + index * 10),
+                currency="KRW",
+            )
+            for index in range(10)
+        )
+        plan = ArmedTradePlan(
+            symbol="005930",
+            quantity=Decimal(1),
+            execution_open=Decimal(100),
+            entry_price=Decimal(100),
+            stop_price=Decimal(97),
+            planned_heat=Decimal(3),
+            setups=(SetupType.HERMES_EXPERIMENTAL,),
+            setup_session=date(2026, 8, 25),
+            ma50=Decimal(100),
+            signal_close=Decimal(100),
+        )
+
+        review = hermes_market_review(daily=(), minutes=minutes, plan=plan)
+
+        self.assertEqual(
+            review["liquidity"],
+            {
+                "sampleBars": 5,
+                "recent5mAverageTradingValue": "17000",
+                "previous5mAverageTradingValue": "12000",
+                "tradingValueAcceleration": str(Decimal(17) / Decimal(12)),
+                "orderNotional": "100",
+                "orderParticipationRate": str(Decimal(1) / Decimal(170)),
+            },
+        )
 
     def test_includes_compact_market_review_in_payload(self) -> None:
         analyzer = StubAnalyzer(
