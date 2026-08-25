@@ -512,6 +512,104 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertIsNone(self.paper_ledger.v2_position_plan("005930"))
         self.assertEqual(self.paper_ledger.recent_risk_decisions(), [])
 
+    def test_hermes_hunter_can_enter_at_current_price_after_opening_window(
+        self,
+    ) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=61),
+                    open_price="10.1",
+                    low_price="10",
+                ),
+                _minute_bar(
+                    market_open + timedelta(minutes=65),
+                    open_price="10.2",
+                    low_price="10.1",
+                ),
+            ],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+        candidate = {
+            "symbol": "005930",
+            "sessionDate": "2026-08-12",
+            "entryAt": (market_open + timedelta(minutes=61)).isoformat(),
+            "entryPrice": "10.1",
+            "stopPrice": "9.95",
+            "targetPrice": "10.6",
+        }
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=65, seconds=59),
+            experimental_strategy_reference=True,
+            hunter_candidates={"005930": candidate},
+        )
+
+        self.assertEqual(result.fill_count, 1)
+        assert result.items[0].signal is not None
+        self.assertEqual(
+            result.items[0].signal.reason,
+            "hermes Hunter momentum reclaim",
+        )
+        self.assertGreater(result.items[0].signal.reference_price, Decimal("10.2"))
+        plan = self.paper_ledger.v2_position_plan("005930")
+        assert plan is not None
+        self.assertEqual(plan.setups, ("hermes-experimental-reference",))
+        self.assertEqual(plan.stop_price, Decimal("9.95"))
+
+    def test_hermes_hunter_does_not_enter_after_late_window(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=66),
+                    open_price="10.2",
+                    low_price="10.1",
+                )
+            ],
+        )
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=66),
+            experimental_strategy_reference=True,
+            hunter_candidates={
+                "005930": {
+                    "symbol": "005930",
+                    "sessionDate": "2026-08-12",
+                    "entryAt": (
+                        market_open + timedelta(minutes=61)
+                    ).isoformat(),
+                    "entryPrice": "10.1",
+                    "stopPrice": "9.95",
+                    "targetPrice": "10.6",
+                }
+            },
+        )
+
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "hunter:outside-entry-window",
+        )
+
     def test_v2_late_shadow_preserves_deterministic_gate_rejection(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
         strategy = FakeV2CycleStrategy(

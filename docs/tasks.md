@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-020 Add a guarded Hermes Hunter paper entry
+
+- Owner: codex
+- Status: DONE
+- Result: treat all of 09:30 as inside the setup-v2.3 window, fill the full
+  known Hunter 1m sample once before evaluation, and promote only
+  Hermes-approved Hunter Top2 plans into a separate 10:01~10:05 Hermes paper
+  entry path using a current completed bar, stop/target checks, trade advisor,
+  and unchanged RiskManager
+- Checks: 408 unit tests; changed-file Ruff and Git whitespace
+- Risks: Rule unchanged; Hunter entry is paper-only; extra full-pool 1m refresh
+  increases the 10:00 cycle duration; forward fill quality/profitability unknown
+- 기록 시각: 2026-08-25 16:19 KST
+
 ### STRAT-019 Add Hermes review and returns to Hunter shadow
 
 - Owner: codex

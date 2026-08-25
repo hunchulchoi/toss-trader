@@ -155,3 +155,23 @@ Status: accepted 2026-08-24
 - Compare all Hunter plans with the Hermes-approved subset using stored 1m candles.
   Same-bar stop/target ambiguity resolves to stop and no fees or slippage are claimed.
 - Hermes unavailability is an audit event, never a paper-cycle failure.
+
+## ADR-010 Promote approved Hunter plans to Hermes paper only
+
+Status: accepted 2026-08-25; supersedes ADR-009 execution authority only
+
+- Preserve the original `momentum-shadow-v2` audit as `strategyInput=false` and
+  `shadowOnly=true`; historical research meaning must not be rewritten.
+- Promote only deterministic Top2 candidates with a persisted Hermes `approve`
+  into the shared `hunterEntry` snapshot. Mark this derived copy
+  `strategyInput=true`, `shadowOnly=false`, and `paperOnly=true`.
+- Rule never consumes `hunterEntry`. Hermes may enter only from 10:01 through
+  10:05 KST, using the latest completed 1m close plus adverse slippage rather
+  than the stale 10:01 research price.
+- Revalidate same-session provenance, a current completed bar, untouched stop,
+  target not already reached, and stop distance at most 3%. Then require both
+  the normal Hermes trade advisor and the unchanged RiskManager.
+- Persist an ordinary v2 position plan so later cycles keep hard-stop and SELL
+  observation even if the symbol leaves the next shared candidate snapshot.
+- Keep `TRADING_ENABLED=false`; this authority is paper-only and supplies no
+  live-trading authorization or profitability claim.

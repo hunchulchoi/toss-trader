@@ -30,6 +30,7 @@ from .setup_screening import (
     EntryGateDecision,
     PositionSizingPolicy,
     SetupType,
+    position_size_reference,
 )
 from .strategy import MaCrossoverEvaluation, ma_trend_continuation_signal
 from .v2_engine import (
@@ -45,6 +46,9 @@ from .v2_runtime import OfficialV2CycleStrategy
 
 HANDLED_CYCLE_ERRORS = (OSError, RuntimeError, TossApiError, TypeError, ValueError)
 V2_ENTRY_ARM_WINDOW = timedelta(minutes=30)
+HERMES_HUNTER_ENTRY_START = timedelta(minutes=61)
+HERMES_HUNTER_ENTRY_WINDOW = timedelta(minutes=65)
+HERMES_HUNTER_STOP_DISTANCE_MAX = Decimal("0.03")
 HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS = frozenset(
     {"falling-knife", "missing-price-setup", "rsi-chase"}
 )
@@ -90,6 +94,7 @@ class PaperCycleSnapshot:
     new_buys_allowed: bool
     ma_states: tuple[MaCrossoverEvaluation | None, ...] = ()
     v2_candidates: tuple[DailySetupCandidate | None, ...] = ()
+    hunter_entry: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,6 +325,7 @@ class PaperCycleRunner:
         trend_entry_key: str | None = None,
         signal_namespace: str | None = None,
         experimental_strategy_reference: bool = False,
+        hunter_candidates: Mapping[str, Mapping[str, Any]] | None = None,
         snapshot: PaperCycleSnapshot | None = None,
     ) -> PaperCycleResult:
         previous_api_errors = self._state.latest_consecutive_api_errors()
@@ -350,6 +356,7 @@ class PaperCycleRunner:
                 new_buys_allowed=prepared.new_buys_allowed,
                 signal_namespace=signal_namespace,
                 experimental_strategy_reference=experimental_strategy_reference,
+                hunter_candidates=hunter_candidates or {},
                 snapshot=prepared,
             )
         except Exception as error:
@@ -391,6 +398,7 @@ class PaperCycleRunner:
         new_buys_allowed: bool,
         signal_namespace: str | None,
         experimental_strategy_reference: bool,
+        hunter_candidates: Mapping[str, Mapping[str, Any]],
         snapshot: PaperCycleSnapshot,
     ) -> PaperCycleResult:
         size = len(symbols)
@@ -446,6 +454,11 @@ class PaperCycleRunner:
                     continue
                 try:
                     stored_plan = self._trading.v2_position_plan(symbol)
+                    hunter_payload = (
+                        hunter_candidates.get(symbol)
+                        if experimental_strategy_reference
+                        else None
+                    )
                     entry_blocked_by_legacy = (
                         stored_plan is None and bool(unplanned_positions)
                     )
@@ -453,6 +466,7 @@ class PaperCycleRunner:
                         rebuild_v2_candidates
                         and v2_candidates[index] is None
                         and stored_plan is None
+                        and hunter_payload is None
                         and not entry_blocked_by_legacy
                     ):
                         v2_candidates[index] = self._v2_strategy.build_candidate(
@@ -477,21 +491,30 @@ class PaperCycleRunner:
                             now=now,
                             collection=collections[index],
                         )
-                    packed = self._v2_runtime_signal(
-                        symbol=symbol,
-                        candidate=v2_candidates[index],
-                        session=session,
-                        performance=performance,
-                        now=now,
-                        reserved_open_heat=reserved_open_heat,
-                        reserved_cluster_heat=reserved_cluster_heat.get(
+                    runtime_kwargs = {
+                        "symbol": symbol,
+                        "session": session,
+                        "performance": performance,
+                        "now": now,
+                        "reserved_open_heat": reserved_open_heat,
+                        "reserved_cluster_heat": reserved_cluster_heat.get(
                             self._v2_strategy.cluster_id(symbol), Decimal(0)
                         ),
-                        reserved_cash=reserved_cash,
-                        experimental_strategy_reference=(
-                            experimental_strategy_reference
-                        ),
-                    )
+                        "reserved_cash": reserved_cash,
+                    }
+                    if hunter_payload is not None and stored_plan is None:
+                        packed = self._hunter_runtime_signal(
+                            payload=hunter_payload,
+                            **runtime_kwargs,
+                        )
+                    else:
+                        packed = self._v2_runtime_signal(
+                            candidate=v2_candidates[index],
+                            experimental_strategy_reference=(
+                                experimental_strategy_reference
+                            ),
+                            **runtime_kwargs,
+                        )
                     signal, reason, plan = packed[0], packed[1], packed[2]
                     skip_detail = packed[3] if len(packed) > 3 else None
                     signals[index] = signal
@@ -773,6 +796,136 @@ class PaperCycleRunner:
                 return
             cursor = page.next_before
 
+    def _hunter_runtime_signal(
+        self,
+        *,
+        symbol: str,
+        payload: Mapping[str, Any],
+        session: MarketSession,
+        performance: DailyPortfolioPerformance,
+        now: datetime,
+        reserved_open_heat: Decimal,
+        reserved_cluster_heat: Decimal,
+        reserved_cash: Decimal,
+    ) -> tuple[TradeSignal | None, str | None, ArmedTradePlan | None, dict[str, Any]]:
+        assert self._v2_strategy is not None
+        if not session.is_business_day or session.market_open_at is None:
+            return None, "hunter:market-closed", None, {}
+        detail = _hunter_entry_window_detail(session, now)
+        if not _hunter_entry_window_contains(session, now):
+            return None, "hunter:outside-entry-window", None, detail
+        if self._trading.has_position(symbol):
+            return None, "hunter:already-held", None, detail
+        if self._trading.unplanned_position_symbols():
+            return None, "hunter:blocked:legacy-portfolio", None, detail
+        if str(payload.get("symbol") or "") != symbol:
+            raise ValueError("hunter candidate symbol does not match")
+        if str(payload.get("sessionDate") or "") != session.business_date.isoformat():
+            return None, "hunter:stale-session", None, detail
+
+        entry_at = _hunter_datetime(payload, "entryAt")
+        if entry_at > now:
+            return None, "hunter:waiting:entry-bar", None, detail
+        planned_entry = _hunter_decimal(payload, "entryPrice")
+        stop_price = _hunter_decimal(payload, "stopPrice")
+        target_price = _hunter_decimal(payload, "targetPrice")
+        if not stop_price < planned_entry < target_price:
+            raise ValueError("hunter trade plan prices are invalid")
+
+        bars = tuple(
+            bar
+            for bar in self._v2_strategy.completed_one_minute_bars(symbol, now=now)
+            if session.market_open_at < bar.timestamp <= now
+        )
+        if not bars:
+            return None, "hunter:waiting:current-bar", None, detail
+        current = max(bars, key=lambda bar: bar.timestamp)
+        observed_minute = now.replace(second=0, microsecond=0)
+        if current.timestamp < observed_minute:
+            return None, "hunter:waiting:current-bar", None, detail
+        reference_price = current.close_price
+        if reference_price <= stop_price:
+            return None, "hunter:invalidated:stop", None, detail
+        if reference_price >= target_price:
+            return None, "hunter:blocked:target-already-reached", None, detail
+        structural_distance = reference_price - stop_price
+        if (
+            structural_distance / reference_price
+            > HERMES_HUNTER_STOP_DISTANCE_MAX
+        ):
+            return None, "hunter:blocked:stop-distance", None, detail
+
+        available_cash = max(
+            Decimal(0), self._trading.available_cash() - reserved_cash
+        )
+        sizing = position_size_reference(
+            symbol=symbol,
+            equity=performance.equity,
+            reference_price=reference_price,
+            stop_price=stop_price,
+            atr=(
+                structural_distance
+                / HERMES_EXPERIMENTAL_SIZING_POLICY.atr_stop_multiple
+            ),
+            available_cash=available_cash,
+            current_open_heat=self._trading.open_v2_heat() + reserved_open_heat,
+            current_cluster_heat=(
+                self._trading.cluster_v2_heat(self._v2_strategy.cluster_id(symbol))
+                + reserved_cluster_heat
+            ),
+            policy=HERMES_EXPERIMENTAL_SIZING_POLICY,
+            slippage=ADVERSE_SLIPPAGE,
+        )
+        if sizing.quantity <= 0:
+            detail.update(
+                {
+                    "referencePrice": str(reference_price),
+                    "stopPrice": str(stop_price),
+                    "limitingFactors": list(sizing.limiting_factors),
+                }
+            )
+            return None, "hunter:blocked:below-one-lot", None, detail
+
+        entry_price = reference_price * (Decimal(1) + ADVERSE_SLIPPAGE.entry_rate)
+        plan = ArmedTradePlan(
+            symbol=symbol,
+            quantity=sizing.quantity,
+            execution_open=reference_price,
+            entry_price=entry_price,
+            stop_price=reference_price - sizing.effective_stop_distance,
+            planned_heat=sizing.planned_heat,
+            setups=(SetupType.HERMES_EXPERIMENTAL,),
+            setup_session=session.business_date,
+            ma50=reference_price,
+            signal_close=reference_price,
+        )
+        detail.update(
+            {
+                "source": "momentum-shadow-v2",
+                "originalEntryPrice": str(planned_entry),
+                "referencePrice": str(reference_price),
+                "stopPrice": str(plan.stop_price),
+                "targetPrice": str(target_price),
+                "barAt": current.timestamp.isoformat(),
+            }
+        )
+        return (
+            TradeSignal(
+                signal_id=(
+                    f"hermes-hunter-v2:{symbol}:"
+                    f"{session.business_date.isoformat()}:entry"
+                ),
+                symbol=symbol,
+                side=Side.BUY,
+                reference_price=entry_price,
+                quantity=plan.quantity,
+                reason="hermes Hunter momentum reclaim",
+            ),
+            None,
+            plan,
+            detail,
+        )
+
     def _v2_runtime_signal(
         self,
         *,
@@ -1027,6 +1180,55 @@ def _entry_arm_window_contains(session: MarketSession, now: datetime) -> bool:
         return False
     observed_minute = now.replace(second=0, microsecond=0)
     return observed_minute <= opened_at + V2_ENTRY_ARM_WINDOW
+
+
+def _hunter_entry_window_contains(session: MarketSession, now: datetime) -> bool:
+    opened_at = session.market_open_at
+    if opened_at is None:
+        return False
+    observed_minute = now.replace(second=0, microsecond=0)
+    return (
+        opened_at + HERMES_HUNTER_ENTRY_START
+        <= observed_minute
+        <= opened_at + HERMES_HUNTER_ENTRY_WINDOW
+    )
+
+
+def _hunter_entry_window_detail(
+    session: MarketSession, now: datetime
+) -> dict[str, Any]:
+    opened_at = session.market_open_at
+    if opened_at is None:
+        return {"observedAt": now.isoformat()}
+    return {
+        "entryWindowOpenAt": (
+            opened_at + HERMES_HUNTER_ENTRY_START
+        ).isoformat(),
+        "entryWindowCloseAt": (
+            opened_at + HERMES_HUNTER_ENTRY_WINDOW
+        ).isoformat(),
+        "observedAt": now.isoformat(),
+    }
+
+
+def _hunter_datetime(payload: Mapping[str, Any], field: str) -> datetime:
+    value = payload.get(field)
+    if not isinstance(value, str):
+        raise TypeError(f"hunter {field} is required")
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"hunter {field} must include timezone")
+    return parsed
+
+
+def _hunter_decimal(payload: Mapping[str, Any], field: str) -> Decimal:
+    try:
+        value = Decimal(str(payload[field]))
+    except (KeyError, TypeError, ValueError) as error:
+        raise TypeError(f"hunter {field} must be numeric") from error
+    if not value.is_finite() or value <= 0:
+        raise ValueError(f"hunter {field} must be positive")
+    return value
 
 
 def _v2_rejection_reason(candidate: DailySetupCandidate) -> str:

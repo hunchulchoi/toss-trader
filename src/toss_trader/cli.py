@@ -1217,6 +1217,9 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
     if args.snapshot_stdin and args.portfolio != "hermes":
         raise ValueError("shared snapshot input is only valid for the hermes portfolio")
     snapshot = _read_cycle_snapshot() if args.snapshot_stdin else None
+    hunter_candidates = _approved_hunter_candidates(
+        snapshot.hunter_entry if snapshot is not None else None
+    )
     explicit_symbols = (
         snapshot.symbols
         if snapshot is not None
@@ -1274,9 +1277,14 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
         )
         if snapshot is not None and args.portfolio == "hermes":
             snapshot = _extend_cycle_snapshot(
-                snapshot, performance.open_position_symbols()
+                snapshot,
+                (
+                    *performance.open_position_symbols(),
+                    *hunter_candidates,
+                ),
             )
             symbols = snapshot.symbols
+            explicit_symbols = snapshot.symbols
         collector = MarketCollector(client=client, repository=market_repository)
         v2_strategy = OfficialV2CycleStrategy(
             market_repository,
@@ -1408,12 +1416,17 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                             client,
                             allowed_symbols=frozenset(momentum_research_pool),
                         )
-                    else:
+                    elif momentum_evaluation_due:
                         momentum_ranked_symbols = _momentum_observed_symbols(
                             market_repository,
                             symbols=momentum_research_pool,
                             session=momentum_session,
                             observed_at=now,
+                        )
+                    else:
+                        momentum_ranked_symbols = _recorded_momentum_symbols(
+                            paper_ledger,
+                            session_date=momentum_session.business_date.isoformat(),
                         )
                 except (
                     OSError,
@@ -1576,6 +1589,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             experimental_strategy_reference=(
                 args.portfolio == "hermes" and args.hermes_advisor
             ),
+            hunter_candidates=hunter_candidates,
             snapshot=snapshot,
         )
         cash_balance = paper_ledger.cash_balance(settings.paper_initial_cash)
@@ -1591,10 +1605,17 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 for item in (intraday_sample or {}).get("failures", [])
             }
             hermes_snapshot = _cycle_snapshot_to_dict(
-                _hermes_candidate_snapshot(
-                    result.snapshot,
-                    universe_result.collection_symbols,
-                    failed_samples=failed_samples,
+                replace(
+                    _hermes_candidate_snapshot(
+                        result.snapshot,
+                        universe_result.collection_symbols,
+                        failed_samples=failed_samples,
+                    ),
+                    hunter_entry=(
+                        _hunter_entry_payload(momentum_shadow)
+                        if isinstance(momentum_shadow, Mapping)
+                        else None
+                    ),
                 ),
                 symbol_names=symbol_names,
             )
@@ -1767,6 +1788,7 @@ def _hermes_candidate_snapshot(
         api_failed=snapshot.api_failed,
         new_buys_allowed=snapshot.new_buys_allowed,
         ma_states=(None,) * len(symbols),
+        hunter_entry=snapshot.hunter_entry,
     )
 
 
@@ -1851,6 +1873,11 @@ def _cycle_snapshot_to_dict(
             )
             for item in snapshot.ma_states
         ],
+        "hunterEntry": (
+            dict(snapshot.hunter_entry)
+            if isinstance(snapshot.hunter_entry, Mapping)
+            else None
+        ),
     }
 
 
@@ -1933,6 +1960,11 @@ def _read_cycle_snapshot() -> PaperCycleSnapshot:
     if not isinstance(new_buys_allowed, bool):
         raise TypeError("shared snapshot newBuysAllowed must be boolean")
     raw_ma_states = payload.get("maStates")
+    raw_hunter_entry = payload.get("hunterEntry")
+    if raw_hunter_entry is not None and not isinstance(
+        raw_hunter_entry, Mapping
+    ):
+        raise TypeError("shared snapshot hunterEntry must be an object")
     if raw_ma_states is None:
         parsed_ma_states: tuple[MaCrossoverEvaluation | None, ...] = ()
     elif not isinstance(raw_ma_states, list) or len(raw_ma_states) != len(symbols):
@@ -1963,6 +1995,11 @@ def _read_cycle_snapshot() -> PaperCycleSnapshot:
         api_failed=api_failed,
         new_buys_allowed=new_buys_allowed,
         ma_states=parsed_ma_states,
+        hunter_entry=(
+            dict(raw_hunter_entry)
+            if isinstance(raw_hunter_entry, Mapping)
+            else None
+        ),
     )
 
 
@@ -2049,6 +2086,55 @@ def _momentum_ranked_symbols(
     )
 
 
+def _approved_hunter_candidates(
+    payload: Mapping[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    if (
+        not isinstance(payload, Mapping)
+        or payload.get("status") != "evaluated"
+        or payload.get("ruleVersion") != MOMENTUM_SHADOW_RULE_VERSION
+        or payload.get("strategyInput") is not True
+        or payload.get("shadowOnly") is not False
+        or payload.get("paperOnly") is not True
+    ):
+        return {}
+    selected = payload.get("selected")
+    hermes = payload.get("hermes")
+    decisions = hermes.get("decisions") if isinstance(hermes, Mapping) else None
+    if (
+        not isinstance(selected, Sequence)
+        or isinstance(selected, (str, bytes))
+        or not isinstance(decisions, Sequence)
+        or isinstance(decisions, (str, bytes))
+    ):
+        return {}
+    approved = {
+        str(row.get("symbol") or "")
+        for row in decisions
+        if isinstance(row, Mapping) and row.get("verdict") == "approve"
+    }
+    session_date = str(payload.get("sessionDate") or "")
+    result: dict[str, dict[str, Any]] = {}
+    for row in selected:
+        if not isinstance(row, Mapping):
+            continue
+        symbol = str(row.get("symbol") or "")
+        if symbol not in approved:
+            continue
+        result[symbol] = {**dict(row), "sessionDate": session_date}
+    return result
+
+
+def _hunter_entry_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        **dict(payload),
+        "strategyInput": True,
+        "shadowOnly": False,
+        "paperOnly": True,
+        "promotedFrom": MOMENTUM_SHADOW_RULE_VERSION,
+    }
+
+
 def _momentum_observed_symbols(
     repository: MarketRepository,
     *,
@@ -2120,6 +2206,33 @@ def _momentum_shadow_recorded(
             limit=100, run_type="momentum-shadow"
         )
     )
+
+
+def _recorded_momentum_symbols(
+    ledger: Any, *, session_date: str
+) -> tuple[str, ...]:
+    for run in ledger.recent_automation_runs(
+        limit=100, run_type="momentum-shadow"
+    ):
+        details = run.get("details")
+        if (
+            run.get("status") != "succeeded"
+            or not isinstance(details, Mapping)
+            or details.get("sessionDate") != session_date
+            or details.get("ruleVersion") != MOMENTUM_SHADOW_RULE_VERSION
+        ):
+            continue
+        selected = details.get("selected")
+        if not isinstance(selected, Sequence) or isinstance(selected, (str, bytes)):
+            return ()
+        return tuple(
+            dict.fromkeys(
+                str(row.get("symbol") or "")
+                for row in selected
+                if isinstance(row, Mapping) and row.get("symbol")
+            )
+        )
+    return ()
 
 
 def _momentum_collection_symbols(

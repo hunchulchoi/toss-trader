@@ -9,12 +9,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from toss_trader.cli import (
+    _approved_hunter_candidates,
     _collect_intraday_sample,
     _cycle_snapshot_to_dict,
     _extend_cycle_snapshot,
     _hermes_candidate_snapshot,
+    _hunter_entry_payload,
     _intraday_backfill_start_cursor,
     _momentum_collection_symbols,
+    _recorded_momentum_symbols,
     _seoul_day_window,
     _session_candle_count,
     build_parser,
@@ -137,6 +140,65 @@ class IntradaySampleCollectionTest(unittest.TestCase):
             ("069500", "229200"),
         )
 
+    def test_only_hunter_candidates_approved_by_hermes_become_entries(self) -> None:
+        payload = {
+            "status": "evaluated",
+            "ruleVersion": "momentum-shadow-v2",
+            "strategyInput": False,
+            "shadowOnly": True,
+            "sessionDate": "2026-08-25",
+            "selected": [
+                {"symbol": "AAA", "entryPrice": "100"},
+                {"symbol": "BBB", "entryPrice": "200"},
+            ],
+            "hermes": {
+                "status": "succeeded",
+                "decisions": [
+                    {"symbol": "AAA", "verdict": "approve"},
+                    {"symbol": "BBB", "verdict": "watch"},
+                ],
+            },
+        }
+
+        promoted = _hunter_entry_payload(payload)
+        self.assertEqual(
+            _approved_hunter_candidates(promoted),
+            {
+                "AAA": {
+                    "symbol": "AAA",
+                    "entryPrice": "100",
+                    "sessionDate": "2026-08-25",
+                }
+            },
+        )
+
+        promoted["paperOnly"] = False
+        self.assertEqual(_approved_hunter_candidates(promoted), {})
+
+    def test_refreshes_only_recorded_hunter_top_two_after_evaluation(self) -> None:
+        class Ledger:
+            def recent_automation_runs(self, **_kwargs):
+                return [
+                    {
+                        "status": "succeeded",
+                        "details": {
+                            "sessionDate": "2026-08-25",
+                            "ruleVersion": "momentum-shadow-v2",
+                            "selected": [
+                                {"symbol": "AAA"},
+                                {"symbol": "BBB"},
+                            ],
+                        },
+                    }
+                ]
+
+        self.assertEqual(
+            _recorded_momentum_symbols(
+                Ledger(), session_date="2026-08-25"
+            ),
+            ("AAA", "BBB"),
+        )
+
     def test_builds_expanded_hermes_pool_and_keeps_held_symbol(self) -> None:
         base = PaperCycleSnapshot(
             evaluated_at=datetime(2026, 8, 20, 0, 5, tzinfo=UTC),
@@ -148,6 +210,7 @@ class IntradaySampleCollectionTest(unittest.TestCase):
             errors=(None,),
             api_failed=False,
             new_buys_allowed=True,
+            hunter_entry={"ruleVersion": "momentum-shadow-v2"},
         )
 
         research = _hermes_candidate_snapshot(
@@ -163,6 +226,10 @@ class IntradaySampleCollectionTest(unittest.TestCase):
         self.assertEqual(expanded.v2_candidates, ())
         encoded = _cycle_snapshot_to_dict(expanded)
         self.assertEqual(len(encoded["maStates"]), len(encoded["symbols"]))
+        self.assertEqual(
+            encoded["hunterEntry"],
+            {"ruleVersion": "momentum-shadow-v2"},
+        )
 
 
 class MetricsCliTest(unittest.TestCase):

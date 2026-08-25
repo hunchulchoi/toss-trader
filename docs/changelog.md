@@ -5,6 +5,27 @@
 쓴다. 배포 시각이 다르면 실제 배포 시각을 별도로 쓴다.
 매매 권고 아님.
 
+## 2026-08-25
+
+### 09:30 경계 복구와 Hermes Hunter paper 진입
+
+- 기록 시각: 2026-08-25 16:19 KST
+- 경계 수정: cycle 시작이 `09:30:00.xxx`여도 09:30분 전체를 기존 v2.3
+  진입창으로 인정한다. 09:31부터는 기존처럼 shadow-only다
+- 표본 수정: 10:00 Hunter 첫 평가 직전 known research pool 전체의 당일 1분봉을
+  한 번 보강한다. 성공 감사행이 있으면 같은 날 전수 재수집하지 않는다
+- paper 진입: deterministic Hunter 상위 2개 중 Hunter Hermes가 `approve`한 종목만
+  10:01~10:05 Hermes portfolio 후보로 승격한다. 당시 최신 완결 1분봉으로 다시
+  가격을 잡고, 목표가 도달·stop 훼손·stop 거리 3% 초과를 차단한 뒤 Hermes
+  trade advisor와 기존 RiskManager를 모두 통과해야 paper fill을 만든다
+- 분리: Rule과 09:00 setup-v2.3 계약은 바꾸지 않는다. 기존
+  `momentum-shadow-v2` 감사행도 연구 결과 그대로 보존하고, 공유 snapshot의
+  `hunterEntry`만 `paperOnly=true`, `strategyInput=true`로 명시해 Hermes에 전달한다
+- 검증: 408 unit tests, changed-file Ruff, Git whitespace 통과
+- 한계: Hunter 실제 paper 성과 근거는 아직 없고, 목표가는 후보 늦은 진입 차단에
+  사용한다. 진입 뒤 청산은 기존 hard-stop/장부 mark-to-market 경로를 사용한다
+- 배포: 미배포
+
 ## 2026-08-24
 
 ### Hunter shadow Hermes 검토·가상 수익률 timeline

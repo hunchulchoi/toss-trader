@@ -639,6 +639,10 @@ class IntradayPaperAutomationTest(unittest.TestCase):
                     "errors": [None, None, None],
                     "apiFailed": False,
                     "newBuysAllowed": True,
+                    "hunterEntry": {
+                        "paperOnly": True,
+                        "selected": [{"symbol": "035420"}],
+                    },
                 },
             }
         }
@@ -655,6 +659,7 @@ class IntradayPaperAutomationTest(unittest.TestCase):
         submitted = json.loads(run.call_args.kwargs["input"])
         self.assertEqual(submitted["symbols"], ["005930", "000660", "035420"])
         self.assertEqual(submitted["interval"], "1m")
+        self.assertTrue(submitted["hunterEntry"]["paperOnly"])
         self.assertEqual(result["exitCode"], 0)
 
 
