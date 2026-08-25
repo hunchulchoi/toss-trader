@@ -212,3 +212,19 @@ Status: accepted 2026-08-25; refines ADR-007 entry execution
   `setup-v2:shadow:invalid-stop-reclaim` with no signal, Risk call, or fill.
 - Preserve Rule sizing at 0.5% per trade, 2% total heat, and 1% UNKNOWN-cluster
   heat. This correction creates no new live-trading authority.
+
+## ADR-013 Observe invalid-stop reclaims without extending Rule entry
+
+Status: accepted 2026-08-25; refines ADR-012 research only
+
+- Keep the authoritative Rule entry window unchanged through 09:30.
+- From 09:15 through the final scheduled 15:20 cycle, scan every crossing back
+  above the prior setup low. A failed three-bar hold must not prevent a later
+  crossing from being evaluated.
+- Persist the first valid crossing, three-bar completion, 99.5% hold floor,
+  next-bar hypothetical entry evidence when available, and intraday low through
+  the hold. Label a hold completed after 09:30 as
+  `setup-v2:shadow:invalid-stop-reclaim-late`.
+- These records never create a signal, call Hermes/RiskManager, reserve cash or
+  heat, or write a paper fill. Repeated cycle observations are analysis rows,
+  not independent samples.

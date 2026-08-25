@@ -7,6 +7,21 @@
 
 ## 2026-08-25
 
+### invalid-stop 재회복 shadow 장중 확장
+
+- 기록 시각: 2026-08-25 17:42 KST
+- 관찰: 첫 setup-low 회복 뒤 3봉 유지에 실패해도 이후 아래에서 다시 회복한
+  시점을 계속 검사한다. 09:30 이후부터 마지막 15:20 cycle까지 통과한 패턴은
+  `setup-v2:shadow:invalid-stop-reclaim-late`로 분리한다
+- 증거: 회복 횟수·시각, 3봉 유지 완료시각·가격, 다음 봉 가상 진입 시각·시가,
+  당시까지 intraday low를 cycle DB에 남긴다. signal·Hermes·Risk·fill 없음
+- 8월 24~25일 read-only 재생: 24일 후보 0. 25일 대원전선은 09:32 회복,
+  09:36 가상 진입 뒤 종가 기준 +3.55%·Rule 2주 가능. 티씨케이는 09:23
+  재회복 뒤 +7.96%였지만 1주 위험이 0.5% 예산을 넘어 수량 0. slippage만
+  반영한 2건 관측이며 성과 근거가 아니다
+- 검증: 416 unit tests, changed-file Ruff, Git whitespace 통과
+- 배포: 미배포
+
 ### Rule 현재 완결봉 실행가와 invalid-stop 회복 shadow
 
 - 기록 시각: 2026-08-25 17:29 KST

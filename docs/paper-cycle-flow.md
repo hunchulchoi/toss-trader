@@ -167,10 +167,13 @@ armed 신호도 최종 RiskManager를 통과해야 한다. 주요 제한은 주�
 arm 가능한 후보는 `setup-v2:shadow:armed-after-entry-window`로만 기록하며,
 RiskManager·Hermes advisor·paper fill 경로로 보내지 않는다.
 
-첫 봉이 setup low 이하라 무효화된 Rule 후보는 09:15~09:30에 setup low를
-회복하고 다음 3개 연속 완결봉 종가가 setup low의 99.5% 이상을 유지했는지
-별도 기록한다. `setup-v2:shadow:invalid-stop-reclaim`은 연구 표본이며 signal,
-RiskManager, paper fill을 만들지 않는다.
+첫 봉이 setup low 이하라 무효화된 Rule 후보는 09:15부터 마지막 15:20 cycle까지
+setup low 재회복을 모두 다시 검사한다. 앞선 회복의 3봉 유지가 실패해도 다음
+회복을 검사한다. 09:30까지 3봉 유지가 끝나면
+`setup-v2:shadow:invalid-stop-reclaim`, 이후면 `...-reclaim-late`다. 회복·유지
+시각, 다음 봉 가상 진입 증거, 당시 intraday low를 남기지만 signal,
+RiskManager, paper fill을 만들지 않는다. 분석 시 같은 `reclaimedAt` 반복 행은
+한 종목-일 표본으로 dedupe한다.
 
 별도 `momentum-shadow-v2`는 09:00~10:00 `TOP_GAINERS`와 known research pool의
 1분봉을 모은다. 10:00 첫 평가 직전 research pool 전체를 200봉씩 한 번 보강한 뒤

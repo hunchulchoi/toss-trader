@@ -630,6 +630,119 @@ class PaperCycleRunnerTest(unittest.TestCase):
         self.assertEqual(result.items[0].skip_detail["referencePrice"], "9.1")
         self.assertEqual(self.paper_ledger.recent_risk_decisions(), [])
 
+    def test_v2_reclaim_shadow_retries_after_an_earlier_hold_failure(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="8.5",
+                    close_price="8.5",
+                    low_price="8.2",
+                ),
+                *(
+                    _minute_bar(
+                        market_open + timedelta(minutes=minute),
+                        open_price=price,
+                        close_price=price,
+                        low_price="8.7",
+                    )
+                    for minute, price in (
+                        (15, "9.1"),
+                        (16, "8.8"),
+                        (20, "9.1"),
+                        (21, "9.05"),
+                        (22, "9.04"),
+                        (23, "9.1"),
+                        (25, "9.2"),
+                    )
+                ),
+            ],
+        )
+
+        result = self._runner(
+            WatchlistCandleClient(
+                {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+            ),
+            v2_strategy=strategy,
+        ).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=25, seconds=59),
+        )
+
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "setup-v2:shadow:invalid-stop-reclaim",
+        )
+        assert result.items[0].skip_detail is not None
+        self.assertEqual(
+            result.items[0].skip_detail["reclaimedAt"],
+            (market_open + timedelta(minutes=20)).isoformat(),
+        )
+        self.assertEqual(
+            result.items[0].skip_detail["holdCompletedAt"],
+            (market_open + timedelta(minutes=23)).isoformat(),
+        )
+
+    def test_v2_reclaim_shadow_observes_late_patterns_without_buying(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="8.5",
+                    close_price="8.5",
+                    low_price="8.2",
+                ),
+                *(
+                    _minute_bar(
+                        market_open + timedelta(minutes=minute),
+                        open_price=price,
+                        close_price=price,
+                        low_price="8.9",
+                    )
+                    for minute, price in (
+                        (32, "9.1"),
+                        (33, "9.05"),
+                        (34, "9.04"),
+                        (35, "9.1"),
+                    )
+                ),
+            ],
+        )
+
+        result = self._runner(
+            WatchlistCandleClient(
+                {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+            ),
+            v2_strategy=strategy,
+        ).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=35, seconds=59),
+        )
+
+        self.assertEqual(result.signal_count, 0)
+        self.assertEqual(result.fill_count, 0)
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "setup-v2:shadow:invalid-stop-reclaim-late",
+        )
+        assert result.items[0].skip_detail is not None
+        self.assertTrue(result.items[0].skip_detail["lateEntryWindow"])
+        self.assertEqual(result.items[0].idle_reason, "shadow-signal")
+        self.assertEqual(self.paper_ledger.recent_risk_decisions(), [])
+
     def test_hermes_hunter_can_enter_at_current_price_after_opening_window(
         self,
     ) -> None:

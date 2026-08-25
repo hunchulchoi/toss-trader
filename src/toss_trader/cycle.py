@@ -51,6 +51,7 @@ from .v2_runtime import OfficialV2CycleStrategy
 HANDLED_CYCLE_ERRORS = (OSError, RuntimeError, TossApiError, TypeError, ValueError)
 V2_ENTRY_ARM_WINDOW = timedelta(minutes=30)
 RULE_INVALID_STOP_RECLAIM_START = timedelta(minutes=15)
+RULE_INVALID_STOP_SHADOW_WINDOW = timedelta(hours=6, minutes=20)
 RULE_INVALID_STOP_RECLAIM_HOLD_BARS = 3
 RULE_INVALID_STOP_RECLAIM_HOLD_FLOOR = Decimal("0.995")
 HERMES_HUNTER_ENTRY_START = timedelta(minutes=61)
@@ -1186,9 +1187,14 @@ class PaperCycleRunner:
                 )
                 if shadow_detail is not None:
                     shadow_detail.update(_entry_window_detail(session, now))
+                    reason = (
+                        "setup-v2:shadow:invalid-stop-reclaim-late"
+                        if shadow_detail["lateEntryWindow"]
+                        else "setup-v2:shadow:invalid-stop-reclaim"
+                    )
                     return (
                         None,
-                        "setup-v2:shadow:invalid-stop-reclaim",
+                        reason,
                         None,
                         shadow_detail,
                     )
@@ -1299,10 +1305,13 @@ def _invalid_stop_reclaim_shadow(
     if opened_at is None:
         return None
     observed_minute = now.replace(second=0, microsecond=0)
+    research_close_at = opened_at + RULE_INVALID_STOP_SHADOW_WINDOW
+    if session.market_close_at is not None:
+        research_close_at = min(research_close_at, session.market_close_at)
     if not (
         opened_at + RULE_INVALID_STOP_RECLAIM_START
         <= observed_minute
-        <= opened_at + V2_ENTRY_ARM_WINDOW
+        <= research_close_at
     ):
         return None
     ordered = tuple(sorted(bars, key=lambda bar: bar.timestamp))
@@ -1323,37 +1332,68 @@ def _invalid_stop_reclaim_shadow(
         <= bar.timestamp
         <= observed_minute
     )
-    reclaimed = next(
-        (bar for bar in eligible if bar.close_price >= candidate.setup_low),
+    floor = candidate.setup_low * RULE_INVALID_STOP_RECLAIM_HOLD_FLOOR
+    reclaim_attempts = 0
+    selected: tuple[Candle, tuple[Candle, ...]] | None = None
+    for index, reclaimed in enumerate(eligible):
+        if reclaimed.close_price < candidate.setup_low:
+            continue
+        if index > 0 and eligible[index - 1].close_price >= candidate.setup_low:
+            continue
+        reclaim_attempts += 1
+        held = eligible[index + 1 : index + RULE_INVALID_STOP_RECLAIM_HOLD_BARS + 1]
+        if len(held) != RULE_INVALID_STOP_RECLAIM_HOLD_BARS:
+            continue
+        expected = tuple(
+            reclaimed.timestamp + timedelta(minutes=offset)
+            for offset in range(1, RULE_INVALID_STOP_RECLAIM_HOLD_BARS + 1)
+        )
+        if tuple(bar.timestamp for bar in held) != expected:
+            continue
+        if any(bar.close_price < floor for bar in held):
+            continue
+        selected = reclaimed, held
+        break
+    if selected is None:
+        return None
+    reclaimed, held = selected
+    hold_completed = held[-1]
+    entry_bar = next(
+        (
+            bar
+            for bar in ordered
+            if bar.timestamp == hold_completed.timestamp + timedelta(minutes=1)
+        ),
         None,
     )
-    if reclaimed is None:
-        return None
-    following = tuple(bar for bar in eligible if bar.timestamp > reclaimed.timestamp)
-    held = following[:RULE_INVALID_STOP_RECLAIM_HOLD_BARS]
-    if len(held) != RULE_INVALID_STOP_RECLAIM_HOLD_BARS:
-        return None
-    expected = tuple(
-        reclaimed.timestamp + timedelta(minutes=offset)
-        for offset in range(1, RULE_INVALID_STOP_RECLAIM_HOLD_BARS + 1)
+    late_entry_window = (
+        hold_completed.timestamp > opened_at + V2_ENTRY_ARM_WINDOW
     )
-    floor = candidate.setup_low * RULE_INVALID_STOP_RECLAIM_HOLD_FLOOR
-    if tuple(bar.timestamp for bar in held) != expected:
-        return None
-    if any(bar.close_price < floor for bar in following):
-        return None
-    current = max(ordered, key=lambda bar: bar.timestamp)
-    if current.timestamp != observed_minute or current.close_price < floor:
-        return None
     return {
         "researchOnly": True,
+        "lateEntryWindow": late_entry_window,
         "setupLow": str(candidate.setup_low),
         "sessionOpenPrice": str(first_bar.open_price),
         "reclaimedAt": reclaimed.timestamp.isoformat(),
+        "reclaimAttempts": reclaim_attempts,
         "heldBars": RULE_INVALID_STOP_RECLAIM_HOLD_BARS,
+        "holdCompletedAt": hold_completed.timestamp.isoformat(),
         "holdFloor": str(floor),
-        "referencePrice": str(current.close_price),
-        "intradayStop": str(min(bar.low_price for bar in ordered)),
+        "referencePrice": str(hold_completed.close_price),
+        "hypotheticalEntryAt": (
+            entry_bar.timestamp.isoformat() if entry_bar is not None else None
+        ),
+        "hypotheticalEntryOpen": (
+            str(entry_bar.open_price) if entry_bar is not None else None
+        ),
+        "intradayStop": str(
+            min(
+                bar.low_price
+                for bar in ordered
+                if bar.timestamp <= hold_completed.timestamp
+            )
+        ),
+        "researchWindowCloseAt": research_close_at.isoformat(),
     }
 
 

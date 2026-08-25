@@ -24,6 +24,21 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-023 Extend invalid-stop reclaim research through the session
+
+- Owner: codex
+- Status: DONE
+- Result: keep Rule's authoritative entry cutoff at 09:30 while rescanning every
+  setup-low reclaim after an earlier hold failure through the last 15:20 cycle;
+  label post-window matches separately and persist reclaim/hold timing, next-bar
+  hypothetical entry evidence, and the observed intraday stop without creating
+  a signal, Risk decision, or fill
+- Checks: 416 unit tests; changed-file Ruff and Git whitespace
+- Risks: shadow observations repeat in later cycle ledgers and require
+  `(session, symbol, reclaimedAt)` deduplication for analysis; no profitability
+  or live-trading claim
+- 기록 시각: 2026-08-25 17:42 KST
+
 ### STRAT-022 Stop backfilling Rule entries to the opening price
 
 - Owner: codex
