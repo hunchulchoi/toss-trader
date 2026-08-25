@@ -1062,6 +1062,22 @@ class PaperCycleNoticeTest(unittest.TestCase):
             }
         )
 
+        self.assertEqual(
+            len(
+                payload["cycle"]["middaySnapshotV2"]["portfolios"]["rule"][
+                    "intradayReview"
+                ]["changedFacts"]
+            ),
+            30,
+        )
+        self.assertEqual(
+            len(
+                payload["cycle"]["middaySnapshotV2"]["portfolios"]["hermes"][
+                    "intradayReview"
+                ]["changedFacts"]
+            ),
+            30,
+        )
         self.assertLessEqual(len(json.dumps(payload)), 12000)
 
     def test_comparison_payload_rejects_unknown_briefing_kind(self) -> None:

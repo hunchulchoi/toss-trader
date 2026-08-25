@@ -74,6 +74,27 @@ def _is_setup_v2_missing(error: BaseException) -> bool:
     return str(error).startswith("setup-v2:missing:")
 
 
+def _cash_sizing_detail(
+    detail: Mapping[str, Any],
+    *,
+    ledger_available_cash: Decimal,
+    reserved_cash: Decimal,
+) -> dict[str, Any]:
+    payload = dict(detail)
+    sizing_available_cash = payload.get("availableCash")
+    if sizing_available_cash is None:
+        return payload
+    payload.update(
+        {
+            "availableCash": str(ledger_available_cash),
+            "reservedCash": str(reserved_cash),
+            "sizingAvailableCash": str(sizing_available_cash),
+            "cashMeaning": "sizingAvailableCash=max(availableCash-reservedCash,0)",
+        }
+    )
+    return payload
+
+
 @dataclass(frozen=True, slots=True)
 class SymbolCycleResult:
     symbol: str
@@ -1155,15 +1176,14 @@ class PaperCycleRunner:
                 session, now
             )
         cluster_id = self._v2_strategy.cluster_id(symbol)
+        ledger_available_cash = self._trading.available_cash()
         decision = arm_candidate(
             arm_candidate_input,
             first_completed_bar=first_bar,
             execution_bar=current_bar,
             session_open_at=session.market_open_at,
             equity=performance.equity,
-            available_cash=max(
-                Decimal(0), self._trading.available_cash() - reserved_cash
-            ),
+            available_cash=max(Decimal(0), ledger_available_cash - reserved_cash),
             current_open_heat=self._trading.open_v2_heat() + reserved_open_heat,
             current_cluster_heat=(
                 self._trading.cluster_v2_heat(cluster_id) + reserved_cluster_heat
@@ -1198,7 +1218,11 @@ class PaperCycleRunner:
                         None,
                         shadow_detail,
                     )
-            detail = dict(decision.detail or {})
+            detail = _cash_sizing_detail(
+                decision.detail or {},
+                ledger_available_cash=ledger_available_cash,
+                reserved_cash=reserved_cash,
+            )
             detail.update(_entry_window_detail(session, now))
             return None, decision.reason, None, detail
         if not _entry_arm_window_contains(session, now):

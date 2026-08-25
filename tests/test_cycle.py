@@ -7,7 +7,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from toss_trader.calendar import MarketCalendarService
-from toss_trader.cycle import PaperCycleRunner
+from toss_trader.cycle import PaperCycleRunner, _cash_sizing_detail
 from toss_trader.cycle_state import SqliteCycleStateStore
 from toss_trader.execution import PaperTradingService
 from toss_trader.market_data import MarketCollector, StoredMaStrategy
@@ -115,6 +115,23 @@ class WatchlistCandleClient:
                 ),
             }
         }
+
+
+class CashSizingDetailTest(unittest.TestCase):
+    def test_separates_ledger_cash_from_same_cycle_reservations(self) -> None:
+        detail = _cash_sizing_detail(
+            {"availableCash": "286238.3500", "quantity": "0"},
+            ledger_available_cash=Decimal(1000000),
+            reserved_cash=Decimal("713761.6500"),
+        )
+
+        self.assertEqual(detail["availableCash"], "1000000")
+        self.assertEqual(detail["reservedCash"], "713761.6500")
+        self.assertEqual(detail["sizingAvailableCash"], "286238.3500")
+        self.assertEqual(
+            detail["cashMeaning"],
+            "sizingAvailableCash=max(availableCash-reservedCash,0)",
+        )
 
 
 class FakeV2CycleStrategy:

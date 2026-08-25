@@ -1492,7 +1492,7 @@ def _compact_intraday_review(value: object) -> dict[str, Any] | None:
     for row in sorted(
         (item for item in details if isinstance(item, dict)),
         key=lambda item: (-int(item.get("transitionCount") or 0), str(item.get("symbol") or "")),
-    )[:10]:
+    )[:5]:
         reason_counts = row.get("reasonCounts")
         reason_counts = reason_counts if isinstance(reason_counts, dict) else {}
         compact_details.append(
@@ -1531,7 +1531,7 @@ def _compact_intraday_review(value: object) -> dict[str, Any] | None:
         }
         for item in changed
         if isinstance(item, dict)
-    )[:10]
+    )
     return {
         key: value.get(key)
         for key in (
@@ -1547,6 +1547,8 @@ def _compact_intraday_review(value: object) -> dict[str, Any] | None:
         if key in value
     } | {
         "changedFacts": compact_changed,
+        "changedFactsCount": len(compact_changed),
+        "changedFactsComplete": True,
         "symbolsDetail": tuple(compact_details),
     }
 

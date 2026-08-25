@@ -24,6 +24,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### AI-005 Preserve full changed facts and explain reserved cash
+
+- Owner: codex
+- Status: DONE
+- Result: daily-panel JSON keeps all changedFacts instead of the first ten;
+  setup-v2 rejection details now distinguish actual ledger available cash from
+  same-cycle reserved cash and the remaining sizing cash, including the formula
+- Checks: 417 unit tests; changed-file Ruff and Git whitespace
+- Risks: symbolsDetail remains intentionally bounded to the five most active
+  transitions to keep the full 30-symbol panel payload below 12 KB
+- 기록 시각: 2026-08-26 08:24 KST
+
 ### STRAT-023 Extend invalid-stop reclaim research through the session
 
 - Owner: codex

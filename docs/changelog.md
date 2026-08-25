@@ -5,6 +5,23 @@
 쓴다. 배포 시각이 다르면 실제 배포 시각을 별도로 쓴다.
 매매 권고 아님.
 
+## 2026-08-26
+
+### Hermes changedFacts 완전성·cycle 예약 현금 의미 분리
+
+- 기록 시각: 2026-08-26 08:24 KST
+- `changedFacts`: 30종목 중 앞 10개만 남기던 compact 제한을 제거한다. 전체
+  변화 사실을 유지하고 `changedFactsCount`, `changedFactsComplete=true`를 함께
+  전달한다
+- 현금 의미: setup-v2 sizing 거부 상세의 `availableCash`는 실제 Hermes paper
+  장부 현금으로 고정한다. 같은 cycle 선행 후보 예약액은 `reservedCash`, sizing에
+  실제 사용한 잔액은 `sizingAvailableCash`로 분리하고 산식을 JSON에 명시한다
+- 2026-08-25 사례: `286,238.3500`원은 마감 현금 누수로 단정할 값이 아니라
+  `1,000,000 - 713,761.6500`원인 cycle 내 보수적 예약 후 sizing 잔액이었다
+- payload 제한: 중복이 큰 `symbolsDetail`만 전이 상위 5개로 유지해 Rule/Hermes
+  30종목 changedFacts 전체를 넣어도 12 KB 이하를 지킨다
+- 검증: 417 unit tests, changed-file Ruff, Git whitespace 통과
+
 ## 2026-08-25
 
 ### invalid-stop 재회복 shadow 장중 확장
