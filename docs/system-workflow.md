@@ -184,6 +184,10 @@ Webhook은 접수만 비동기로 반환한다. 완료 여부는 n8n execution�
 
 ### 2. 장전 시장분석·종목발굴
 
+08:30 스캔은 `DISCOVERY_SYMBOLS`의 setup-v2.3 평가다. 장중 Rule D-1 유니버스,
+Hermes Top30, Hunter 10:01 창과 분모가 다르다. 보고 JSON은 Rule 승인과
+Hermes 실험 후보를 나눈다.
+
 ```mermaid
 sequenceDiagram
     participant N as n8n

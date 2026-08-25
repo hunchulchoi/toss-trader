@@ -7,6 +7,7 @@ from typing import Protocol
 
 from .market_data import CollectionResult
 from .screening import MarketAnalysis, analyze_market
+from .setup_screening import hermes_experimental_can_arm
 from .v2_engine import DailySetupCandidate
 
 
@@ -38,6 +39,9 @@ class V2MarketScanResult:
     evaluated_count: int
     blocked_count: int
     blocked_reasons: dict[str, int]
+    hermes_candidates: tuple[DailySetupCandidate, ...]
+    hard_blocked_count: int
+    hermes_hard_blocked_reasons: dict[str, int]
     errors: dict[str, str]
     names: dict[str, str]
     decision_at: datetime
@@ -74,6 +78,7 @@ class V2MarketScanner:
 
         errors: dict[str, str] = {}
         blocked = Counter[str]()
+        hermes_hard = Counter[str]()
         all_symbols = tuple(dict.fromkeys((*benchmark_symbols, *discovery_symbols)))
         discovery_set = set(discovery_symbols)
         try:
@@ -105,8 +110,10 @@ class V2MarketScanner:
                 errors[symbol] = str(error)
 
         candidates: list[DailySetupCandidate] = []
+        hermes_candidates: list[DailySetupCandidate] = []
         evaluated_count = 0
         blocked_count = 0
+        hard_blocked_count = 0
         for symbol in discovery_symbols:
             if symbol in errors:
                 continue
@@ -115,8 +122,11 @@ class V2MarketScanner:
             except ValueError as error:
                 message = str(error)
                 if message.startswith("setup-v2:missing:"):
-                    blocked[message.removeprefix("setup-v2:")] += 1
+                    reason = message.removeprefix("setup-v2:")
+                    blocked[reason] += 1
+                    hermes_hard[reason] += 1
                     blocked_count += 1
+                    hard_blocked_count += 1
                 else:
                     errors[symbol] = message
                 continue
@@ -133,17 +143,17 @@ class V2MarketScanner:
                 )
                 for reason in reasons or ("rejected",):
                     blocked[reason] += 1
+                if hermes_experimental_can_arm(decision):
+                    hermes_candidates.append(candidate)
+                else:
+                    hard_blocked_count += 1
+                    for reason in reasons or ("rejected",):
+                        hermes_hard[reason] += 1
                 continue
             candidates.append(candidate)
 
-        candidates.sort(
-            key=lambda item: (
-                -item.decision.flow_stars,
-                -len(item.decision.setups),
-                abs(item.decision.ma50_distance),
-                item.symbol,
-            )
-        )
+        candidates.sort(key=_candidate_rank)
+        hermes_candidates.sort(key=_candidate_rank)
         return V2MarketScanResult(
             markets=tuple(markets),
             candidates=tuple(candidates[:top_n]),
@@ -151,15 +161,52 @@ class V2MarketScanner:
             evaluated_count=evaluated_count,
             blocked_count=blocked_count,
             blocked_reasons=dict(sorted(blocked.items())),
+            hermes_candidates=tuple(hermes_candidates[:top_n]),
+            hard_blocked_count=hard_blocked_count,
+            hermes_hard_blocked_reasons=dict(sorted(hermes_hard.items())),
             errors=errors,
             names=names,
             decision_at=now,
         )
 
 
+def _candidate_rank(item: DailySetupCandidate) -> tuple[int, int, object, str]:
+    return (
+        -item.decision.flow_stars,
+        -len(item.decision.setups),
+        abs(item.decision.ma50_distance),
+        item.symbol,
+    )
+
+
+def _candidate_payload(
+    item: DailySetupCandidate, *, names: dict[str, str], experimental: bool
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "symbol": item.symbol,
+        "name": names.get(item.symbol, item.symbol),
+        "signalSession": item.signal_session,
+        "closePrice": item.close_price,
+        "setupLow": item.setup_low,
+        "atr14": item.atr14,
+        "setups": [setup.value for setup in item.decision.setups],
+        "rsi14": item.decision.rsi14,
+        "ma50": item.decision.ma50,
+        "ma200": item.decision.ma200,
+        "ma50Distance": item.decision.ma50_distance,
+        "flowStars": item.decision.flow_stars,
+        "valuationTier": item.decision.valuation_tier.value,
+        "confidenceMultiplier": item.decision.confidence_multiplier,
+    }
+    if experimental:
+        payload["referenceViolations"] = list(item.decision.violations)
+    return payload
+
+
 def v2_market_scan_to_dict(result: V2MarketScanResult) -> dict[str, object]:
     return {
         "entryStrategy": "setup-v2.3-independent-daily",
+        "scanScope": "discovery-symbols",
         "decisionAt": result.decision_at,
         "markets": [
             {
@@ -179,26 +226,20 @@ def v2_market_scan_to_dict(result: V2MarketScanResult) -> dict[str, object]:
             "evaluated": result.evaluated_count,
             "approved": len(result.candidates),
             "blocked": result.blocked_count,
+            "ruleApproved": len(result.candidates),
+            "hermesExperimental": len(result.hermes_candidates),
+            "hermesEligible": len(result.candidates) + len(result.hermes_candidates),
+            "hardBlocked": result.hard_blocked_count,
         },
         "candidates": [
-            {
-                "symbol": item.symbol,
-                "name": result.names.get(item.symbol, item.symbol),
-                "signalSession": item.signal_session,
-                "closePrice": item.close_price,
-                "setupLow": item.setup_low,
-                "atr14": item.atr14,
-                "setups": [setup.value for setup in item.decision.setups],
-                "rsi14": item.decision.rsi14,
-                "ma50": item.decision.ma50,
-                "ma200": item.decision.ma200,
-                "ma50Distance": item.decision.ma50_distance,
-                "flowStars": item.decision.flow_stars,
-                "valuationTier": item.decision.valuation_tier.value,
-                "confidenceMultiplier": item.decision.confidence_multiplier,
-            }
+            _candidate_payload(item, names=result.names, experimental=False)
             for item in result.candidates
         ],
+        "hermesCandidates": [
+            _candidate_payload(item, names=result.names, experimental=True)
+            for item in result.hermes_candidates
+        ],
         "blockedReasons": result.blocked_reasons,
+        "hermesHardBlockedReasons": result.hermes_hard_blocked_reasons,
         "errors": result.errors,
     }

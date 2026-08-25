@@ -24,6 +24,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-024 Split pre-market scan into Rule and Hermes readiness
+
+- Owner: cursor
+- Status: DONE
+- Result: 08:30 v2.3 scan now reports Rule approvals and Hermes experimental
+  candidates separately, labels the fixed discovery pool, and tells Hermes that
+  Hunter is session-only
+- Checks: targeted unit tests for screening, setup gate, automation prompt, n8n
+- Risks: scan still uses `DISCOVERY_SYMBOLS`, not the 08:35 D-1 freeze; live
+  Telegram copy changes only after n8n/automation deploy
+- 기록 시각: 2026-08-26 08:53 KST
+
 ### AI-005 Preserve full changed facts and explain reserved cash
 
 - Owner: codex

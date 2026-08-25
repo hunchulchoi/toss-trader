@@ -269,8 +269,10 @@ DISCOVERY_SYMBOLS=005930,000660,373220,207940,005380,000270,068270,105560,055550
 DISCOVERY_TOP_N=10
 ```
 
-평일 `08:30 KST` n8n workflow가 시장 상태와 상위 후보를 Telegram topic에
-보낸다. 이 단계는 주문이나 paper 체결을 하지 않는다.
+평일 `08:30 KST` n8n workflow가 벤치 레짐과 setup-v2.3 준비도를 Telegram에
+보낸다. 스캔 대상은 `DISCOVERY_SYMBOLS`다. 장중 Rule D-1 유니버스·Hermes
+Top30·Hunter와 분모가 다르다. Rule 승인과 Hermes 실험 후보를 나눠 표시한다.
+이 단계는 주문이나 paper 체결을 하지 않는다.
 
 사이클은 각 종목을 독립 처리합니다. 한 종목 수집이 실패해도 다음 종목을
 계속 처리하고 `summary.failed`를 증가시키며 exit code `3`을 반환합니다.

@@ -13,12 +13,14 @@ from toss_trader.setup_screening import (
     OfficialSetupContextFactory,
     PositionSizingPolicy,
     SetupContext,
+    SetupDecision,
     SetupType,
     SlippageAssumption,
     StrictSetupV2EntryGate,
     ValuationEvidence,
     ValuationTier,
     evaluate_setup,
+    hermes_experimental_can_arm,
     position_size_reference,
     summarize_flow,
     valuation_tier,
@@ -367,6 +369,43 @@ class SetupScreeningTest(unittest.TestCase):
 
         self.assertFalse(result.approved)
         self.assertIn("missing-price-setup", result.violations)
+
+    def test_hermes_experimental_allows_price_reference_violations_only(self) -> None:
+        def decision(
+            *,
+            approved: bool = False,
+            violations: tuple[str, ...] = (),
+            missing_checks: tuple[str, ...] = (),
+        ) -> SetupDecision:
+            return SetupDecision(
+                symbol="005930",
+                approved=approved,
+                setups=(),
+                violations=violations,
+                missing_checks=missing_checks,
+                rsi14=Decimal(50),
+                ma50=Decimal(100),
+                ma200=Decimal(90),
+                ma50_distance=Decimal("0.01"),
+                flow_stars=0,
+                flow_summary=None,
+                valuation_tier=ValuationTier.B,
+                confidence_multiplier=Decimal(1),
+                proposed_confidence_multiplier=Decimal(1),
+            )
+
+        self.assertTrue(hermes_experimental_can_arm(decision(approved=True)))
+        self.assertTrue(
+            hermes_experimental_can_arm(
+                decision(violations=("missing-price-setup", "rsi-chase"))
+            )
+        )
+        self.assertFalse(
+            hermes_experimental_can_arm(decision(violations=("event-imminent",)))
+        )
+        self.assertFalse(
+            hermes_experimental_can_arm(decision(missing_checks=("flow-history",)))
+        )
 
     def test_complete_flow_history_without_reversal_is_soft_confirmation(self) -> None:
         history = pullback_candles()

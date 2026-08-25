@@ -95,6 +95,19 @@ class SetupDecision:
     proposed_confidence_multiplier: Decimal
 
 
+HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS = frozenset(
+    {"falling-knife", "missing-price-setup", "rsi-chase"}
+)
+
+
+def hermes_experimental_can_arm(decision: SetupDecision) -> bool:
+    if decision.approved:
+        return True
+    if decision.missing_checks:
+        return False
+    return set(decision.violations) <= HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS
+
+
 @dataclass(frozen=True, slots=True)
 class PriceSetupEvidence:
     setups: tuple[SetupType, ...]

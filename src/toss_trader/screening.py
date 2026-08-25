@@ -242,16 +242,7 @@ def format_market_scan_report(
         if isinstance(item, dict)
     ]
     candidate_lines = (
-        [
-            f"{index}. {_candidate_label(item)}\n"
-            f"   셋업 {', '.join(item.get('setups', [])) or '?'}\n"
-            f"   수급 {'⭐' * int(item.get('flowStars', 0)) or '-'} · "
-            f"RSI {item.get('rsi14', '?')} · "
-            f"50MA 이격 {_percent(item.get('ma50Distance'))}"
-            for index, item in enumerate(
-                (item for item in candidates if isinstance(item, dict)), start=1
-            )
-        ]
+        _v2_candidate_lines(candidates)
         if is_v2
         else [
             f"{index}. {_candidate_label(item)}\n"
@@ -264,6 +255,10 @@ def format_market_scan_report(
         ]
     )
     readiness = ""
+    candidate_section = (
+        f"🔎 {f'{strategy_label} 후보' if is_v2 else '발굴 종목'}\n"
+        f"{'\n\n'.join(candidate_lines) if candidate_lines else '조건 충족 종목 없음'}\n\n"
+    )
     if is_v2:
         summary = scan.get("candidateSummary")
         summary = summary if isinstance(summary, dict) else {}
@@ -273,23 +268,75 @@ def format_market_scan_report(
             f"• {reason}: {count}"
             for reason, count in sorted(blocked.items(), key=lambda item: (-item[1], item[0]))[:5]
         ]
+        split = "ruleApproved" in summary or "hermesExperimental" in summary
+        counts = (
+            f"스캔 {summary.get('scanned', 0)} · 평가 {summary.get('evaluated', 0)} · "
+            f"Rule {summary.get('ruleApproved', 0)} · "
+            f"Hermes 실험 {summary.get('hermesExperimental', 0)} · "
+            f"하드차단 {summary.get('hardBlocked', 0)}"
+            if split
+            else (
+                f"스캔 {summary.get('scanned', 0)} · 평가 {summary.get('evaluated', 0)} · "
+                f"승인 {summary.get('approved', 0)} · "
+                f"차단 {summary.get('blocked', 0)}"
+            )
+        )
+        scope = ""
+        if scan.get("scanScope") == "discovery-symbols":
+            scope = (
+                "풀: 고정 discovery. 장중 Rule은 D-1 셋업 15, Hermes는 Top30. "
+                "Hunter는 10:01~10:05.\n"
+            )
         readiness = (
             f"🧭 {strategy_label} 준비도\n"
-            f"스캔 {summary.get('scanned', 0)} · 평가 {summary.get('evaluated', 0)} · "
-            f"승인 {summary.get('approved', 0)} · "
-            f"차단 {summary.get('blocked', 0)}\n"
+            f"{counts}\n"
+            f"{scope}"
             f"{'\n'.join(reason_lines) if reason_lines else '차단 사유 없음'}\n\n"
         )
+        if split:
+            hermes_items = (
+                scan.get("hermesCandidates")
+                if isinstance(scan.get("hermesCandidates"), list)
+                else []
+            )
+            hermes_lines = _v2_candidate_lines(
+                [item for item in hermes_items if isinstance(item, dict)]
+            )
+            candidate_section = (
+                f"🔎 Rule 후보\n"
+                f"{'\n\n'.join(candidate_lines) if candidate_lines else '조건 충족 종목 없음'}\n\n"
+                f"🔎 Hermes 실험 후보\n"
+                f"{'\n\n'.join(hermes_lines) if hermes_lines else '조건 충족 종목 없음'}\n\n"
+            )
     return (
         "📊 시장 분석\n"
         f"{'\n\n'.join(market_lines) if market_lines else '분석 결과 없음'}\n\n"
         f"{readiness}"
-        f"🔎 {f'{strategy_label} 후보' if is_v2 else '발굴 종목'}\n"
-        f"{'\n\n'.join(candidate_lines) if candidate_lines else '조건 충족 종목 없음'}\n\n"
+        f"{candidate_section}"
         "💬 Hermes 의견\n"
         f"{opinion[:1500]}\n\n"
         f"오류 {len(errors)}건"
     )
+
+
+def _v2_candidate_lines(candidates: list[object]) -> list[str]:
+    lines: list[str] = []
+    for index, item in enumerate(
+        (entry for entry in candidates if isinstance(entry, dict)), start=1
+    ):
+        refs = item.get("referenceViolations")
+        reference = ""
+        if isinstance(refs, list) and refs:
+            reference = f"\n   참고 위반 {', '.join(str(value) for value in refs)}"
+        lines.append(
+            f"{index}. {_candidate_label(item)}\n"
+            f"   셋업 {', '.join(item.get('setups', [])) or '?'}\n"
+            f"   수급 {'⭐' * int(item.get('flowStars', 0)) or '-'} · "
+            f"RSI {item.get('rsi14', '?')} · "
+            f"50MA 이격 {_percent(item.get('ma50Distance'))}"
+            f"{reference}"
+        )
+    return lines
 
 
 def _market_label(item: dict[str, object]) -> str:

@@ -34,6 +34,7 @@ from .setup_screening import (
     EntryGateDecision,
     PositionSizingPolicy,
     SetupType,
+    hermes_experimental_can_arm,
     position_size_reference,
 )
 from .strategy import MaCrossoverEvaluation, ma_trend_continuation_signal
@@ -60,9 +61,6 @@ HERMES_HUNTER_STOP_DISTANCE_MAX = Decimal("0.03")
 HERMES_HUNTER_LIQUIDITY_PARTICIPATION_MAX = Decimal("0.10")
 HERMES_HUNTER_TRADING_VALUE_FLOOR = Decimal("0.50")
 HERMES_HUNTER_RECLAIM_HOLD_FLOOR = Decimal("0.995")
-HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS = frozenset(
-    {"falling-knife", "missing-price-setup", "rsi-chase"}
-)
 HERMES_EXPERIMENTAL_SIZING_POLICY = PositionSizingPolicy(
     per_trade_risk_rate=Decimal("0.02"),
     max_open_heat_rate=Decimal("0.06"),
@@ -1488,7 +1486,7 @@ def _v2_candidate_can_arm(
         return True
     if not experimental_strategy_reference or decision.missing_checks:
         return False
-    return set(decision.violations) <= HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS
+    return hermes_experimental_can_arm(decision)
 
 
 def _persisted_v2_plan(

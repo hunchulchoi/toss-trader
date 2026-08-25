@@ -185,6 +185,54 @@ class DiscoveryTest(unittest.TestCase):
         self.assertIn("셋업 pullback, flow-reversal", report)
         self.assertIn("수급 ⭐⭐ · RSI 48.1 · 50MA 이격 +2.00%", report)
 
+    def test_formats_rule_and_hermes_experimental_split(self) -> None:
+        report = format_market_scan_report(
+            {
+                "exitCode": 0,
+                "scan": {
+                    "entryStrategy": "setup-v2.3-independent-daily",
+                    "scanScope": "discovery-symbols",
+                    "markets": [],
+                    "candidateSummary": {
+                        "scanned": 15,
+                        "evaluated": 15,
+                        "approved": 0,
+                        "blocked": 15,
+                        "ruleApproved": 0,
+                        "hermesExperimental": 8,
+                        "hermesEligible": 8,
+                        "hardBlocked": 7,
+                    },
+                    "candidates": [],
+                    "hermesCandidates": [
+                        {
+                            "symbol": "035420",
+                            "name": "NAVER",
+                            "setups": [],
+                            "flowStars": 0,
+                            "rsi14": "55.0",
+                            "ma50Distance": "0.04",
+                            "referenceViolations": ["missing-price-setup"],
+                        }
+                    ],
+                    "blockedReasons": {
+                        "violation:missing-price-setup": 14,
+                        "violation:event-imminent": 7,
+                    },
+                    "errors": {},
+                },
+            },
+            opinion="Rule 승인은 0이지만 Hermes 관찰 후보는 있다.",
+        )
+
+        self.assertIn("Rule 0 · Hermes 실험 8 · 하드차단 7", report)
+        self.assertIn("고정 discovery", report)
+        self.assertIn("Hunter는 10:01~10:05", report)
+        self.assertIn("🔎 Rule 후보", report)
+        self.assertIn("🔎 Hermes 실험 후보", report)
+        self.assertIn("1. NAVER (035420)", report)
+        self.assertIn("참고 위반 missing-price-setup", report)
+
     def test_requires_non_empty_llm_opinion(self) -> None:
         with self.assertRaisesRegex(ValueError, "LLM opinion"):
             format_market_scan_report(

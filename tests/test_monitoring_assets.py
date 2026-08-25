@@ -468,6 +468,10 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("PIT 수급 6세션은 필수", encoded)
         self.assertIn("v2.3에서 가점 신호", encoded)
         self.assertIn("시스템 장애인지, 데이터 부족인지, 조건 미통과인지", encoded)
+        self.assertIn("ruleApproved", encoded)
+        self.assertIn("hermesExperimental", encoded)
+        self.assertIn("discovery-symbols", encoded)
+        self.assertIn("10:01~10:05", encoded)
         for branch in (
             "시장 스캔 정상?",
             "발굴 후보 있음?",

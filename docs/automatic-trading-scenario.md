@@ -85,13 +85,18 @@ workflow JSON과 Git에는 secret을 저장하지 않는다.
 
 ### 1. 장전 시장분석·종목발굴
 
-- 평일 `08:30 KST` 실행
-- `MARKET_BENCHMARK_SYMBOLS`의 일봉 60개로 시장 상태 판정
-- `DISCOVERY_SYMBOLS`의 일봉 60개로 후보 순위 계산
+- 평일 `08:30 KST` 실행. 주문·paper 체결 없음
+- `MARKET_BENCHMARK_SYMBOLS` 일봉 60개로 시장 레짐만 참고 표시
+- `DISCOVERY_SYMBOLS` 일봉 200개로 setup-v2.3을 평가. 이 목록은 고정 discovery다
+- 장중 Rule 풀은 08:35 D-1 setup-first 최대 15종, Hermes는 적격 Top30.
+  장전 스캔 분모와 다르다
+- 보고는 Rule 승인(`approved`)과 Hermes 실험 후보(`hermesExperimental`)를 나눈다.
+  `missing-price-setup`·`rsi-chase`·`falling-knife`는 Rule 탈락·Hermes 참고다.
+  `event-imminent`와 필수 데이터 결손은 양쪽 하드 차단
+- Hunter 눌림 재돌파는 장중 `10:01~10:05`이며 이 리포트에 없다
 - 결과를 `TossTraderMarketScan`으로 Telegram topic에 전송
-- 주문이나 paper 체결은 하지 않음
 
-시장 상태 규칙:
+시장 상태 규칙(벤치마크 참고, 진입 게이트 아님):
 
 | 상태 | 조건 |
 |---|---|
@@ -99,10 +104,9 @@ workflow JSON과 Git에는 secret을 저장하지 않는다.
 | `RISK_OFF` | 종가 < MA20 < MA60, 20일 모멘텀 음수 |
 | `NEUTRAL` | 그 외 |
 
-종목 후보는 `종가 > MA20 > MA60`이고 20일 모멘텀이 양수인 종목만 포함한다.
-점수는 `20일 모멘텀(%) + 최근 거래량/20일 평균 거래량`이며 상위
-`DISCOVERY_TOP_N`개를 보낸다. 현재 구현은 KRX 전체 자동 열거가 아니라 명시된
-discovery universe 안에서 발굴한다.
+종목 후보는 MA 점수가 아니라 전일 완결 일봉의 눌림/과매도 반전·PIT·이벤트다.
+`DISCOVERY_TOP_N`은 Rule 승인 후보 표시 상한이다. KRX 전체 열거가 아니라
+명시된 discovery 목록 안에서 평가한다. 장중 membership은 이 목록을 쓰지 않는다.
 
 ### 2. 장중 paper cycle
 
