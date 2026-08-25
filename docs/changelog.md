@@ -20,7 +20,7 @@
   재회복 뒤 +7.96%였지만 1주 위험이 0.5% 예산을 넘어 수량 0. slippage만
   반영한 2건 관측이며 성과 근거가 아니다
 - 검증: 416 unit tests, changed-file Ruff, Git whitespace 통과
-- 배포: 미배포
+- 배포 시각: 2026-08-25 17:51 KST
 
 ### Rule 현재 완결봉 실행가와 invalid-stop 회복 shadow
 
@@ -41,7 +41,7 @@
   `4762.3800→4752.3750`, `8764.3800→8574.2850`으로 교정된다. invalid-stop
   2종은 09:30까지 회복 shadow 조건도 통과하지 않아 강제 매수는 늘지 않는다
 - 검증: 414 unit tests, changed-file Ruff, Git whitespace 통과
-- 배포: 미배포
+- 배포 시각: 2026-08-25 17:51 KST
 
 ### Hunter 이중 LLM 승인 제거와 유동성 수량 제한
 
@@ -58,7 +58,7 @@
 - 설명력: 최종 Hermes payload에 최근/직전 평균 거래대금, 가속, 주문 참여율을
   넣고 허용된 veto code와 수치 evidence만 요구한다
 - 검증: 411 unit tests, changed-file Ruff, Git whitespace 통과
-- 배포: 미배포
+- 배포 시각: 2026-08-25 17:51 KST
 
 ### 09:30 경계 복구와 Hermes Hunter paper 진입
 
@@ -77,7 +77,7 @@
 - 검증: 408 unit tests, changed-file Ruff, Git whitespace 통과
 - 한계: Hunter 실제 paper 성과 근거는 아직 없고, 목표가는 후보 늦은 진입 차단에
   사용한다. 진입 뒤 청산은 기존 hard-stop/장부 mark-to-market 경로를 사용한다
-- 배포: 미배포
+- 배포 시각: 2026-08-25 17:51 KST
 
 ## 2026-08-24
 
