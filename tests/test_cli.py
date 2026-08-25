@@ -14,6 +14,7 @@ from toss_trader.cli import (
     _extend_cycle_snapshot,
     _hermes_candidate_snapshot,
     _intraday_backfill_start_cursor,
+    _momentum_collection_symbols,
     _seoul_day_window,
     _session_candle_count,
     build_parser,
@@ -117,6 +118,24 @@ class IntradaySampleCollectionTest(unittest.TestCase):
             [("069500", "1m", 200), ("229200", "1m", 200)],
         )
         self.assertEqual(result["extraSymbols"], ["069500", "229200"])
+
+    def test_momentum_evaluation_collects_full_research_pool(self) -> None:
+        self.assertEqual(
+            _momentum_collection_symbols(
+                research_pool=("AAA", "BBB", "CCC"),
+                benchmark_symbols=("069500", "229200"),
+                evaluation_due=True,
+            ),
+            ("069500", "229200", "AAA", "BBB", "CCC"),
+        )
+        self.assertEqual(
+            _momentum_collection_symbols(
+                research_pool=("AAA", "BBB"),
+                benchmark_symbols=("069500", "229200"),
+                evaluation_due=False,
+            ),
+            ("069500", "229200"),
+        )
 
     def test_builds_expanded_hermes_pool_and_keeps_held_symbol(self) -> None:
         base = PaperCycleSnapshot(

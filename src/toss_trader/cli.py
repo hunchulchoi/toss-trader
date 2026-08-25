@@ -1246,6 +1246,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
     momentum_research_pool: tuple[str, ...] = ()
     momentum_markets: dict[str, str] = {}
     momentum_context_ready = False
+    momentum_evaluation_due = False
     momentum_session: MarketSession | None = None
     with ExitStack() as stack:
         client = _client(settings)
@@ -1397,6 +1398,11 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                     )
                     momentum_session = calendar.regular_session("KR", now=now)
                     momentum_context_ready = True
+                    if time(10, 0) <= local_time < time(10, 6):
+                        momentum_evaluation_due = not _momentum_shadow_recorded(
+                            paper_ledger,
+                            session_date=momentum_session.business_date.isoformat(),
+                        )
                     if local_time <= time(10, 0):
                         momentum_ranked_symbols = _momentum_ranked_symbols(
                             client,
@@ -1427,7 +1433,11 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                         (*universe_result.collection_symbols, *momentum_ranked_symbols)
                     )
                 ),
-                extra_symbols=settings.market_benchmark_symbols,
+                extra_symbols=_momentum_collection_symbols(
+                    research_pool=momentum_research_pool,
+                    benchmark_symbols=settings.market_benchmark_symbols,
+                    evaluation_due=momentum_evaluation_due,
+                ),
                 extra_count=SESSION_MINUTE_FETCH_COUNT,
             )
             intraday_sample["momentumRankingSymbols"] = list(
@@ -2096,6 +2106,36 @@ def _record_momentum_shadow_once(
     payload["auditRunId"] = run_id
     payload["cacheHit"] = False
     return run_id
+
+
+def _momentum_shadow_recorded(
+    ledger: Any, *, session_date: str
+) -> bool:
+    return any(
+        run.get("status") == "succeeded"
+        and isinstance(run.get("details"), Mapping)
+        and run["details"].get("sessionDate") == session_date
+        and run["details"].get("ruleVersion") == MOMENTUM_SHADOW_RULE_VERSION
+        for run in ledger.recent_automation_runs(
+            limit=100, run_type="momentum-shadow"
+        )
+    )
+
+
+def _momentum_collection_symbols(
+    *,
+    research_pool: Sequence[str],
+    benchmark_symbols: Sequence[str],
+    evaluation_due: bool,
+) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            (
+                *benchmark_symbols,
+                *(research_pool if evaluation_due else ()),
+            )
+        )
+    )
 
 
 def _collect_intraday_sample(
