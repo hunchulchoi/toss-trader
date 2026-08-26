@@ -44,6 +44,15 @@
 - Hermes poll 등록 시각: 2026-08-26 09:45 KST. `toss-trader-hourly-panel`
   (`e68aa6439712`)을 UTC `5-19 1-5 * * 1-5` no-agent로 등록했다. 10~14시
   queue는 정각 후 5~19분에 소비하고, 15:03 queue는 기존 close poll이 소비한다
+- 첫 운영 실행: 2026-08-26 10:03 KST. 한전기술·한미약품 2건을
+  `hindsight-review-candidate`로 queue 등록
+- cron 장애·복구: root로 job을 생성해 `jobs.json` 소유권이 root가 되면서
+  10:05 tick이 실패했다. 2026-08-26 10:31 KST `hermes:hermes`로 복구하고
+  gateway 사용자 tick을 실행했다. 이후 모든 cron 관리 명령은 `--user hermes`,
+  `HOME=/opt/data`를 강제한다
+- 심층분석 완료: 2026-08-26 10:32 KST. Hermes 15,636 token, panel succeeded,
+  timeline 본문 저장, Alertmanager `TossTraderHourlyMarketWatch`의 telegram receiver
+  수락 확인
 
 ### 장전 스캔을 Rule/Hermes/Hunter 계약에 맞춤
 

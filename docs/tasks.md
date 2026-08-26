@@ -35,10 +35,11 @@ No tasks awaiting review.
 - Checks: 434 integrated unit tests; live n8n node/full-workflow validation;
   pinned execution `4122`; production service health and web/runner smoke
 - Risks: the watched sample is bounded rather than market-wide; later price
-  strength is review evidence, not proof of a missed executable entry; first
-  live-data scheduled execution remains pending at 10:03 KST
+  strength is review evidence, not proof of a missed executable entry
 - 운영 배포 시각: 2026-08-26 09:25 KST; n8n 게시 확인 시각: 09:36 KST;
   운영 health 확인 시각: 09:38 KST; Hermes hourly poll 등록 시각: 09:45 KST
+- 첫 운영 완료 시각: 2026-08-26 10:32 KST. 후보 2건, 15,636 token,
+  timeline·Alertmanager telegram receiver 확인
 - 기록 시각: 2026-08-26 09:13 KST
 
 ### STRAT-024 Split pre-market scan into Rule and Hermes readiness

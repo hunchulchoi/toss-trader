@@ -97,6 +97,16 @@ mode: --no-agent
 delivery: local
 ```
 
+Cron 관리 명령은 gateway와 같은 사용자·persistent home으로 실행한다. root로
+`cron create/edit`를 실행하면 `/opt/data/cron/jobs.json`이 root 소유가 되어 모든
+panel tick이 중단된다.
+
+```text
+docker exec --user hermes -e HOME=/opt/data \
+  -e XDG_CONFIG_HOME=/opt/data/.config hermes \
+  /opt/hermes/.venv/bin/hermes cron <command>
+```
+
 The three polls use the same idempotent claim endpoint and are silent when no
 job exists. The closing poll also consumes the 15:03 hourly queue, avoiding an
 overlapping fourth poll window. A model or persistence failure marks the
@@ -110,5 +120,7 @@ is unrelated and remains `false`; the panel cannot place orders.
 - exactly seven unique opinion stages exist for the panel.
 - every stage has non-negative provider token fields.
 - the final `judge:hermes` content matches the Telegram report.
+- `cron status` has a recent successful tick and `/opt/data/cron/jobs.json` is
+  owned by `hermes:hermes`.
 - tool-backed claims name the MCP topic or official URL and preserve the panel
   cutoff.
