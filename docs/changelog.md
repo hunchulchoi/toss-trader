@@ -13,6 +13,9 @@
 - 원인: cutoff 패널 근거 도구 추가로 `/healthz`가 `tools=4`를 반환하지만 compose는
   옛 `tools=3`을 기대해 실제 응답 정상인 container를 `unhealthy`로 표시했다
 - 수정: compose healthcheck와 회귀 테스트를 4도구 계약에 맞춘다
+- 배포 시각: 2026-08-26 09:37 KST. `paper-mcp`만 재생성
+- 운영 확인: 2026-08-26 09:38 KST. `/healthz` `tools=4`, container
+  `healthy`, restart 0
 
 ### 시간별 시장 특이사항 검토와 Hermes timeline 오늘 기본값
 
@@ -29,8 +32,15 @@
 - 화면: deterministic 점검과 Hermes 의견/token을 timeline의 `시간별 감시` 대화로
   표시한다. Hermes 대화 날짜는 서울 기준 오늘이 기본이며 자료가 0건이어도 오늘
   선택지를 유지한다
-- 검증: 431 unit tests, n8n node·workflow validation, changed-file Ruff와
-  Git whitespace. workflow publish·서비스 배포는 별도다
+- 검증: 통합 main 434 unit tests, n8n node·workflow validation,
+  changed-file Ruff와 Git whitespace 통과
+- 배포 시각: 2026-08-26 09:25 KST. Infisical prod 주입으로 `automation`,
+  `paper-mcp`, `timeline` 재빌드·기동. `TRADING_ENABLED=false` 유지
+- n8n 게시 확인 시각: 2026-08-26 09:36 KST. workflow
+  `zBcy9I3HGB0uAwko`, active=draft, 11 nodes, Asia/Seoul, shared error workflow.
+  모든 HTTP를 pin한 execution `4122` 성공 후 게시
+- 운영 확인: 2026-08-26 09:38 KST. 세 서비스 healthy, runner checksum 일치,
+  Hermes 웹의 오늘 기본 날짜·시간별 감시 필터 확인. 첫 실데이터 예약은 10:03 KST
 
 ### 장전 스캔을 Rule/Hermes/Hunter 계약에 맞춤
 

@@ -32,11 +32,13 @@ No tasks awaiting review.
   gate transitions every hour from 10:03 through 15:03; persist every review in
   the Hermes timeline, queue one cutoff-bound Hermes investigation only for a
   new or changed anomaly, and send only that judgment to Telegram
-- Checks: 431 unit tests; live n8n node and full-workflow validation;
-  changed-file Ruff and Git whitespace
+- Checks: 434 integrated unit tests; live n8n node/full-workflow validation;
+  pinned execution `4122`; production service health and web/runner smoke
 - Risks: the watched sample is bounded rather than market-wide; later price
-  strength is review evidence, not proof of a missed executable entry; the
-  checked-in workflow remains inactive until a separate authorized publish
+  strength is review evidence, not proof of a missed executable entry; first
+  live-data scheduled execution remains pending at 10:03 KST
+- 운영 배포 시각: 2026-08-26 09:25 KST; n8n 게시 확인 시각: 09:36 KST;
+  운영 health 확인 시각: 09:38 KST
 - 기록 시각: 2026-08-26 09:13 KST
 
 ### STRAT-024 Split pre-market scan into Rule and Hermes readiness
