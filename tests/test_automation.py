@@ -188,10 +188,52 @@ class WorkflowTaskServiceTest(unittest.TestCase):
                 "/workflow/hourly-panel-complete",
                 {"panelId": first["panelId"], "opinion": opinion},
             )
+            audit(
+                AutomationRunLog(
+                    run_type="hourly_market_watch",
+                    status="succeeded",
+                    stage="shadow-fixture",
+                    started_at=now,
+                    finished_at=now,
+                    details={
+                        "businessDate": "2026-08-26",
+                        "symbol": "005930",
+                        "marketCutoff": "2026-08-26T11:20:00+09:00",
+                        "assistant": "005930 shadow 재생 결론",
+                    },
+                )
+            )
             second = service.run(
                 "/workflow/hourly-panel-enqueue",
                 {**payload, "_workflow": {"executionId": "hourly-2"}},
             )
+            changed_payload = {
+                "observedAt": "2026-08-26T12:03:00+09:00",
+                "rule": {
+                    "exitCode": 0,
+                    "cycle": _hourly_cycle(
+                        portfolio_id="rule",
+                        symbol_move="0.0700",
+                        reason="setup-v2:invalid-stop",
+                    ),
+                },
+                "hermes": {
+                    "exitCode": 0,
+                    "cycle": _hourly_cycle(
+                        portfolio_id="hermes",
+                        symbol_move="0.0700",
+                        reason="setup-v2:violation:missing-price-setup",
+                    ),
+                },
+            }
+            third = service.run(
+                "/workflow/hourly-panel-enqueue",
+                {
+                    **changed_payload,
+                    "_workflow": {"executionId": "hourly-3"},
+                },
+            )
+            changed_claim = service.run("/workflow/daily-panel-claim", {})
             ledger = PaperLedger(path)
             try:
                 token_row = ledger._connection.execute(
@@ -207,6 +249,20 @@ class WorkflowTaskServiceTest(unittest.TestCase):
         self.assertEqual(token_row[0], 120)
         self.assertFalse(second["queued"])
         self.assertEqual(second["reason"], "unchanged-anomaly")
+        self.assertTrue(third["queued"])
+        prior = changed_claim["context"]["cycle"]["hourlyWatchV1"][
+            "priorHourlyReviewsV1"
+        ]
+        self.assertEqual(prior["included"], 2)
+        self.assertEqual(prior["sameBusinessDate"], "2026-08-26")
+        self.assertEqual(
+            {item["conclusion"] for item in prior["items"]},
+            {
+                "[시간별 결론] 005930 사후 검토 필요",
+                "005930 shadow 재생 결론",
+            },
+        )
+        self.assertIn("do not restate", prior["instruction"])
 
     def test_hourly_watch_does_not_queue_normal_market(self) -> None:
         context = _hourly_market_payload(

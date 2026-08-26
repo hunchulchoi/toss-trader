@@ -542,6 +542,9 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("_hourly_call(context, panel_id=panel_id)", source)
         self.assertIn('"web,toss-panel"', source)
         self.assertIn("hindsight-review-candidate", source)
+        self.assertIn("priorHourlyReviewsV1", source)
+        self.assertIn("이전 결론 유지", source)
+        self.assertIn("새로 바뀐 핵심 사실 없음", source)
         self.assertIn("/workflow/hourly-panel-complete", source)
         self.assertIn("/workflow/hourly-panel-fail", source)
 

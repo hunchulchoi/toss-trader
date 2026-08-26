@@ -11,7 +11,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -65,6 +65,8 @@ HOURLY_MARKET_MOVE = Decimal("0.02")
 HOURLY_MARKET_DIVERGENCE = Decimal("0.03")
 HOURLY_MISSED_MOVE = Decimal("0.03")
 HOURLY_MISSED_RELATIVE_MOVE = Decimal("0.02")
+HOURLY_PRIOR_REVIEW_LIMIT = 4
+HOURLY_PRIOR_CONCLUSION_LIMIT = 700
 
 
 class AutomationBusy(RuntimeError):
@@ -1194,6 +1196,13 @@ class WorkflowTaskService:
         ledger = self._required_panel_ledger()
         panel_id: str | None = None
         try:
+            watch["priorHourlyReviewsV1"] = _prior_hourly_reviews(
+                ledger,
+                business_date=business_date,
+                observed_at=_required_aware_timestamp(
+                    watch["observedAt"], "hourlyWatchV1.observedAt"
+                ),
+            )
             previous = _latest_hourly_fingerprint(ledger, business_date)
             if anomalies and previous != fingerprint:
                 panel_id = ledger.enqueue_daily_panel(
@@ -1999,8 +2008,103 @@ def _latest_hourly_fingerprint(
         if str(details.get("businessDate") or "") != business_date:
             continue
         value = details.get("fingerprint")
-        return str(value) if isinstance(value, str) else None
+        if isinstance(value, str):
+            return value
     return None
+
+
+def _prior_hourly_reviews(
+    ledger: PaperLedgerStore,
+    *,
+    business_date: str,
+    observed_at: datetime,
+) -> dict[str, Any]:
+    day = date.fromisoformat(business_date)
+    candidates = ledger.recent_hourly_panel_reviews(
+        business_date=day,
+        before=observed_at,
+        limit=HOURLY_PRIOR_REVIEW_LIMIT,
+    )
+    for run in ledger.recent_automation_runs(
+        limit=50, run_type=HOURLY_WATCH_RUN_TYPE
+    ):
+        stage = str(run.get("stage") or "")
+        if stage in {"queued", "no-anomaly", "unchanged-anomaly"}:
+            continue
+        details = run.get("details")
+        if not isinstance(details, dict):
+            continue
+        assistant = details.get("assistant")
+        if not isinstance(assistant, str) or not assistant.strip():
+            continue
+        finished_at = _required_aware_timestamp(run.get("finishedAt"), "finishedAt")
+        run_day = str(details.get("businessDate") or "")
+        if not run_day:
+            run_day = finished_at.astimezone(ZoneInfo("Asia/Seoul")).date().isoformat()
+        if run_day != business_date or finished_at >= observed_at:
+            continue
+        symbol = details.get("symbol")
+        candidates.append(
+            {
+                "reviewId": str(run.get("runId") or ""),
+                "source": "hourly-audit",
+                "observedAt": str(
+                    details.get("marketCutoff") or finished_at.isoformat()
+                ),
+                "finishedAt": finished_at.isoformat(),
+                "fingerprint": str(details.get("fingerprint") or ""),
+                "anomalyKinds": [stage],
+                "symbols": [str(symbol)] if symbol else [],
+                "conclusion": assistant,
+                "totalTokens": int(run.get("totalTokens") or 0),
+            }
+        )
+    candidates.sort(
+        key=lambda item: (
+            str(item.get("finishedAt") or ""),
+            str(item.get("reviewId") or ""),
+        ),
+        reverse=True,
+    )
+    compact: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    truncated = False
+    for item in candidates:
+        conclusion = str(item.get("conclusion") or "").strip()
+        if not conclusion or conclusion in seen:
+            continue
+        seen.add(conclusion)
+        if len(conclusion) > HOURLY_PRIOR_CONCLUSION_LIMIT:
+            conclusion = conclusion[: HOURLY_PRIOR_CONCLUSION_LIMIT - 1].rstrip() + "…"
+            truncated = True
+        compact.append(
+            {
+                key: item.get(key)
+                for key in (
+                    "reviewId",
+                    "source",
+                    "observedAt",
+                    "anomalyKinds",
+                    "symbols",
+                    "conclusion",
+                )
+            }
+        )
+        if len(compact) >= HOURLY_PRIOR_REVIEW_LIMIT:
+            truncated = truncated or len(candidates) > len(compact)
+            break
+    compact.reverse()
+    return {
+        "schemaVersion": 1,
+        "sameBusinessDate": business_date,
+        "items": compact,
+        "included": len(compact),
+        "truncated": truncated,
+        "instruction": (
+            "Compare current evidence with these prior conclusions. Report only "
+            "new or changed facts; do not restate unchanged causes or experiments."
+        ),
+    }
 
 
 def _compact_panel_cycle(value: object) -> dict[str, Any]:

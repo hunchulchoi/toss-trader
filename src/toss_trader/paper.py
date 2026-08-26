@@ -171,6 +171,14 @@ class PaperLedgerStore(Protocol):
         cache_write_tokens: int = 0,
     ) -> None: ...
 
+    def recent_hourly_panel_reviews(
+        self,
+        *,
+        business_date: date,
+        before: datetime,
+        limit: int = 4,
+    ) -> list[dict[str, object]]: ...
+
     def daily_buy_count(self, day: date) -> int: ...
 
     def position_notional(
@@ -759,6 +767,32 @@ class PaperLedger:
                 """,
                 tuple(_sqlite_audit_value(value) for value in values),
             )
+
+    def recent_hourly_panel_reviews(
+        self,
+        *,
+        business_date: date,
+        before: datetime,
+        limit: int = 4,
+    ) -> list[dict[str, object]]:
+        _validate_hourly_review_query(business_date, before, limit)
+        rows = self._connection.execute(
+            """
+            SELECT p.panel_id, p.context, p.created_at, p.finished_at,
+                   o.content, o.total_tokens
+            FROM daily_analysis_panels AS p
+            JOIN daily_analysis_opinions AS o ON o.panel_id = p.panel_id
+            WHERE p.status = 'succeeded' AND o.stage = 'judge:hermes'
+            ORDER BY p.finished_at DESC, p.panel_id DESC
+            LIMIT 100
+            """
+        ).fetchall()
+        return _hourly_panel_review_rows(
+            rows,
+            business_date=business_date,
+            before=before,
+            limit=limit,
+        )
 
     def daily_buy_count(self, day: date) -> int:
         row = self._connection.execute(
@@ -1604,6 +1638,36 @@ class PostgresPaperLedger:
             self._connection.rollback()
             raise
 
+    def recent_hourly_panel_reviews(
+        self,
+        *,
+        business_date: date,
+        before: datetime,
+        limit: int = 4,
+    ) -> list[dict[str, object]]:
+        _validate_hourly_review_query(business_date, before, limit)
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT p.panel_id, p.context, p.created_at, p.finished_at,
+                       o.content, o.total_tokens
+                FROM daily_analysis_panels AS p
+                JOIN daily_analysis_opinions AS o ON o.panel_id = p.panel_id
+                WHERE p.status = 'succeeded' AND o.stage = 'judge:hermes'
+                  AND p.created_at < %s
+                ORDER BY p.finished_at DESC, p.panel_id DESC
+                LIMIT 100
+                """,
+                (before,),
+            )
+            rows = cursor.fetchall()
+        return _hourly_panel_review_rows(
+            rows,
+            business_date=business_date,
+            before=before,
+            limit=limit,
+        )
+
     def daily_buy_count(self, day: date) -> int:
         with self._connection.cursor() as cursor:
             cursor.execute(
@@ -2076,6 +2140,92 @@ def _daily_panel_opinion_values(
         cache_read_tokens,
         cache_write_tokens,
     )
+
+
+def _validate_hourly_review_query(
+    business_date: date, before: datetime, limit: int
+) -> None:
+    if not isinstance(business_date, date):
+        raise TypeError("hourly review business_date must be a date")
+    if before.tzinfo is None or before.utcoffset() is None:
+        raise ValueError("hourly review before must include timezone")
+    if isinstance(limit, bool) or not 1 <= limit <= 10:
+        raise ValueError("hourly review limit must be between 1 and 10")
+
+
+def _hourly_panel_review_rows(
+    rows: Sequence[Sequence[object]],
+    *,
+    business_date: date,
+    before: datetime,
+    limit: int,
+) -> list[dict[str, object]]:
+    reviews: list[dict[str, object]] = []
+    for row in rows:
+        values = tuple(row)
+        created_at = _stored_datetime(values[2])
+        if created_at >= before:
+            continue
+        raw_context = values[1]
+        try:
+            context = (
+                json.loads(raw_context)
+                if isinstance(raw_context, str)
+                else dict(raw_context)
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        briefing = context.get("briefing")
+        cycle = context.get("cycle")
+        if not isinstance(briefing, Mapping) or not isinstance(cycle, Mapping):
+            continue
+        watch = cycle.get("hourlyWatchV1")
+        if (
+            briefing.get("kind") != "hourly"
+            or not isinstance(watch, Mapping)
+            or str(watch.get("businessDate") or "") != business_date.isoformat()
+        ):
+            continue
+        anomalies = watch.get("anomalies")
+        anomaly_rows = (
+            anomalies
+            if isinstance(anomalies, Sequence)
+            and not isinstance(anomalies, (str, bytes))
+            else ()
+        )
+        kinds: set[str] = set()
+        symbols: set[str] = set()
+        for item in anomaly_rows:
+            if not isinstance(item, Mapping):
+                continue
+            if item.get("kind"):
+                kinds.add(str(item["kind"]))
+            for key in ("symbol", "lowSymbol", "highSymbol"):
+                if item.get(key):
+                    symbols.add(str(item[key]))
+        reviews.append(
+            {
+                "reviewId": str(values[0]),
+                "source": "hermes-panel",
+                "observedAt": str(watch.get("observedAt") or created_at.isoformat()),
+                "finishedAt": _serialized_datetime(values[3]),
+                "fingerprint": str(watch.get("fingerprint") or ""),
+                "anomalyKinds": sorted(kinds),
+                "symbols": sorted(symbols),
+                "conclusion": str(values[4]),
+                "totalTokens": int(values[5] or 0),
+            }
+        )
+        if len(reviews) >= limit:
+            break
+    return reviews
+
+
+def _stored_datetime(value: object) -> datetime:
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("stored datetime must include timezone")
+    return parsed
 
 
 def _validate_audit_query(limit: int, symbol: str | None) -> None:

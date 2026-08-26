@@ -279,6 +279,10 @@ def _hermes_call(
 def _hourly_call(context: dict[str, Any], *, panel_id: str) -> dict[str, Any]:
     prompt = (
         "너는 Toss Trader paper 시간별 시장 감시의 anomaly judge Hermes다. "
+        "hourlyWatchV1.priorHourlyReviewsV1의 같은 날 이전 결론을 먼저 읽고 현재 "
+        "evidence와 대조하라. 이미 설명한 원인·보완 실험·데이터 상태는 상태가 "
+        "달라지지 않았다면 다시 서술하지 마라. 새 사실이나 바뀐 수치가 없으면 "
+        "'[시간별 결론] 새로 바뀐 핵심 사실 없음 — 이전 결론 유지.' 한 줄로 끝내라. "
         "hourlyWatchV1.anomalies를 우선 검증하고 시장 급변, 데이터·운영 장애, "
         "신호가 없었던 뒤 강하게 오른 감시종목의 거절 원인을 구분하라. "
         "hindsight-review-candidate는 사후 검토 후보일 뿐 놓친 체결 가능 매수나 "
@@ -289,7 +293,8 @@ def _hourly_call(context: dict[str, Any], *, panel_id: str) -> dict[str, Any]:
         "공공데이터포털 공식 웹을 최대 3개 검색하라. URL과 게시/관측 시각을 적고, "
         "cutoff 뒤 공개 사실은 post-cutoff-research로 표시해 당시 매매 입력으로 "
         "쓰지 마라. missing-price-setup은 데이터 누락이 아닌 정상 가격패턴 탈락이다. "
-        "[시간별 결론], [놓친 후보], [원인], [보완 실험], [데이터 상태] 순서로 "
+        "새 내용이 있을 때만 [시간별 결론], [새로 바뀐 점], [놓친 후보], [원인], "
+        "[보완 실험], [데이터 상태] 순서로 "
         "텔레그램용 한국어 2400자 이내. 매매 지시·수익 보장 금지.\n"
         f"PANEL_ID={panel_id}\n"
         f"EVIDENCE={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}"

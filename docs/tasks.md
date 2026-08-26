@@ -24,6 +24,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### AI-008 Give hourly Hermes prior same-day conclusions
+
+- Owner: codex
+- Status: DONE
+- Result: attach up to four bounded prior Hermes hourly judgments and shadow
+  audits to each changed-anomaly panel, then require the judge to report only
+  new or changed facts and emit one short carry-forward line when nothing changed
+- Checks: full unittest 436 tests; changed-file Ruff and whitespace
+- Risks: only the latest four conclusions are included and each is clipped to
+  700 characters; source ledgers remain the full audit record
+- 기록 시각: 2026-08-26 13:04 KST
+
 ### STRAT-025 Replay KEPCO E&C gap-up chase
 
 - Owner: codex

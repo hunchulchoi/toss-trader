@@ -98,6 +98,64 @@ class PaperLedgerTest(unittest.TestCase):
         with self.assertRaises(DuplicatePaperOrder):
             self.ledger.execute(trade_signal, executed_at=executed_at)
 
+    def test_recent_hourly_panel_reviews_returns_prior_same_day_judgment(
+        self,
+    ) -> None:
+        created_at = datetime(2026, 8, 26, 2, 3, tzinfo=UTC)
+        panel_id = self.ledger.enqueue_daily_panel(
+            panel_id="11111111-1111-1111-1111-111111111111",
+            execution_id="hourly-1",
+            context={
+                "briefing": {"kind": "hourly"},
+                "cycle": {
+                    "hourlyWatchV1": {
+                        "businessDate": "2026-08-26",
+                        "observedAt": "2026-08-26T11:03:00+09:00",
+                        "fingerprint": "fingerprint-1",
+                        "anomalies": [
+                            {
+                                "kind": "hindsight-review-candidate",
+                                "symbol": "005930",
+                            }
+                        ],
+                    }
+                },
+            },
+            queued_at=created_at,
+        )
+        self.ledger.claim_daily_panel(
+            claimed_at=created_at,
+            stale_before=datetime(2026, 8, 26, 1, 30, tzinfo=UTC),
+        )
+        self.ledger.record_daily_panel_opinion(
+            panel_id=panel_id,
+            stage="judge:hermes",
+            role="hourly anomaly judge",
+            provider="hermes",
+            model="test",
+            content="이전 결론",
+            started_at=created_at,
+            finished_at=created_at,
+            prompt_tokens=10,
+            completion_tokens=2,
+            total_tokens=12,
+        )
+        self.ledger.finish_daily_panel(
+            panel_id=panel_id,
+            status="succeeded",
+            finished_at=created_at,
+        )
+
+        rows = self.ledger.recent_hourly_panel_reviews(
+            business_date=date(2026, 8, 26),
+            before=datetime(2026, 8, 26, 3, 3, tzinfo=UTC),
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["conclusion"], "이전 결론")
+        self.assertEqual(rows[0]["symbols"], ["005930"])
+        self.assertEqual(rows[0]["totalTokens"], 12)
+
     def test_persists_and_marks_v2_position_plan(self) -> None:
         opened_at = datetime(2026, 8, 18, 0, 1, tzinfo=UTC)
         plan = V2PositionPlan(

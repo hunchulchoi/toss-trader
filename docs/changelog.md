@@ -7,6 +7,18 @@
 
 ## 2026-08-26
 
+### 시간별 Hermes에 같은 날 이전 결론 전달
+
+- 기록 시각: 2026-08-26 13:04 KST
+- 입력: 같은 서울 거래일의 완료된 Hermes 시간별 결론과 별도 shadow 검토를
+  최신 4건, 결론당 최대 700자로 압축해 `priorHourlyReviewsV1`에 넣는다
+- 지침: 현재 evidence와 이전 결론을 먼저 대조하고, 변하지 않은 원인·보완 실험·
+  데이터 상태는 반복하지 않는다. 새 사실이 없으면 `새로 바뀐 핵심 사실 없음 —
+  이전 결론 유지` 한 줄로 끝낸다
+- 안전: 기존 fingerprint queue dedupe를 유지하고 fingerprint가 없는 수동 shadow
+  감사행은 dedupe 기준에서 건너뛴다. n8n graph·매매·Risk 계약 변경 없음
+- 검증: full unittest 436 tests, changed-file Ruff, Git whitespace 통과
+
 ### 한전기술 gap-up-chase shadow fixture
 
 - 기록 시각: 2026-08-26 10:55 KST
