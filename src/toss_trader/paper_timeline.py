@@ -178,7 +178,10 @@ class PostgresPaperTimelineStore:
                                finished_at, prompt_tokens, completion_tokens,
                                total_tokens, error, details
                         FROM automation_run_logs
-                        WHERE run_type IN ('hermes_trade', 'market_scan', 'daily')
+                        WHERE run_type IN (
+                            'hermes_trade', 'market_scan', 'daily',
+                            'hourly_market_watch'
+                        )
                         ORDER BY finished_at DESC, run_id DESC
                         LIMIT 200
                         """
@@ -877,6 +880,8 @@ def _decision_events(
 HERMES_KIND_LABELS = {
     "hermes_trade": "종목 판단",
     "market_scan": "장전 분석",
+    "hourly_market_watch": "시간별 감시",
+    "hourly": "시간별 감시",
     "midday": "중간 분석",
     "daily": "마감 분석",
 }
@@ -898,8 +903,11 @@ def _hermes_conversations(
             briefing_kind = str(briefing.get("kind") or "")
             created_at = _datetime(row[2])
             created_seoul = created_at.astimezone(SEOUL)
-            is_midday = briefing_kind == "midday" or created_seoul.hour < 15
-            run_type = "midday" if is_midday else "daily"
+            if briefing_kind == "hourly":
+                run_type = "hourly"
+            else:
+                is_midday = briefing_kind == "midday" or created_seoul.hour < 15
+                run_type = "midday" if is_midday else "daily"
             finished_at = (
                 _datetime(row[3])
                 if len(row) > 3 and row[3] is not None
@@ -949,6 +957,7 @@ def _hermes_conversations(
     for row in rows:
         details = _json_mapping(row[10])
         run_type = str(row[1])
+        display_run_type = "hourly" if run_type == "hourly_market_watch" else run_type
         symbol = details.get("symbol")
         symbol_text = str(symbol) if symbol is not None else None
         assistant = None
@@ -960,7 +969,7 @@ def _hermes_conversations(
         conversations.append(
             {
                 "runId": str(row[0]),
-                "runType": run_type,
+                "runType": display_run_type,
                 "kind": HERMES_KIND_LABELS.get(run_type, run_type),
                 "status": str(row[2]),
                 "stage": str(row[3]),

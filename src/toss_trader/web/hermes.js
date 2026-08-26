@@ -1,4 +1,3 @@
-const state = { data: null, date: "latest", kind: "all", status: "all" };
 const $ = (id) => document.getElementById(id);
 const timeFormatter = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", second: "2-digit",
@@ -6,6 +5,8 @@ const timeFormatter = new Intl.DateTimeFormat("ko-KR", {
 const dateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
 });
+const today = dateFormatter.format(new Date());
+const state = { data: null, date: today, kind: "all", status: "all" };
 
 function conversations() { return state.data?.hermesConversations || []; }
 function tradingDate(raw) { return dateFormatter.format(new Date(raw)); }
@@ -23,7 +24,7 @@ function filtered() {
 function fillDates() {
   const select = $("date-filter");
   const current = state.date;
-  const dates = [...new Set(conversations().map((item) => tradingDate(item.finishedAt)))];
+  const dates = [...new Set([today, ...conversations().map((item) => tradingDate(item.finishedAt))])];
   select.replaceChildren();
   const latest = document.createElement("option");
   latest.value = "latest"; latest.textContent = "전체 날짜";

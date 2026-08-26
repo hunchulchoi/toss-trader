@@ -361,13 +361,64 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertNotIn('"gpt-5.6-sol-medium"', source)
         self.assertGreaterEqual(source.count('"cursor-grok-4.6-high-fast"'), 2)
         self.assertIn('"gemini-3.7-flash-high"', source)
-        self.assertIn('"--mode",\n            "ask"', source)
+        self.assertIn('"--mode"', source)
+        self.assertIn('"ask"', source)
+        self.assertIn('"--approve-mcps"', source)
+        self.assertIn('"--workspace"', source)
+        self.assertIn('"toss-panel"', source)
+        self.assertIn("toss-trader-paper-mcp:8090/panel-mcp", source)
+        self.assertIn('"web,toss-panel"', source)
+        self.assertIn('"--ignore-rules"', source)
+        self.assertNotIn('"--safe-mode"', source)
         self.assertNotIn('"--sandbox"', source)
         self.assertNotIn("docker exec", source)
         self.assertIn('"HOME": "/opt/data"', source)
         self.assertIn('"XDG_CONFIG_HOME": "/opt/data/.config"', source)
         self.assertIn("process.stderr or process.stdout", source)
         self.assertIn("/workflow/daily-panel-complete", source)
+
+    def test_hermes_panel_agents_can_research_only_cutoff_evidence(self) -> None:
+        namespace = runpy.run_path(
+            str(ROOT / "automation" / "hermes-panel-runner.py")
+        )
+        panel_id = "11111111-1111-4111-8111-111111111111"
+        context = {
+            "briefing": {
+                "kind": "close",
+                "observedAt": "2026-08-25T15:40:00+09:00",
+            }
+        }
+
+        independent = namespace["_independent_prompt"](
+            "gpt", context, panel_id=panel_id
+        )
+        review = namespace["_review_prompt"](
+            "gpt",
+            context,
+            {"gpt": {"content": "독립 의견"}},
+            panel_id=panel_id,
+        )
+        config = namespace["_cursor_mcp_config"]()
+
+        self.assertEqual(
+            config,
+            {
+                "mcpServers": {
+                    "toss-panel": {
+                        "url": "http://toss-trader-paper-mcp:8090/panel-mcp"
+                    }
+                }
+            },
+        )
+        for prompt in (independent, review):
+            self.assertIn(f"PANEL_ID={panel_id}", prompt)
+            self.assertIn("toss_paper_panel_evidence", prompt)
+            self.assertIn("최대 2회", prompt)
+            self.assertIn("공식 웹", prompt)
+            self.assertIn("post-cutoff-research", prompt)
+            self.assertIn("임의 SQL·terminal", prompt)
+            self.assertIn("missing-price-setup", prompt)
+            self.assertNotIn("제공 JSON만 사용하고 도구를 호출하지 마라", prompt)
 
     def test_hermes_panel_runner_distinguishes_midday_from_close(self) -> None:
         namespace = runpy.run_path(
@@ -377,11 +428,15 @@ class MonitoringAssetsTest(unittest.TestCase):
 
         midday = briefing({"briefing": {"kind": "midday"}})
         close = briefing({"briefing": {"kind": "close"}})
+        hourly = briefing({"briefing": {"kind": "hourly"}})
 
         self.assertEqual(midday[0], "장중 중간 브리핑")
         self.assertIn("확정하지 마라", midday[1])
         self.assertIn("[오후 확인]", midday[2])
         self.assertEqual(close[0], "장마감 브리핑")
+        self.assertEqual(hourly[0], "시간별 시장 감시")
+        self.assertIn("사후", hourly[1])
+        self.assertIn("[보완 실험]", hourly[2])
         self.assertIn("[내일 확인]", close[2])
 
     def test_hermes_panel_runner_requires_market_context_critique(self) -> None:
@@ -445,6 +500,50 @@ class MonitoringAssetsTest(unittest.TestCase):
         hermes = http_nodes["공유 Snapshot + Hermes 1분봉"]
         self.assertIn("$('시장 Snapshot + Rule 1분봉').first().json", hermes)
         self.assertIn('"rule"', hermes)
+
+    def test_hourly_market_watch_runs_only_on_market_days_and_queues_new_anomalies(
+        self,
+    ) -> None:
+        workflow = json.loads(
+            (
+                ROOT / "automation" / "n8n" / "toss-trader-hourly-watch.json"
+            ).read_text()
+        )
+        encoded = json.dumps(workflow, ensure_ascii=False)
+        nodes = {node["name"]: node for node in workflow["nodes"]}
+
+        self.assertFalse(workflow["active"])
+        self.assertEqual(workflow["settings"]["timezone"], "Asia/Seoul")
+        self.assertEqual(
+            workflow["settings"]["errorWorkflow"],
+            "toss-trader-workflow-error",
+        )
+        self.assertIn("3 10-15 * * 1-5", encoded)
+        self.assertIn("/workflow/paper-rule-1d", encoded)
+        self.assertIn("/workflow/paper-hermes-1d", encoded)
+        self.assertIn("/workflow/hourly-panel-enqueue", encoded)
+        self.assertNotIn("/workflow/risk-manager-evaluate", encoded)
+        self.assertNotIn("/workflow/report-market", encoded)
+        self.assertNotIn("n8n-nodes-base.code", encoded)
+        self._assert_scheduled_runs_use_toss_market_calendar(workflow)
+        self.assertIn(
+            "새 특이사항 심층분석 Queue",
+            workflow["connections"]["Hermes Snapshot 정상?"]["main"][0][0][
+                "node"
+            ],
+        )
+        self.assertTrue(nodes["Toss 한국장 일정 확인"]["retryOnFail"])
+        self.assertTrue(nodes["새 특이사항 심층분석 Queue"]["retryOnFail"])
+
+    def test_hourly_panel_runner_uses_one_tool_enabled_hermes_judge(self) -> None:
+        source = (ROOT / "automation" / "hermes-panel-runner.py").read_text()
+
+        self.assertIn('briefing.get("kind") == "hourly"', source)
+        self.assertIn("_hourly_call(context, panel_id=panel_id)", source)
+        self.assertIn('"web,toss-panel"', source)
+        self.assertIn("hindsight-review-candidate", source)
+        self.assertIn("/workflow/hourly-panel-complete", source)
+        self.assertIn("/workflow/hourly-panel-fail", source)
 
     def test_n8n_workflow_sends_weekday_market_discovery_report(self) -> None:
         workflow = json.loads(

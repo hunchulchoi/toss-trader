@@ -1,17 +1,31 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Protocol
+from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from .models import Side
 from .paper import PositionAccounting, _position_accountings
 
 PORTFOLIOS = ("rule", "hermes")
 MAX_REQUEST_BYTES = 1024 * 1024
+SEOUL = ZoneInfo("Asia/Seoul")
+PANEL_EVIDENCE_TOPICS = ("session-summary", "symbol-trace")
+PANEL_EVIDENCE_SYMBOL_LIMIT = 10
+PANEL_EVIDENCE_MAX_AGE = timedelta(days=31)
+SYMBOL_PATTERN = re.compile(r"^[0-9A-Z.]{1,20}$")
+PUBLIC_MCP_TOOLS = (
+    "toss_paper_status",
+    "toss_paper_holdings",
+    "toss_paper_pnl",
+)
+PANEL_MCP_TOOLS = ("toss_paper_panel_evidence",)
 
 
 class PaperReadStore(Protocol):
@@ -20,6 +34,10 @@ class PaperReadStore(Protocol):
     def holdings(self) -> dict[str, Any]: ...
 
     def pnl(self) -> dict[str, Any]: ...
+
+    def panel_evidence(
+        self, panel_id: str, topic: str, symbols: tuple[str, ...]
+    ) -> dict[str, Any]: ...
 
 
 class PaperMcpService:
@@ -57,20 +75,69 @@ class PaperMcpService:
                 ),
                 "inputSchema": empty_schema,
             },
+            {
+                "name": "toss_paper_panel_evidence",
+                "description": (
+                    "중간·마감 패널 JSON에 체결 시각·가격, 전체 종목 전이, "
+                    "거절 상세가 부족할 때 해당 panel의 관측시각까지만 paper 원장을 "
+                    "고정 SELECT로 검색한다. session-summary는 cycle·체결·현금·손익 "
+                    "요약, symbol-trace는 지정 종목의 사유 전이·Risk·D-1/1분봉 "
+                    "근거를 반환한다. 임의 SQL, 주문, panel 관측 이후 데이터는 허용하지 "
+                    "않는다. symbol-trace에는 symbols 1~10개가 필요하다."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "panelId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": (
+                                "현재 분석 중인 daily panel UUID. prompt의 PANEL_ID를 "
+                                "그대로 사용하고 재구성하지 않는다."
+                            ),
+                        },
+                        "topic": {
+                            "type": "string",
+                            "enum": list(PANEL_EVIDENCE_TOPICS),
+                            "description": (
+                                "전체 장부 요약은 session-summary, 특정 종목 원인 검증은 "
+                                "symbol-trace."
+                            ),
+                        },
+                        "symbols": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "pattern": SYMBOL_PATTERN.pattern,
+                            },
+                            "maxItems": PANEL_EVIDENCE_SYMBOL_LIMIT,
+                            "description": (
+                                "symbol-trace에서 확인할 정확한 종목코드 배열. "
+                                "session-summary에서는 생략한다."
+                            ),
+                        },
+                    },
+                    "required": ["panelId", "topic"],
+                    "additionalProperties": False,
+                },
+            },
         ]
 
     def call(self, name: str, arguments: Mapping[str, Any] | None) -> dict[str, Any]:
-        if arguments:
-            raise ValueError(f"{name} does not accept arguments")
         readers: dict[str, Callable[[], dict[str, Any]]] = {
             "toss_paper_status": self._store.status,
             "toss_paper_holdings": self._store.holdings,
             "toss_paper_pnl": self._store.pnl,
         }
         reader = readers.get(name)
-        if reader is None:
+        if reader is not None:
+            if arguments:
+                raise ValueError(f"{name} does not accept arguments")
+            return reader()
+        if name != "toss_paper_panel_evidence":
             raise ValueError(f"unknown MCP tool: {name}")
-        return reader()
+        panel_id, topic, symbols = _panel_evidence_arguments(arguments)
+        return self._store.panel_evidence(panel_id, topic, symbols)
 
 
 class PostgresPaperReadStore:
@@ -228,6 +295,338 @@ class PostgresPaperReadStore:
             },
         }
 
+    def panel_evidence(
+        self, panel_id: str, topic: str, symbols: tuple[str, ...]
+    ) -> dict[str, Any]:
+        connection = self._open()
+        try:
+            panel = _panel_cutoff(connection, panel_id)
+            if topic == "session-summary":
+                return self._panel_session_summary(connection, panel_id, panel)
+            return self._panel_symbol_trace(
+                connection, panel_id, panel, symbols=symbols
+            )
+        finally:
+            connection.close()
+
+    def _panel_session_summary(
+        self,
+        connection: Any,
+        panel_id: str,
+        panel: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        session_start = panel["sessionStart"]
+        market_open = panel["marketOpen"]
+        observed_at = panel["observedAt"]
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT portfolio_id, status, interval, signal_count, fill_count,
+                       failed_count, consecutive_api_errors, started_at
+                FROM paper_cycle_runs
+                WHERE portfolio_id IN ('rule', 'hermes')
+                  AND started_at >= %s AND started_at <= %s
+                ORDER BY portfolio_id, started_at
+                """,
+                (session_start, observed_at),
+            )
+            cycle_rows = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT f.portfolio_id, f.symbol,
+                       COALESCE(names.display_name, f.symbol), f.side,
+                       f.quantity, f.price, f.notional, f.commission, f.tax,
+                       f.reason, f.executed_at
+                FROM paper_fills AS f
+                LEFT JOIN LATERAL (
+                    SELECT display_name
+                    FROM market_universe_raw_v2
+                    WHERE symbol = f.symbol AND session_date <= %s
+                    ORDER BY session_date DESC, source
+                    LIMIT 1
+                ) AS names ON TRUE
+                WHERE f.portfolio_id IN ('rule', 'hermes')
+                  AND f.executed_at >= %s AND f.executed_at <= %s
+                ORDER BY f.executed_at, f.fill_sequence
+                """,
+                (panel["businessDate"], market_open, observed_at),
+            )
+            fill_rows = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT DISTINCT ON (portfolio_id)
+                       portfolio_id, captured_at, equity, realized_pnl,
+                       unrealized_pnl, total_costs
+                FROM paper_portfolio_snapshots
+                WHERE portfolio_id IN ('rule', 'hermes')
+                  AND captured_at >= %s AND captured_at <= %s
+                ORDER BY portfolio_id, captured_at DESC
+                """,
+                (market_open, observed_at),
+            )
+            snapshot_rows = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT portfolio_id, initial_cash
+                FROM paper_portfolios
+                WHERE portfolio_id IN ('rule', 'hermes')
+                """
+            )
+            initial_rows = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT portfolio_id,
+                       COALESCE(SUM(
+                           CASE side
+                               WHEN 'BUY' THEN -(notional + commission + tax)
+                               ELSE notional - commission - tax
+                           END
+                       ), 0)
+                FROM paper_fills
+                WHERE portfolio_id IN ('rule', 'hermes')
+                  AND executed_at <= %s
+                GROUP BY portfolio_id
+                """,
+                (observed_at,),
+            )
+            cash_flow_rows = cursor.fetchall()
+        initial_cash = {
+            str(portfolio): Decimal(value) for portfolio, value in initial_rows
+        }
+        cash_flows = {
+            str(portfolio): Decimal(value) for portfolio, value in cash_flow_rows
+        }
+        cycles = {}
+        for portfolio in PORTFOLIOS:
+            rows = [row for row in cycle_rows if str(row[0]) == portfolio]
+            pre_market_count = sum(row[7] < market_open for row in rows)
+            cycles[portfolio] = {
+                "count": len(rows),
+                "preMarketCount": pre_market_count,
+                "fromMarketOpenCount": len(rows) - pre_market_count,
+                "firstAt": _iso(rows[0][7]) if rows else None,
+                "lastAt": _iso(rows[-1][7]) if rows else None,
+                "signals": sum(int(row[3]) for row in rows),
+                "fills": sum(int(row[4]) for row in rows),
+                "failedItems": sum(int(row[5]) for row in rows),
+                "failedCycles": sum(str(row[1]) == "failed" for row in rows),
+                "maxConsecutiveApiErrors": max(
+                    (int(row[6]) for row in rows), default=0
+                ),
+            }
+        snapshots = {
+            str(row[0]): {
+                "capturedAt": _iso(row[1]),
+                "equity": str(row[2]),
+                "realizedPnl": str(row[3]),
+                "unrealizedPnl": str(row[4]),
+                "totalCosts": str(row[5]),
+            }
+            for row in snapshot_rows
+        }
+        fills = [
+            {
+                "portfolioId": str(row[0]),
+                "symbol": str(row[1]),
+                "name": str(row[2]),
+                "side": str(row[3]),
+                "quantity": str(row[4]),
+                "price": str(row[5]),
+                "notional": str(row[6]),
+                "commission": str(row[7]),
+                "tax": str(row[8]),
+                "reason": str(row[9]),
+                "executedAt": _iso(row[10]),
+            }
+            for row in fill_rows
+        ]
+        return _panel_evidence_envelope(
+            panel_id,
+            panel,
+            topic="session-summary",
+            evidence={
+                "cycles": cycles,
+                "fills": fills,
+                "snapshots": snapshots,
+                "ledgerCashAtCutoff": {
+                    portfolio: str(
+                        initial_cash.get(portfolio, self._initial_cash)
+                        + cash_flows.get(portfolio, Decimal(0))
+                    )
+                    for portfolio in PORTFOLIOS
+                },
+            },
+        )
+
+    def _panel_symbol_trace(
+        self,
+        connection: Any,
+        panel_id: str,
+        panel: Mapping[str, Any],
+        *,
+        symbols: tuple[str, ...],
+    ) -> dict[str, Any]:
+        session_start = panel["sessionStart"]
+        market_open = panel["marketOpen"]
+        observed_at = panel["observedAt"]
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT portfolio_id, started_at, cycle_insight
+                FROM paper_cycle_runs
+                WHERE portfolio_id IN ('rule', 'hermes')
+                  AND started_at >= %s AND started_at <= %s
+                ORDER BY portfolio_id, started_at
+                """,
+                (market_open, observed_at),
+            )
+            cycle_rows = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT portfolio_id, symbol, side, quantity, price, notional,
+                       commission, tax, reason, executed_at
+                FROM paper_fills
+                WHERE portfolio_id IN ('rule', 'hermes')
+                  AND symbol = ANY(%s)
+                  AND executed_at >= %s AND executed_at <= %s
+                ORDER BY executed_at, fill_sequence
+                """,
+                (list(symbols), market_open, observed_at),
+            )
+            fill_rows = cursor.fetchall()
+            cursor.execute(
+                """
+                WITH ranked AS (
+                    SELECT portfolio_id, symbol, side, quantity,
+                           reference_price, notional, approved, violations,
+                           available_cash, daily_buy_count, daily_return_rate,
+                           consecutive_api_errors, evaluated_at,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY portfolio_id, symbol
+                               ORDER BY evaluated_at
+                           ) AS first_rank,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY portfolio_id, symbol
+                               ORDER BY evaluated_at DESC
+                           ) AS last_rank
+                    FROM paper_risk_decisions
+                    WHERE portfolio_id IN ('rule', 'hermes')
+                      AND symbol = ANY(%s)
+                      AND evaluated_at >= %s AND evaluated_at <= %s
+                )
+                SELECT portfolio_id, symbol, side, quantity, reference_price,
+                       notional, approved, violations, available_cash,
+                       daily_buy_count, daily_return_rate,
+                       consecutive_api_errors, evaluated_at
+                FROM ranked
+                WHERE first_rank = 1 OR last_rank = 1
+                ORDER BY evaluated_at
+                """,
+                (list(symbols), market_open, observed_at),
+            )
+            risk_rows = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT DISTINCT ON (symbol)
+                       symbol, display_name
+                FROM market_universe_raw_v2
+                WHERE symbol = ANY(%s) AND session_date <= %s
+                ORDER BY symbol, session_date DESC, source
+                """,
+                (list(symbols), panel["businessDate"]),
+            )
+            names = {str(row[0]): str(row[1]) for row in cursor.fetchall()}
+            cursor.execute(
+                """
+                SELECT DISTINCT ON (symbol)
+                       symbol, timestamp, open_price, high_price,
+                       low_price, close_price
+                FROM market_candles
+                WHERE symbol = ANY(%s) AND interval = '1d'
+                  AND timestamp < %s
+                ORDER BY symbol, timestamp DESC
+                """,
+                (list(symbols), session_start),
+            )
+            daily_rows = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT symbol, timestamp, open_price, high_price,
+                       low_price, close_price
+                FROM market_candles
+                WHERE symbol = ANY(%s) AND interval = '1m'
+                  AND timestamp > %s AND timestamp <= %s
+                ORDER BY symbol, timestamp
+                """,
+                (list(symbols), panel["marketOpen"], observed_at),
+            )
+            minute_rows = cursor.fetchall()
+        traces = _symbol_reason_traces(cycle_rows, symbols)
+        daily = {
+            str(row[0]): {
+                "timestamp": _iso(row[1]),
+                "open": str(row[2]),
+                "high": str(row[3]),
+                "low": str(row[4]),
+                "close": str(row[5]),
+                "revisionBoundary": "current-stored-adjusted-candle",
+            }
+            for row in daily_rows
+        }
+        minute = _minute_evidence(minute_rows, symbols)
+        fills = [
+            {
+                "portfolioId": str(row[0]),
+                "symbol": str(row[1]),
+                "side": str(row[2]),
+                "quantity": str(row[3]),
+                "price": str(row[4]),
+                "notional": str(row[5]),
+                "commission": str(row[6]),
+                "tax": str(row[7]),
+                "reason": str(row[8]),
+                "executedAt": _iso(row[9]),
+            }
+            for row in fill_rows
+        ]
+        risks = [
+            {
+                "portfolioId": str(row[0]),
+                "symbol": str(row[1]),
+                "side": str(row[2]),
+                "quantity": str(row[3]),
+                "referencePrice": str(row[4]),
+                "notional": str(row[5]),
+                "approved": bool(row[6]),
+                "violations": row[7],
+                "availableCash": str(row[8]) if row[8] is not None else None,
+                "dailyBuyCount": int(row[9]),
+                "dailyReturnRate": str(row[10]),
+                "consecutiveApiErrors": int(row[11]),
+                "evaluatedAt": _iso(row[12]),
+            }
+            for row in risk_rows
+        ]
+        return _panel_evidence_envelope(
+            panel_id,
+            panel,
+            topic="symbol-trace",
+            evidence={
+                "symbols": [
+                    {
+                        "symbol": symbol,
+                        "name": names.get(symbol),
+                        "reasonTraces": traces.get(symbol, {}),
+                        "previousDaily": daily.get(symbol),
+                        "oneMinute": minute.get(symbol),
+                    }
+                    for symbol in symbols
+                ],
+                "fills": fills,
+                "riskDecisions": risks,
+            },
+        )
+
     def _open(self) -> Any:
         return self._connect(
             **self._parameters,
@@ -318,8 +717,224 @@ class PostgresPaperReadStore:
         }
 
 
+def _panel_evidence_arguments(
+    arguments: Mapping[str, Any] | None,
+) -> tuple[str, str, tuple[str, ...]]:
+    if not isinstance(arguments, Mapping):
+        raise TypeError("toss_paper_panel_evidence arguments must be an object")
+    unknown = sorted(set(arguments) - {"panelId", "topic", "symbols"})
+    if unknown:
+        raise ValueError(
+            "toss_paper_panel_evidence unknown arguments: " + ", ".join(unknown)
+        )
+    try:
+        panel_id = str(UUID(str(arguments["panelId"])))
+    except (KeyError, ValueError) as error:
+        raise ValueError("panelId must be a UUID") from error
+    topic = arguments.get("topic")
+    if topic not in PANEL_EVIDENCE_TOPICS:
+        raise ValueError(
+            "topic must be session-summary or symbol-trace"
+        )
+    raw_symbols = arguments.get("symbols", ())
+    if not isinstance(raw_symbols, Sequence) or isinstance(raw_symbols, (str, bytes)):
+        raise TypeError("symbols must be an array")
+    if len(raw_symbols) > PANEL_EVIDENCE_SYMBOL_LIMIT:
+        raise ValueError(
+            f"symbols supports at most {PANEL_EVIDENCE_SYMBOL_LIMIT} values"
+        )
+    if any(not isinstance(value, str) for value in raw_symbols):
+        raise TypeError("symbols values must be strings")
+    symbols = tuple(dict.fromkeys(value.strip().upper() for value in raw_symbols))
+    if any(not SYMBOL_PATTERN.fullmatch(symbol) for symbol in symbols):
+        raise ValueError("symbols contains an invalid symbol")
+    if topic == "session-summary" and symbols:
+        raise ValueError("session-summary does not accept symbols")
+    if topic == "symbol-trace" and not symbols:
+        raise ValueError("symbol-trace requires symbols")
+    return panel_id, str(topic), symbols
+
+
+def _panel_cutoff(connection: Any, panel_id: str) -> dict[str, Any]:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT context
+            FROM daily_analysis_panels
+            WHERE panel_id = %s
+            """,
+            (panel_id,),
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise ValueError("daily panel not found")
+    context = row[0]
+    if isinstance(context, str):
+        try:
+            context = json.loads(context)
+        except json.JSONDecodeError as error:
+            raise ValueError("daily panel context is invalid") from error
+    if not isinstance(context, Mapping):
+        raise TypeError("daily panel context is invalid")
+    briefing = context.get("briefing")
+    if not isinstance(briefing, Mapping):
+        raise TypeError("daily panel briefing is missing")
+    raw_observed_at = briefing.get("observedAt")
+    if not isinstance(raw_observed_at, str):
+        raise TypeError("daily panel observedAt is missing")
+    try:
+        observed_at = datetime.fromisoformat(raw_observed_at)
+    except ValueError as error:
+        raise ValueError("daily panel observedAt is invalid") from error
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+        raise ValueError("daily panel observedAt must include timezone")
+    now = datetime.now(UTC)
+    observed_utc = observed_at.astimezone(UTC)
+    if observed_utc > now + timedelta(minutes=5):
+        raise ValueError("daily panel observedAt is in the future")
+    if now - observed_utc > PANEL_EVIDENCE_MAX_AGE:
+        raise ValueError("daily panel is older than the evidence search window")
+    local = observed_at.astimezone(SEOUL)
+    business_date = local.date()
+    session_start = datetime.combine(business_date, datetime.min.time(), tzinfo=SEOUL)
+    market_open = session_start.replace(hour=9)
+    return {
+        "businessDate": business_date,
+        "briefingKind": str(briefing.get("kind") or "close"),
+        "observedAt": observed_at,
+        "sessionStart": session_start,
+        "marketOpen": market_open,
+    }
+
+
+def _panel_evidence_envelope(
+    panel_id: str,
+    panel: Mapping[str, Any],
+    *,
+    topic: str,
+    evidence: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "scope": "paper-panel-readonly",
+        "panelId": panel_id,
+        "topic": topic,
+        "businessDate": panel["businessDate"].isoformat(),
+        "briefingKind": panel["briefingKind"],
+        "observedAt": panel["observedAt"].isoformat(),
+        "cutoffEnforced": True,
+        "writesAllowed": False,
+        "evidence": evidence,
+    }
+
+
+def _symbol_reason_traces(
+    cycle_rows: Sequence[Sequence[Any]], symbols: Sequence[str]
+) -> dict[str, dict[str, Any]]:
+    wanted = set(symbols)
+    observations: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for portfolio_id, started_at, raw_insight in cycle_rows:
+        insight = _parse_cycle_insight(raw_insight)
+        if insight is None:
+            continue
+        states = insight.get("symbols")
+        if not isinstance(states, Sequence) or isinstance(states, (str, bytes)):
+            continue
+        for state in states:
+            if not isinstance(state, Mapping):
+                continue
+            symbol = str(state.get("symbol") or "")
+            if symbol not in wanted:
+                continue
+            reason = state.get("skipReason")
+            if not isinstance(reason, str) or not reason:
+                fill_side = state.get("fillSide")
+                reason = (
+                    f"filled:{fill_side}"
+                    if isinstance(fill_side, str) and fill_side
+                    else str(state.get("reason") or "unknown")
+                )
+            observations.setdefault((symbol, str(portfolio_id)), []).append(
+                {
+                    "at": _iso(started_at),
+                    "reason": reason,
+                    "error": state.get("error"),
+                    "detail": state.get("skipDetail"),
+                }
+            )
+    result: dict[str, dict[str, Any]] = {symbol: {} for symbol in symbols}
+    for (symbol, portfolio), rows in observations.items():
+        path = []
+        counts: dict[str, int] = {}
+        transition_rows = []
+        previous = None
+        for row in rows:
+            reason = str(row["reason"])
+            counts[reason] = counts.get(reason, 0) + 1
+            if reason != previous:
+                path.append(reason)
+                transition_rows.append(row)
+                previous = reason
+        result[symbol][portfolio] = {
+            "firstObservedAt": rows[0]["at"],
+            "lastObservedAt": rows[-1]["at"],
+            "firstReason": rows[0]["reason"],
+            "lastReason": rows[-1]["reason"],
+            "transitionCount": max(0, len(path) - 1),
+            "reasonPath": path,
+            "reasonCounts": counts,
+            "transitions": transition_rows,
+        }
+    return result
+
+
+def _minute_evidence(
+    minute_rows: Sequence[Sequence[Any]], symbols: Sequence[str]
+) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, list[Sequence[Any]]] = {symbol: [] for symbol in symbols}
+    for row in minute_rows:
+        symbol = str(row[0])
+        if symbol in grouped:
+            grouped[symbol].append(row)
+    result = {}
+    for symbol, rows in grouped.items():
+        if not rows:
+            result[symbol] = {"barCount": 0, "coverage": "missing-1m"}
+            continue
+        first = rows[0]
+        last = rows[-1]
+        key_bars = [
+            _minute_row(row)
+            for row in rows
+            if row[1].astimezone(SEOUL).time().isoformat(timespec="minutes")
+            in {"09:01", "09:05"}
+        ]
+        result[symbol] = {
+            "barCount": len(rows),
+            "firstAt": _iso(first[1]),
+            "lastAt": _iso(last[1]),
+            "firstBar": _minute_row(first),
+            "keyBars": key_bars,
+            "lastBar": _minute_row(last),
+            "coverage": "observed-through-panel-cutoff",
+        }
+    return result
+
+
+def _minute_row(row: Sequence[Any]) -> dict[str, str | None]:
+    return {
+        "timestamp": _iso(row[1]),
+        "open": str(row[2]),
+        "high": str(row[3]),
+        "low": str(row[4]),
+        "close": str(row[5]),
+    }
+
+
 def handle_mcp_request(
-    service: PaperMcpService, payload: Mapping[str, Any]
+    service: PaperMcpService,
+    payload: Mapping[str, Any],
+    *,
+    allowed_tools: Sequence[str] | None = None,
 ) -> dict[str, Any] | None:
     request_id = payload.get("id")
     method = payload.get("method")
@@ -346,7 +961,11 @@ def handle_mcp_request(
     if method == "ping":
         return _rpc_result(request_id, {})
     if method == "tools/list":
-        return _rpc_result(request_id, {"tools": service.tools()})
+        tools = service.tools()
+        if allowed_tools is not None:
+            allowed = set(allowed_tools)
+            tools = [tool for tool in tools if tool["name"] in allowed]
+        return _rpc_result(request_id, {"tools": tools})
     if method == "tools/call":
         params = payload.get("params")
         if not isinstance(params, Mapping) or not isinstance(params.get("name"), str):
@@ -355,8 +974,11 @@ def handle_mcp_request(
         if arguments is not None and not isinstance(arguments, Mapping):
             return _rpc_error(request_id, -32602, "tool arguments must be an object")
         try:
-            result = service.call(str(params["name"]), arguments)
-        except (RuntimeError, ValueError) as error:
+            name = str(params["name"])
+            if allowed_tools is not None and name not in allowed_tools:
+                raise ValueError(f"MCP endpoint does not expose tool: {name}")
+            result = service.call(name, arguments)
+        except (RuntimeError, TypeError, ValueError) as error:
             return _rpc_result(
                 request_id,
                 {
@@ -387,12 +1009,17 @@ def serve_paper_mcp(
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             if self.path == "/healthz":
-                self._send_json(200, {"status": "ok", "tools": 3})
+                self._send_json(200, {"status": "ok", "tools": 4})
                 return
             self._send_json(404, {"error": "not found"})
 
         def do_POST(self) -> None:
-            if self.path != "/mcp":
+            endpoint_tools = {
+                "/mcp": PUBLIC_MCP_TOOLS,
+                "/panel-mcp": PANEL_MCP_TOOLS,
+            }
+            allowed_tools = endpoint_tools.get(self.path)
+            if allowed_tools is None:
                 self._send_json(404, {"error": "not found"})
                 return
             try:
@@ -411,7 +1038,9 @@ def serve_paper_mcp(
             if not isinstance(payload, Mapping):
                 self._send_json(400, _rpc_error(None, -32600, "invalid request"))
                 return
-            response = handle_mcp_request(service, payload)
+            response = handle_mcp_request(
+                service, payload, allowed_tools=allowed_tools
+            )
             if response is None:
                 self.send_response(202)
                 self.end_headers()

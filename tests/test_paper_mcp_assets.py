@@ -39,6 +39,7 @@ class PaperMcpAssetsTest(unittest.TestCase):
         self.assertIn("idleReason", soul)
         self.assertIn("no-crossover", soul)
         self.assertIn("already-held", soul)
+        self.assertIn("reserved for the scheduled daily-panel runner", soul)
 
     def test_reader_migration_enforces_select_only_role(self) -> None:
         migration = (ROOT / "db" / "paper_mcp_reader.sql").read_text()
@@ -52,7 +53,7 @@ class PaperMcpAssetsTest(unittest.TestCase):
         self.assertNotIn("GRANT UPDATE", migration)
         self.assertNotIn("GRANT DELETE", migration)
 
-    def test_docs_keep_paper_mcp_on_public_hermes_only(self) -> None:
+    def test_docs_keep_paper_mcp_on_public_hermes_and_bounded_panel_runner(self) -> None:
         paper_mcp = (ROOT / "docs" / "paper-mcp.md").read_text()
         workflow = (ROOT / "docs" / "system-workflow.md").read_text()
         runbook = (ROOT / "docs" / "operations-runbook.md").read_text()
@@ -61,6 +62,8 @@ class PaperMcpAssetsTest(unittest.TestCase):
         self.assertIn("toss_paper_status", paper_mcp)
         self.assertIn("toss_paper_holdings", paper_mcp)
         self.assertIn("toss_paper_pnl", paper_mcp)
+        self.assertIn("toss_paper_panel_evidence", paper_mcp)
+        self.assertIn('"tools": 4', paper_mcp)
         self.assertIn("idleReason", paper_mcp)
         self.assertIn("symbolStates", paper_mcp)
         self.assertIn("changelog.md", workflow)

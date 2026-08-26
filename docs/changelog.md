@@ -7,6 +7,24 @@
 
 ## 2026-08-26
 
+### 시간별 시장 특이사항 검토와 Hermes timeline 오늘 기본값
+
+- 기록 시각: 2026-08-26 09:13 KST
+- 감시: 한국장 영업일 10:03~15:03에 매시간 Rule/Hermes의 저장된 시장 시세·
+  거절 전이·오류 상태를 점검한다. 시장 급변·벤치마크 괴리·자료/운영 장애와
+  무매수 뒤 상대 강세 종목을 구분한다
+- 알림: 모든 점검은 `hourly_market_watch` 감사행으로 남기되, 새롭거나 달라진
+  특이사항만 Hermes 심층검토 queue에 넣고 최종 판단만 Telegram으로 보낸다.
+  동일 특이사항은 재전송하지 않는다
+- 근거: Hermes는 저장 cutoff의 `toss-panel`과 필요한 공식 KRX·KIS·OpenDART·
+  공공데이터 웹만 제한 검색한다. 사후 상승은 검토 후보이며 놓친 체결 가능 매수나
+  게이트 완화의 증거가 아니다
+- 화면: deterministic 점검과 Hermes 의견/token을 timeline의 `시간별 감시` 대화로
+  표시한다. Hermes 대화 날짜는 서울 기준 오늘이 기본이며 자료가 0건이어도 오늘
+  선택지를 유지한다
+- 검증: 431 unit tests, n8n node·workflow validation, changed-file Ruff와
+  Git whitespace. workflow publish·서비스 배포는 별도다
+
 ### 장전 스캔을 Rule/Hermes/Hunter 계약에 맞춤
 
 장전 리포트가 Rule strict 승인만 보여 Hermes 실험·Hunter를 0후보로 오해하게 만들었다.
@@ -14,6 +32,29 @@
 - 운영: 반영함
 - 기록 시각: 2026-08-26 08:53 KST
 - 배포 시각: 2026-08-26 09:02 KST automation 재빌드. n8n market-scan import·publish·재시작. 09:04 KST `POST /run-market-scan` Telegram `accepted`
+
+### 패널 agent 제한 검색과 데이터 누락 의미 분리
+
+- 기록 시각: 2026-08-26 08:39 KST
+- 내부 검색: 패널 UUID에 저장된 `observedAt`까지만 cycle·체결·현금·Risk·D-1·
+  핵심 1분봉을 고정 SELECT로 읽는 `toss_paper_panel_evidence`를 추가한다.
+  임의 SQL·쓰기·주문은 없고 종목 trace는 한 번에 10개까지다
+- endpoint 격리: 기존 Telegram `/mcp`에는 상태·보유·손익 3개만 유지하고,
+  `/panel-mcp`에는 cutoff 근거 도구 하나만 노출한다
+- agent 연결: GPT/Grok/Gemini Cursor subprocess는 빈 임시 workspace에서 해당
+  MCP 하나만 자동 승인한다. Hermes judge도 `web,toss-panel`만 명시적으로 열며
+  terminal·file·Grafana·현재 상태 도구는 받지 않는다. 검색은 JSON 생략이나 의견
+  충돌이 있을 때 단계당 최대 2회다
+- 외부 검색: KRX·KIS Developers·OpenDART·공공데이터포털 공식 문서만 허용하고
+  URL·게시/관측 시각을 남긴다. panel cutoff 뒤 사실은 `post-cutoff-research`로
+  표시해 과거 매매 입력이나 놓친 매수 증거로 쓰지 않는다
+- 의미: `missing-price-setup`은 계속 데이터 누락이 아닌 정상 가격 패턴 미충족이다.
+  보고서가 패널 생략·원천 없음·미검색을 구분하도록 지침을 강화했다
+- 검증: 425 unit tests, changed-file Ruff, Git whitespace 통과. 운영 배포는
+  별도다
+- 운영 읽기 검증 시각: 2026-08-26 08:49 KST. 최신 성공 panel에서 cutoff 고정,
+  Rule 2체결, 장전 1회 포함 cycle 80회, 2종목 trace SQL을 확인했다. DB write와
+  배포는 하지 않았다
 
 ### Hermes changedFacts 완전성·cycle 예약 현금 의미 분리
 

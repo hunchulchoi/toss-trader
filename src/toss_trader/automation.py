@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from hashlib import sha256
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
@@ -58,6 +59,12 @@ MARKET_SCAN_SYSTEM_PROMPT = (
     "장중 10:01~10:05이며 이 장전 JSON에 없다. MA 모멘텀 점수를 후보 근거로 만들지 말고, 직접적인 "
     "매수·매도 지시와 수익 보장은 하지 마라. 도구를 호출하지 마라."
 )
+
+HOURLY_WATCH_RUN_TYPE = "hourly_market_watch"
+HOURLY_MARKET_MOVE = Decimal("0.02")
+HOURLY_MARKET_DIVERGENCE = Decimal("0.03")
+HOURLY_MISSED_MOVE = Decimal("0.03")
+HOURLY_MISSED_RELATIVE_MOVE = Decimal("0.02")
 
 
 class AutomationBusy(RuntimeError):
@@ -935,6 +942,7 @@ class WorkflowTaskService:
         paper_reporter: AlertmanagerReporter,
         daily_reporter: AlertmanagerReporter,
         failure_reporter: AlertmanagerReporter,
+        hourly_reporter: AlertmanagerReporter | None = None,
         panel_ledger: Callable[[], PaperLedgerStore] | None = None,
         audit: Callable[[AutomationRunLog], str] | None = None,
         market_session: Callable[[datetime], MarketSession] | None = None,
@@ -948,6 +956,7 @@ class WorkflowTaskService:
         self._paper_reporter = paper_reporter
         self._daily_reporter = daily_reporter
         self._failure_reporter = failure_reporter
+        self._hourly_reporter = hourly_reporter or daily_reporter
         self._panel_ledger = panel_ledger
         self._audit = audit
         self._market_session = market_session
@@ -1007,14 +1016,20 @@ class WorkflowTaskService:
             return self._complete_daily(payload)
         if path == "/workflow/daily-panel-enqueue":
             return self._enqueue_daily_panel(payload)
+        if path == "/workflow/hourly-panel-enqueue":
+            return self._enqueue_hourly_panel(payload)
         if path == "/workflow/daily-panel-claim":
             return self._claim_daily_panel()
         if path == "/workflow/daily-panel-opinion":
             return self._record_daily_panel_opinion(payload)
         if path == "/workflow/daily-panel-complete":
             return self._complete_daily_panel(payload)
+        if path == "/workflow/hourly-panel-complete":
+            return self._complete_hourly_panel(payload)
         if path == "/workflow/daily-panel-fail":
             return self._fail_daily_panel(payload)
+        if path == "/workflow/hourly-panel-fail":
+            return self._fail_hourly_panel(payload)
         if path == "/workflow/report-market":
             return self._market_reporter.report(_required_result(payload))
         if path == "/workflow/report-paper":
@@ -1167,6 +1182,51 @@ class WorkflowTaskService:
             ledger.close()
         return {"ok": True, "queued": True, "panelId": panel_id}
 
+    def _enqueue_hourly_panel(self, payload: dict[str, Any]) -> dict[str, Any]:
+        context = _hourly_market_payload(payload)
+        watch = context["cycle"]["hourlyWatchV1"]
+        anomalies = watch["anomalies"]
+        fingerprint = str(watch["fingerprint"])
+        business_date = str(watch["businessDate"])
+        workflow = payload.get("_workflow")
+        workflow = workflow if isinstance(workflow, dict) else {}
+        execution_id = _required_panel_text(workflow.get("executionId"), "executionId")
+        ledger = self._required_panel_ledger()
+        panel_id: str | None = None
+        try:
+            previous = _latest_hourly_fingerprint(ledger, business_date)
+            if anomalies and previous != fingerprint:
+                panel_id = ledger.enqueue_daily_panel(
+                    panel_id=str(uuid4()),
+                    execution_id=execution_id,
+                    context=context,
+                    queued_at=self._clock(),
+                )
+        finally:
+            ledger.close()
+        reason = (
+            "queued"
+            if panel_id is not None
+            else "no-anomaly"
+            if not anomalies
+            else "unchanged-anomaly"
+        )
+        self._record_hourly_watch(
+            context=context,
+            status=reason,
+            queued=panel_id is not None,
+        )
+        result: dict[str, Any] = {
+            "ok": True,
+            "queued": panel_id is not None,
+            "reason": reason,
+            "anomalyCount": len(anomalies),
+            "fingerprint": fingerprint,
+        }
+        if panel_id is not None:
+            result["panelId"] = panel_id
+        return result
+
     def _claim_daily_panel(self) -> dict[str, Any]:
         now = self._clock()
         ledger = self._required_panel_ledger()
@@ -1194,6 +1254,31 @@ class WorkflowTaskService:
                     "ok": True,
                     "cycle": {"exitCode": 0},
                     "analysis": judge["content"],
+                }
+            )
+            ledger.finish_daily_panel(
+                panel_id=panel_id,
+                status="succeeded",
+                finished_at=self._clock(),
+            )
+        finally:
+            ledger.close()
+        return {"ok": True, "panelId": panel_id, "reported": report}
+
+    def _complete_hourly_panel(self, payload: dict[str, Any]) -> dict[str, Any]:
+        panel_id = _required_panel_text(payload.get("panelId"), "panelId")
+        opinion = _daily_panel_opinion(payload.get("opinion"))
+        if opinion["stage"] != "judge:hermes":
+            raise ValueError("hourly panel requires judge:hermes")
+        ledger = self._required_panel_ledger()
+        try:
+            ledger.record_daily_panel_opinion(panel_id=panel_id, **opinion)
+            report = self._hourly_reporter.report(
+                {
+                    "ok": True,
+                    "cycle": {"exitCode": 0},
+                    "analysis": opinion["content"],
+                    "severity": "warning",
                 }
             )
             ledger.finish_daily_panel(
@@ -1240,6 +1325,61 @@ class WorkflowTaskService:
             }
         )
         return {"ok": False, "panelId": panel_id, "reported": reported}
+
+    def _fail_hourly_panel(self, payload: dict[str, Any]) -> dict[str, Any]:
+        panel_id = _required_panel_text(payload.get("panelId"), "panelId")
+        error = _required_panel_text(payload.get("error"), "error")[:1000]
+        ledger = self._required_panel_ledger()
+        try:
+            ledger.finish_daily_panel(
+                panel_id=panel_id,
+                status="failed",
+                finished_at=self._clock(),
+                error=error,
+            )
+        finally:
+            ledger.close()
+        reported = self._failure_reporter.report(
+            {
+                "ok": False,
+                "stage": "hourly-market-watch",
+                "error": error,
+                "analysis": f"시간별 시장 감시 실패\n{error}",
+                "severity": "critical",
+            }
+        )
+        return {"ok": False, "panelId": panel_id, "reported": reported}
+
+    def _record_hourly_watch(
+        self,
+        *,
+        context: dict[str, Any],
+        status: str,
+        queued: bool,
+    ) -> None:
+        if self._audit is None:
+            return
+        watch = context["cycle"]["hourlyWatchV1"]
+        self._audit(
+            AutomationRunLog(
+                run_type=HOURLY_WATCH_RUN_TYPE,
+                status="succeeded",
+                stage=status,
+                started_at=self._clock(),
+                finished_at=self._clock(),
+                details={
+                    "businessDate": watch["businessDate"],
+                    "observedAt": watch["observedAt"],
+                    "fingerprint": watch["fingerprint"],
+                    "anomalyCount": len(watch["anomalies"]),
+                    "anomalyKinds": sorted(
+                        {str(item["kind"]) for item in watch["anomalies"]}
+                    ),
+                    "queued": queued,
+                    "assistant": _hourly_watch_summary(watch, status=status),
+                },
+            )
+        )
 
     def _required_panel_ledger(self) -> PaperLedgerStore:
         if self._panel_ledger is None:
@@ -1331,6 +1471,11 @@ def create_workflow_task_service_from_env() -> WorkflowTaskService:
             summary="Toss Trader 장중 paper cycle 특이사항",
         ),
         daily_reporter=AlertmanagerReporter(url=alertmanager_url),
+        hourly_reporter=AlertmanagerReporter(
+            url=alertmanager_url,
+            alert_name="TossTraderHourlyMarketWatch",
+            summary="Toss Trader 시간별 시장 감시 특이사항",
+        ),
         failure_reporter=AlertmanagerReporter(
             url=alertmanager_url,
             alert_name="TossTraderWorkflowFailure",
@@ -1435,6 +1580,427 @@ def _comparison_payload(payload: dict[str, Any]) -> dict[str, Any]:
             },
         },
     }
+
+
+def _hourly_market_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    rule = payload.get("rule")
+    hermes = payload.get("hermes")
+    if not isinstance(rule, dict) or not isinstance(hermes, dict):
+        raise TypeError("hourly market workflow requires rule and hermes JSON")
+    observed_at = _required_aware_timestamp(payload.get("observedAt"), "observedAt")
+    local = observed_at.astimezone(ZoneInfo("Asia/Seoul"))
+    cycles = {
+        "rule": _workflow_cycle(rule),
+        "hermes": _workflow_cycle(hermes),
+    }
+    market_context = _hourly_market_context(*cycles.values())
+    market_rows = tuple(
+        item
+        for key in ("benchmarks", "symbols")
+        for item in market_context.get(key, ())
+        if isinstance(item, dict)
+    )
+    watched = {
+        str(item.get("symbol") or "") for item in market_rows if item.get("symbol")
+    }
+    portfolios = {
+        portfolio_id: _hourly_portfolio(cycle, watched=watched)
+        for portfolio_id, cycle in cycles.items()
+    }
+    anomalies = _hourly_anomalies(
+        wrappers={"rule": rule, "hermes": hermes},
+        cycles=cycles,
+        market_context=market_context,
+        portfolios=portfolios,
+    )
+    fingerprint = _hourly_fingerprint(anomalies)
+    summary = {
+        key: sum(
+            _non_negative_int(cycle.get("summary", {}).get(key))
+            for cycle in cycles.values()
+            if isinstance(cycle.get("summary"), dict)
+        )
+        for key in ("symbols", "signals", "fills", "skipped", "failed")
+    }
+    return {
+        "exitCode": max(
+            int(rule.get("exitCode", 1)),
+            int(hermes.get("exitCode", 1)),
+        ),
+        "briefing": {
+            "kind": "hourly",
+            "observedAt": observed_at.isoformat(),
+            "isFinal": False,
+        },
+        "cycle": {
+            "comparison": True,
+            "summary": summary,
+            "hourlyWatchV1": {
+                "schemaVersion": 1,
+                "businessDate": local.date().isoformat(),
+                "observedAt": observed_at.isoformat(),
+                "scope": "frozen candidate pools and stored session bars; not market-wide",
+                "purpose": (
+                    "Find operational gaps and hindsight review candidates. "
+                    "Never infer a missed executable buy from a later price move."
+                ),
+                "marketContext": market_context,
+                "portfolios": portfolios,
+                "anomalies": anomalies,
+                "fingerprint": fingerprint,
+            },
+        },
+    }
+
+
+def _required_aware_timestamp(value: object, field: str) -> datetime:
+    if not isinstance(value, str):
+        raise TypeError(f"{field} must be datetime text")
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{field} must include a timezone offset")
+    return parsed
+
+
+def _workflow_cycle(wrapper: dict[str, Any]) -> dict[str, Any]:
+    cycle = wrapper.get("cycle")
+    if not isinstance(cycle, dict):
+        raise TypeError("hourly market workflow cycle is missing")
+    return cycle
+
+
+def _hourly_market_context(*cycles: dict[str, Any]) -> dict[str, Any]:
+    fallback: dict[str, Any] | None = None
+    for cycle in cycles:
+        value = cycle.get("marketContext")
+        if not isinstance(value, dict):
+            continue
+        if value.get("status") == "ok":
+            return value
+        fallback = fallback or value
+    return fallback or {"status": "unavailable", "error": "marketContext missing"}
+
+
+def _hourly_portfolio(
+    cycle: dict[str, Any], *, watched: set[str]
+) -> dict[str, Any]:
+    review = cycle.get("intradayReview")
+    review = review if isinstance(review, dict) else {}
+    details = review.get("symbolsDetail")
+    details = details if isinstance(details, (list, tuple)) else ()
+    states = [
+        {
+            key: item.get(key)
+            for key in (
+                "symbol",
+                "firstReason",
+                "lastReason",
+                "reasonClass",
+                "transitionCount",
+                "buyFills",
+                "sellFills",
+                "armRejectDetail",
+                "armRejectAt",
+            )
+        }
+        for item in details
+        if isinstance(item, dict) and str(item.get("symbol") or "") in watched
+    ]
+    return {
+        key: cycle.get(key)
+        for key in (
+            "portfolioId",
+            "equity",
+            "realizedPnl",
+            "unrealizedPnl",
+            "cashBalance",
+            "consecutiveApiErrors",
+            "summary",
+            "evaluationPool",
+        )
+        if key in cycle
+    } | {
+        "review": {
+            key: review.get(key)
+            for key in (
+                "cycles",
+                "symbols",
+                "buyFills",
+                "sellFills",
+                "lastReasons",
+                "reasonClasses",
+            )
+            if key in review
+        },
+        "symbolStates": sorted(states, key=lambda item: str(item.get("symbol") or "")),
+    }
+
+
+def _hourly_anomalies(
+    *,
+    wrappers: dict[str, dict[str, Any]],
+    cycles: dict[str, dict[str, Any]],
+    market_context: dict[str, Any],
+    portfolios: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    anomalies: list[dict[str, Any]] = []
+    for portfolio_id, cycle in cycles.items():
+        summary = cycle.get("summary")
+        summary = summary if isinstance(summary, dict) else {}
+        failed = _non_negative_int(summary.get("failed"))
+        api_errors = _non_negative_int(cycle.get("consecutiveApiErrors"))
+        exit_code = int(wrappers[portfolio_id].get("exitCode", 1))
+        if exit_code or failed or api_errors:
+            anomalies.append(
+                {
+                    "kind": "operational-error",
+                    "severity": "critical" if exit_code else "warning",
+                    "portfolio": portfolio_id,
+                    "exitCode": exit_code,
+                    "failed": failed,
+                    "consecutiveApiErrors": api_errors,
+                }
+            )
+        review = portfolios[portfolio_id].get("review")
+        review = review if isinstance(review, dict) else {}
+        classes = review.get("reasonClasses")
+        classes = classes if isinstance(classes, dict) else {}
+        error_count = _non_negative_int(classes.get("error"))
+        missing_count = _non_negative_int(classes.get("missing-data"))
+        if error_count or missing_count:
+            anomalies.append(
+                {
+                    "kind": "data-quality",
+                    "severity": "warning",
+                    "portfolio": portfolio_id,
+                    "errors": error_count,
+                    "missingData": missing_count,
+                }
+            )
+
+    if market_context.get("status") != "ok":
+        anomalies.append(
+            {
+                "kind": "market-context-unavailable",
+                "severity": "warning",
+                "status": str(market_context.get("status") or "missing"),
+                "error": str(market_context.get("error") or "")[:200],
+            }
+        )
+        return _sort_hourly_anomalies(anomalies)
+
+    benchmarks = [
+        item
+        for item in market_context.get("benchmarks", ())
+        if isinstance(item, dict)
+    ]
+    symbols = [
+        item for item in market_context.get("symbols", ()) if isinstance(item, dict)
+    ]
+    missing = sorted(
+        str(item.get("symbol") or "unknown")
+        for item in (*benchmarks, *symbols)
+        if item.get("coverage") != "session-1m"
+    )
+    if missing:
+        anomalies.append(
+            {
+                "kind": "minute-coverage-gap",
+                "severity": "warning",
+                "count": len(missing),
+                "symbols": missing[:15],
+            }
+        )
+
+    benchmark_rates = [
+        (str(item.get("symbol") or "unknown"), _hourly_rate(item.get("vsOpen")))
+        for item in benchmarks
+    ]
+    benchmark_rates = [(symbol, rate) for symbol, rate in benchmark_rates if rate is not None]
+    for symbol, rate in benchmark_rates:
+        if abs(rate) >= HOURLY_MARKET_MOVE:
+            anomalies.append(
+                {
+                    "kind": "benchmark-move",
+                    "severity": "warning",
+                    "symbol": symbol,
+                    "vsOpen": str(rate),
+                    "bucket": _hourly_rate_bucket(rate),
+                }
+            )
+    if benchmark_rates:
+        low = min(benchmark_rates, key=lambda item: item[1])
+        high = max(benchmark_rates, key=lambda item: item[1])
+        if high[1] - low[1] >= HOURLY_MARKET_DIVERGENCE:
+            anomalies.append(
+                {
+                    "kind": "benchmark-divergence",
+                    "severity": "warning",
+                    "lowSymbol": low[0],
+                    "lowVsOpen": str(low[1]),
+                    "highSymbol": high[0],
+                    "highVsOpen": str(high[1]),
+                    "bucket": _hourly_rate_bucket(high[1] - low[1]),
+                }
+            )
+
+    baseline = next(
+        (rate for symbol, rate in benchmark_rates if symbol == "069500"),
+        benchmark_rates[0][1] if benchmark_rates else Decimal(0),
+    )
+    states = {
+        portfolio_id: {
+            str(item.get("symbol") or ""): item
+            for item in portfolio.get("symbolStates", ())
+            if isinstance(item, dict)
+        }
+        for portfolio_id, portfolio in portfolios.items()
+    }
+    for row in symbols:
+        symbol = str(row.get("symbol") or "")
+        rate = _hourly_rate(row.get("vsOpen"))
+        if not symbol or rate is None:
+            continue
+        relative = rate - baseline
+        symbol_states = [
+            (portfolio_id, values[symbol])
+            for portfolio_id, values in states.items()
+            if symbol in values
+        ]
+        bought = any(
+            _non_negative_int(state.get("buyFills")) > 0
+            for _, state in symbol_states
+        )
+        if (
+            bought
+            or rate < HOURLY_MISSED_MOVE
+            or relative < HOURLY_MISSED_RELATIVE_MOVE
+        ):
+            continue
+        anomalies.append(
+            {
+                "kind": "hindsight-review-candidate",
+                "severity": "warning",
+                "symbol": symbol,
+                "name": str(row.get("name") or symbol),
+                "vsOpen": str(rate),
+                "vsBenchmark": str(relative),
+                "bucket": _hourly_rate_bucket(rate),
+                "states": [
+                    {
+                        "portfolio": portfolio_id,
+                        "lastReason": state.get("lastReason"),
+                        "reasonClass": state.get("reasonClass"),
+                        "armRejectDetail": state.get("armRejectDetail"),
+                    }
+                    for portfolio_id, state in symbol_states
+                ],
+                "meaning": (
+                    "later outperformance after no observed BUY; review only, "
+                    "not proof an executable entry was missed"
+                ),
+            }
+        )
+    return _sort_hourly_anomalies(anomalies)
+
+
+def _hourly_rate(value: object) -> Decimal | None:
+    parsed = _decimal(value)
+    if parsed is None or not parsed.is_finite():
+        return None
+    return parsed
+
+
+def _hourly_rate_bucket(value: Decimal) -> str:
+    percent = int(abs(value) * 100)
+    lower = (percent // 2) * 2
+    direction = "up" if value >= 0 else "down"
+    return f"{direction}:{lower}-{lower + 2}pct"
+
+
+def _sort_hourly_anomalies(
+    anomalies: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return sorted(
+        anomalies,
+        key=lambda item: (
+            str(item.get("kind") or ""),
+            str(item.get("portfolio") or ""),
+            str(item.get("symbol") or item.get("lowSymbol") or ""),
+        ),
+    )
+
+
+def _hourly_fingerprint(anomalies: list[dict[str, Any]]) -> str:
+    identity = []
+    for item in anomalies:
+        row = {
+            key: item.get(key)
+            for key in (
+                "kind",
+                "severity",
+                "portfolio",
+                "symbol",
+                "lowSymbol",
+                "highSymbol",
+                "bucket",
+                "count",
+                "errors",
+                "missingData",
+                "failed",
+                "consecutiveApiErrors",
+                "status",
+            )
+            if key in item
+        }
+        states = item.get("states")
+        if isinstance(states, list):
+            row["states"] = [
+                {
+                    key: state.get(key)
+                    for key in ("portfolio", "lastReason", "reasonClass")
+                    if key in state
+                }
+                for state in states
+                if isinstance(state, dict)
+            ]
+        identity.append(row)
+    encoded = json.dumps(identity, ensure_ascii=False, sort_keys=True, default=str)
+    return sha256(encoded.encode()).hexdigest()
+
+
+def _hourly_watch_summary(watch: dict[str, Any], *, status: str) -> str:
+    observed_at = str(watch.get("observedAt") or "unknown")
+    anomalies = watch.get("anomalies")
+    anomalies = anomalies if isinstance(anomalies, list) else []
+    if not anomalies:
+        return f"시간별 자동 점검 {observed_at}: 새 특이사항 없음. Telegram 생략."
+    labels = sorted({str(item.get("kind") or "unknown") for item in anomalies})
+    action = (
+        "Hermes 심층분석 queue 등록"
+        if status == "queued"
+        else "직전 점검과 동일하여 Telegram 생략"
+    )
+    return (
+        f"시간별 자동 점검 {observed_at}: 특이사항 {len(anomalies)}건 "
+        f"({', '.join(labels)}). {action}."
+    )
+
+
+def _latest_hourly_fingerprint(
+    ledger: PaperLedgerStore, business_date: str
+) -> str | None:
+    for run in ledger.recent_automation_runs(
+        limit=20, run_type=HOURLY_WATCH_RUN_TYPE
+    ):
+        details = run.get("details")
+        if not isinstance(details, dict):
+            continue
+        if str(details.get("businessDate") or "") != business_date:
+            continue
+        value = details.get("fingerprint")
+        return str(value) if isinstance(value, str) else None
+    return None
 
 
 def _compact_panel_cycle(value: object) -> dict[str, Any]:

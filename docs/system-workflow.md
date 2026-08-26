@@ -29,6 +29,7 @@ flowchart TB
     AUTO -->|알림 이벤트| AM
     AM -->|Bot API| TELEGRAM[Telegram topic]
     PUBHERMES -->|MCP toss-paper| PAPERMCP
+    PUBHERMES -->|daily panel agent /panel-mcp| PAPERMCP
     PAPERMCP -->|read-only SQL| DB
     DB --> METRICS
     METRICS --> PROM
@@ -39,7 +40,9 @@ flowchart TB
 - `automation`, `hermes-analysis`, `paper-mcp`는 `openclaw-net` 내부에서 통신한다.
 - `hermes-analysis`의 `8642`와 `paper-mcp`의 `8090`은 host port를 publish하지 않는다.
 - 분석 sidecar는 Docker socket이 없고 toolset·plugin·MCP·context tool이 모두 0개다.
-- 공용 Hermes Telegram만 `paper-mcp` MCP를 붙인다. 상세는
+- 공용 Hermes Telegram과 그 컨테이너의 daily panel runner만 `paper-mcp`를
+  사용한다. Cursor 패널 subprocess는 빈 임시 workspace에 `/panel-mcp` 한 개만
+  받고, Telegram은 기존 `/mcp` 세 도구만 받는다. 상세는
   [`paper-mcp.md`](paper-mcp.md).
 - 실제 주문 코드는 없고 모든 서비스에서 `TRADING_ENABLED=false`를 유지한다.
 - 관측용 Grafana·Prometheus·metrics·Alertmanager는 운영망에서 조회할 수 있다.
@@ -92,7 +95,7 @@ flowchart TB
 |---|---|---|---|---|
 | `trader` | default | `paper-data` read/write | 없음 | 수동 CLI·개발용 one-shot 실행 |
 | `automation` | default + `openclaw-net` | `paper-data` read/write | 없음 (`8088` expose) | n8n task, paper cycle, RiskManager callback, 알림 감사 |
-| `paper-mcp` | `openclaw-net`만 | 없음 | 없음 (`8090` expose) | 공용 Hermes Telegram용 paper 장부 read-only MCP |
+| `paper-mcp` | `openclaw-net`만 | 없음 | 없음 (`8090` expose) | 공용 Hermes와 daily panel agent용 paper 장부 read-only MCP |
 | `hermes-analysis` | `openclaw-net`만 | `hermes-analysis-data` | 없음 (`8642` expose) | zero-tool 분석 전용 LLM API |
 | `metrics` | default | `paper-data` read-only | Tailscale `:9108` | Prometheus 지표·health. KR calendar `toss_trader_kr_intraday_cycle_expected` |
 | `prometheus` | default | `prometheus-data` | Tailscale `:19090` | metrics scrape·alert rule 평가 |
@@ -149,7 +152,8 @@ flowchart LR
 | n8n → Hermes | `POST /v1/chat/completions` | Hermes bearer | 시장분석 JSON 또는 paper 비교 JSON 해석 |
 | 운영 검증 → Hermes | `GET /v1/toolsets` | Hermes bearer | enabled/resolved tool이 모두 0인지 확인 |
 | 운영자 Telegram → 공용 Hermes | 대화 | 공용 Hermes Telegram 세션 | paper 진행·보유·손익 질의 |
-| 공용 Hermes → paper-mcp | `POST /mcp` | `openclaw-net` 내부 | `toss_paper_status` / `holdings` / `pnl` |
+| 공용 Hermes → paper-mcp | `POST /mcp` | `openclaw-net` 내부 | 현황·보유·손익 3개 도구 |
+| daily panel agent → paper-mcp | `POST /panel-mcp` | `openclaw-net` 내부 | panel cutoff 고정 근거 도구 1개 |
 | paper-mcp → PostgreSQL | 고정 SELECT | DB 계정, session read-only | `rule`/`hermes` paper 장부 조회 |
 | automation → Toss | OAuth2 token·시장·캔들 API | Toss OAuth2 credential | 조회 전용 시장 데이터 수집 |
 | automation → Alertmanager | `POST /api/v2/alerts` | 내부망 | 성공·실패·paper 체결 이벤트 전달 |

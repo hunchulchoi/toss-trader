@@ -4,20 +4,26 @@
 `toss-paper`를 쓴다. 예: 지금 어떻게 되나, 보유 종목이 뭐냐, 수익이 얼마냐.
 
 분석 sidecar `hermes-analysis`에는 MCP나 다른 tool을 연결하지 않는다.
-`automation/hermes-analysis/config.yaml`의 `mcp_servers: {}`는 유지한다.
+`automation/hermes-analysis/config.yaml`의 `mcp_servers: {}`는 유지한다. 별도인
+중간·마감 패널 runner는 main Hermes 안에서 Cursor subprocess마다 임시
+`.cursor/mcp.json`을 만들고 panel 전용 endpoint `toss-panel` 하나만 연결한다.
 
-Alertmanager Telegram은 리포트·장애를 **밀어 넣는** 경로다. 이 MCP는 운영자가
-공용 Hermes에 **물어보는** 경로다. 둘은 같은 paper 장부를 읽지만 봇이 다르다.
+Alertmanager Telegram은 리포트·장애를 **밀어 넣는** 경로다. `/mcp`는 운영자가
+공용 Hermes에 **물어보는** 경로고, `/panel-mcp`는 정해진 중간·마감 분석에서만
+쓰는 경로다. 둘은 같은 paper 장부를 읽지만 노출 도구가 분리된다.
 
 ## 도구
 
-세 도구 모두 입력 인자가 없다. 호출마다 `rule`과 `hermes` 장부를 함께 반환한다.
+기존 세 도구는 입력 인자가 없고 호출마다 `rule`과 `hermes` 장부를 함께
+반환한다. 패널 근거 검색 도구는 현재 `panelId`와 제한된 topic만 받는다.
+공용 `/mcp`는 기존 세 도구만, `/panel-mcp`는 패널 도구 하나만 노출한다.
 
 | tool | 질문에 답 | 읽기 원천 |
 |---|---|---|
 | `toss_paper_status` | 자동매매가 지금 어떻게 되나 | 포트폴리오별 마지막 `paper_cycle_runs`, 최근 Hermes 호출(`hermes_trade` 또는 stage `hermes-analysis`), 최근 실패 최대 10건. 마지막 cycle의 `idleReason`·퍼널·종목별 MA 상태(`symbolStates`), 조회 시점 현금·현금비중·오픈 포지션 수 |
 | `toss_paper_holdings` | 지금 보유 종목이 뭐냐 | `paper_fills` 이동평균 재생 + 최신 캔들 평가. 수량 0은 제외 |
 | `toss_paper_pnl` | 수익이 얼마냐 | 같은 재생. 현금, 평가금액, 총자산, 실현·미실현, 누적 수수료·세금, 시작현금 대비 손익 |
+| `toss_paper_panel_evidence` | 패널 JSON에 빠진 체결·현금·종목별 거절 근거가 있나 | `session-summary`는 해당 panel의 서울일 시작부터 `observedAt`까지 cycle을 장전/장후로 분리하고, 정규장 이후 체결·snapshot·누적 장부 현금을 반환한다. `symbol-trace`는 지정한 최대 10종목의 사유 전이·Risk·D-1·핵심 1분봉. panel 이후 자료와 임의 SQL은 차단 |
 
 임의 SQL, 주문, 설정 변경, cycle 실행, Toss API 호출은 없다. CLI `holdings`는
 실계좌 조회이므로 MCP에 노출하지 않는다.
@@ -82,8 +88,10 @@ infisical run --env=prod --path=/ -- \
   docker compose -p toss-trader up -d --build paper-mcp
 ```
 
-공용 Hermes 컨테이너에 내부 endpoint를 등록하고 세 도구를 Telegram에
-활성화한다. 분석 sidecar `hermes-analysis`에는 등록하지 않는다.
+공용 Hermes 컨테이너에 두 endpoint를 별도 이름으로 등록한다. `toss-paper`의
+기존 세 도구만 Telegram에 활성화한다. `toss-panel`은 daily runner의 제한
+프롬프트와 임시 Cursor MCP에서만 사용한다. 분석 sidecar `hermes-analysis`에는
+등록하지 않는다.
 
 실계좌 조회 우회를 막기 위해 공용 Hermes의 `SOUL.md`는
 `automation/hermes-telegram/SOUL.md`를 사용한다. 이 정책은 Toss 관련 질문에서
@@ -100,6 +108,9 @@ docker restart hermes
 docker exec hermes hermes mcp add toss-paper \
   --url http://toss-trader-paper-mcp:8090/mcp
 
+docker exec hermes hermes mcp add toss-panel \
+  --url http://toss-trader-paper-mcp:8090/panel-mcp
+
 docker exec hermes hermes tools enable --platform telegram \
   toss-paper:toss_paper_status \
   toss-paper:toss_paper_holdings \
@@ -110,17 +121,22 @@ docker exec hermes hermes tools enable --platform telegram \
 
 ```bash
 docker exec hermes hermes mcp test toss-paper
+docker exec hermes hermes mcp test toss-panel
 docker exec hermes hermes tools list --platform telegram
 docker exec toss-trader-paper-mcp-1 \
   python -c "import json,urllib.request; print(json.load(urllib.request.urlopen('http://127.0.0.1:8090/healthz')))"
 ```
 
-healthz 기대값: `{"status": "ok", "tools": 3}`.
+healthz 기대값: `{"status": "ok", "tools": 4}`. `toss-paper`의 `tools/list`는
+3개, `toss-panel`은 `toss_paper_panel_evidence` 1개여야 한다.
 
-Telegram E2E에서는 다음 네 항목을 확인한다.
+Telegram·패널 E2E에서는 다음 다섯 항목을 확인한다.
 
 1. 자동매매 현황 질문이 `toss_paper_status`를 호출한다.
 2. paper 보유 질문이 `toss_paper_holdings`를 호출한다.
 3. paper 손익 질문이 `toss_paper_pnl`을 호출한다.
 4. Toss 실계좌/`toss-trader holdings` 요청은 어떤 조회 도구도 호출하지 않고
    paper-only 경계를 설명하며 거부한다.
+5. 중간·마감 패널은 필요할 때만 현재 `PANEL_ID`로
+   `toss_paper_panel_evidence`를 호출하고, 응답 `observedAt`을 넘는 체결·분봉을
+   받지 않는다.

@@ -20,6 +20,7 @@ from toss_trader.automation import (
     PaperPortfolioProcess,
     WorkflowTaskService,
     _comparison_payload,
+    _hourly_market_payload,
     automation_response,
     paper_cycle_notice,
 )
@@ -27,7 +28,274 @@ from toss_trader.calendar import MarketSession
 from toss_trader.paper import PaperLedger
 
 
+def _hourly_cycle(
+    *,
+    portfolio_id: str,
+    reason: str,
+    symbol_move: str = "0.0500",
+) -> dict[str, object]:
+    return {
+        "portfolioId": portfolio_id,
+        "summary": {
+            "symbols": 1,
+            "signals": 0,
+            "fills": 0,
+            "skipped": 1,
+            "failed": 0,
+        },
+        "consecutiveApiErrors": 0,
+        "marketContext": {
+            "status": "ok",
+            "businessDate": "2026-08-26",
+            "observedAt": "2026-08-26T11:03:00+09:00",
+            "benchmarks": [
+                {
+                    "symbol": "069500",
+                    "name": "KODEX 200",
+                    "coverage": "session-1m",
+                    "vsOpen": "0.0100",
+                }
+            ],
+            "symbols": [
+                {
+                    "symbol": "005930",
+                    "name": "삼성전자",
+                    "coverage": "session-1m",
+                    "vsOpen": symbol_move,
+                }
+            ],
+        },
+        "intradayReview": {
+            "cycles": 25,
+            "symbols": 1,
+            "buyFills": 0,
+            "sellFills": 0,
+            "lastReasons": {reason: 1},
+            "reasonClasses": {"normal-rejection": 1},
+            "symbolsDetail": [
+                {
+                    "symbol": "005930",
+                    "firstReason": "setup-v2:waiting:first-session-bar",
+                    "lastReason": reason,
+                    "reasonClass": "normal-rejection",
+                    "transitionCount": 1,
+                    "buyFills": 0,
+                    "sellFills": 0,
+                    "armRejectDetail": None,
+                    "armRejectAt": None,
+                }
+            ],
+        },
+    }
+
+
 class WorkflowTaskServiceTest(unittest.TestCase):
+    def test_hourly_watch_queues_new_anomaly_dedupes_and_stores_hermes_tokens(
+        self,
+    ) -> None:
+        now = datetime(2026, 8, 26, 2, 3, tzinfo=UTC)
+        reports: list[dict[str, object]] = []
+
+        class StubReporter:
+            def report(self, value: dict[str, object]) -> dict[str, object]:
+                reports.append(value)
+                return {"accepted": True}
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = f"{directory}/paper.db"
+
+            def audit(run: AutomationRunLog) -> str:
+                ledger = PaperLedger(path)
+                try:
+                    return ledger.record_automation_run(
+                        run_type=run.run_type,
+                        status=run.status,
+                        stage=run.stage,
+                        started_at=run.started_at,
+                        finished_at=run.finished_at,
+                        prompt_tokens=run.prompt_tokens,
+                        completion_tokens=run.completion_tokens,
+                        total_tokens=run.total_tokens,
+                        error=run.error,
+                        details=run.details,
+                    )
+                finally:
+                    ledger.close()
+
+            service = WorkflowTaskService(
+                paper=None,  # type: ignore[arg-type]
+                market_scan=None,  # type: ignore[arg-type]
+                market_analyzer=None,  # type: ignore[arg-type]
+                daily_analyzer=None,  # type: ignore[arg-type]
+                market_reporter=StubReporter(),
+                paper_reporter=StubReporter(),
+                daily_reporter=StubReporter(),
+                failure_reporter=StubReporter(),
+                hourly_reporter=StubReporter(),
+                panel_ledger=lambda: PaperLedger(path),
+                audit=audit,
+                clock=lambda: now,
+            )
+            payload = {
+                "observedAt": "2026-08-26T11:03:00+09:00",
+                "rule": {
+                    "exitCode": 0,
+                    "cycle": _hourly_cycle(
+                        portfolio_id="rule",
+                        reason="setup-v2:invalid-stop",
+                    ),
+                },
+                "hermes": {
+                    "exitCode": 0,
+                    "cycle": _hourly_cycle(
+                        portfolio_id="hermes",
+                        reason="setup-v2:violation:missing-price-setup",
+                    ),
+                },
+            }
+            first = service.run(
+                "/workflow/hourly-panel-enqueue",
+                {**payload, "_workflow": {"executionId": "hourly-1"}},
+            )
+            claimed = service.run("/workflow/daily-panel-claim", {})
+
+            self.assertTrue(first["queued"])
+            self.assertGreaterEqual(first["anomalyCount"], 1)
+            self.assertEqual(claimed["context"]["briefing"]["kind"], "hourly")
+            self.assertTrue(
+                any(
+                    item["kind"] == "hindsight-review-candidate"
+                    for item in claimed["context"]["cycle"]["hourlyWatchV1"][
+                        "anomalies"
+                    ]
+                )
+            )
+            opinion = {
+                "stage": "judge:hermes",
+                "role": "hourly anomaly judge",
+                "provider": "hermes",
+                "model": "gpt-5.6-terra",
+                "content": "[시간별 결론] 005930 사후 검토 필요",
+                "startedAt": now.isoformat(),
+                "finishedAt": now.isoformat(),
+                "promptTokens": 100,
+                "completionTokens": 20,
+                "totalTokens": 120,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0,
+            }
+            completed = service.run(
+                "/workflow/hourly-panel-complete",
+                {"panelId": first["panelId"], "opinion": opinion},
+            )
+            second = service.run(
+                "/workflow/hourly-panel-enqueue",
+                {**payload, "_workflow": {"executionId": "hourly-2"}},
+            )
+            ledger = PaperLedger(path)
+            try:
+                token_row = ledger._connection.execute(
+                    "SELECT total_tokens FROM daily_analysis_opinions "
+                    "WHERE panel_id = ? AND stage = 'judge:hermes'",
+                    (first["panelId"],),
+                ).fetchone()
+            finally:
+                ledger.close()
+
+        self.assertTrue(completed["reported"]["accepted"])
+        self.assertEqual(reports[-1]["severity"], "warning")
+        self.assertEqual(token_row[0], 120)
+        self.assertFalse(second["queued"])
+        self.assertEqual(second["reason"], "unchanged-anomaly")
+
+    def test_hourly_watch_does_not_queue_normal_market(self) -> None:
+        context = _hourly_market_payload(
+            {
+                "observedAt": "2026-08-26T12:03:00+09:00",
+                "rule": {
+                    "exitCode": 0,
+                    "cycle": _hourly_cycle(
+                        portfolio_id="rule",
+                        symbol_move="0.0100",
+                        reason="setup-v2:v2-idle",
+                    ),
+                },
+                "hermes": {
+                    "exitCode": 0,
+                    "cycle": _hourly_cycle(
+                        portfolio_id="hermes",
+                        symbol_move="0.0100",
+                        reason="setup-v2:v2-idle",
+                    ),
+                },
+            }
+        )
+
+        self.assertEqual(context["briefing"]["kind"], "hourly")
+        self.assertEqual(context["cycle"]["hourlyWatchV1"]["anomalies"], [])
+
+    def test_hourly_watch_payload_is_bounded_and_fingerprint_ignores_detail_noise(
+        self,
+    ) -> None:
+        rule = _hourly_cycle(
+            portfolio_id="rule",
+            reason="setup-v2:invalid-stop",
+        )
+        hermes = _hourly_cycle(
+            portfolio_id="hermes",
+            reason="setup-v2:invalid-stop",
+        )
+        symbols = []
+        details = []
+        for index in range(15):
+            symbol = f"{index:06d}"
+            symbols.append(
+                {
+                    "symbol": symbol,
+                    "name": f"종목-{index}",
+                    "coverage": "session-1m",
+                    "barCount": 120,
+                    "firstAt": "2026-08-26T09:01:00+09:00",
+                    "lastAt": "2026-08-26T11:00:00+09:00",
+                    "open": "10000",
+                    "last": "10500",
+                    "vsOpen": "0.0500",
+                    "prevClose": "9900",
+                    "vsPrevClose": "0.0606",
+                }
+            )
+            details.append(
+                {
+                    "symbol": symbol,
+                    "firstReason": "setup-v2:waiting:first-session-bar",
+                    "lastReason": "setup-v2:invalid-stop",
+                    "reasonClass": "normal-rejection",
+                    "transitionCount": 2,
+                    "buyFills": 0,
+                    "sellFills": 0,
+                    "armRejectDetail": {"stopDistance": f"0.{index:04d}"},
+                    "armRejectAt": "2026-08-26T09:16:00+09:00",
+                }
+            )
+        for cycle in (rule, hermes):
+            cycle["marketContext"]["symbols"] = symbols
+            cycle["intradayReview"]["symbolsDetail"] = details
+        payload = {
+            "observedAt": "2026-08-26T11:03:00+09:00",
+            "rule": {"exitCode": 0, "cycle": rule},
+            "hermes": {"exitCode": 0, "cycle": hermes},
+        }
+
+        first = _hourly_market_payload(payload)
+        details[0]["armRejectDetail"] = {"stopDistance": "0.9999"}
+        second = _hourly_market_payload(payload)
+
+        self.assertLessEqual(len(json.dumps(first, ensure_ascii=False)), 24000)
+        self.assertEqual(
+            first["cycle"]["hourlyWatchV1"]["fingerprint"],
+            second["cycle"]["hourlyWatchV1"]["fingerprint"],
+        )
+
     def test_daily_panel_queues_records_seven_opinions_and_reports_judge(self) -> None:
         now = datetime(2026, 8, 19, 6, 40, tzinfo=UTC)
         reports: list[dict[str, object]] = []

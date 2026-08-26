@@ -24,6 +24,21 @@ No tasks awaiting review.
 
 ## DONE
 
+### AI-007 Add an hourly anomaly market watch
+
+- Owner: codex
+- Status: DONE
+- Result: on Korean market days, inspect stored Rule/Hermes market context and
+  gate transitions every hour from 10:03 through 15:03; persist every review in
+  the Hermes timeline, queue one cutoff-bound Hermes investigation only for a
+  new or changed anomaly, and send only that judgment to Telegram
+- Checks: 431 unit tests; live n8n node and full-workflow validation;
+  changed-file Ruff and Git whitespace
+- Risks: the watched sample is bounded rather than market-wide; later price
+  strength is review evidence, not proof of a missed executable entry; the
+  checked-in workflow remains inactive until a separate authorized publish
+- 기록 시각: 2026-08-26 09:13 KST
+
 ### STRAT-024 Split pre-market scan into Rule and Hermes readiness
 
 - Owner: cursor
@@ -35,6 +50,22 @@ No tasks awaiting review.
 - Risks: scan still uses `DISCOVERY_SYMBOLS`, not the 08:35 D-1 freeze; live
   Telegram copy changes only after n8n/automation deploy
 - 기록 시각: 2026-08-26 08:53 KST
+
+### AI-006 Give panel agents bounded evidence search
+
+- Owner: codex
+- Status: DONE
+- Result: added one panel-cutoff read-only MCP tool for session and up-to-ten-symbol
+  evidence on a separate `/panel-mcp` endpoint; connected each disposable Cursor
+  workspace and the explicitly restricted Hermes judge to only that MCP;
+  allowed official KRX/KIS/OpenDART/public-data research with source-time and
+  post-cutoff labels
+- Checks: 425 unit tests; changed-file Ruff and Git whitespace; Infisical reader
+  smoke against the latest succeeded production panel
+- Risks: external official-site search availability depends on each model
+  provider; this adds explanation evidence only and cannot alter paper decisions
+- 운영 읽기 검증 시각: 2026-08-26 08:49 KST; DB write/deploy 없음
+- 기록 시각: 2026-08-26 08:39 KST
 
 ### AI-005 Preserve full changed facts and explain reserved cash
 
