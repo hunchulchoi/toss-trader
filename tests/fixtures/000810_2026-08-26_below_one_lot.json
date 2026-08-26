@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "ruleVersion": "setup-v2.3",
+  "strategyInput": false,
+  "shadowOnly": true,
+  "source": {
+    "panelId": "df1c092a-509c-44d4-b44a-9662946e936f",
+    "queriedAt": "2026-08-26T14:08:00+09:00",
+    "snapshotAt": "2026-08-26T09:05:00.973594+09:00",
+    "tables": ["paper_cycle_runs", "market_candles", "paper_v2_position_plans"]
+  },
+  "candidate": {
+    "symbol": "000810",
+    "name": "삼성화재",
+    "signalSession": "2026-08-25",
+    "signalClose": "645000",
+    "setupLow": "623000",
+    "atr14": "35201.11849621815950183813021",
+    "firstCompletedBar": ["2026-08-26T09:01:00+09:00", "655000", "655000", "647000", "651000", "0"],
+    "executionBar": ["2026-08-26T09:05:00+09:00", "649000", "649000", "645000", "645000", "0"]
+  },
+  "ruleSnapshot": {
+    "equity": "1001864.7200",
+    "availableCash": "959414.7200",
+    "currentOpenHeat": "7713.189048805276817254516535",
+    "currentClusterHeat": "7713.189048805276817254516535",
+    "policy": "default-rule-0.5pct",
+    "expectedUsableRiskBudget": "2305.458151194723182745483465",
+    "expectedLimitingFactors": ["cluster-heat", "below-one-lot"]
+  },
+  "hermesSnapshot": {
+    "equity": "1000000",
+    "availableCash": "1000000",
+    "currentOpenHeat": "0",
+    "currentClusterHeat": "0",
+    "policy": "hermes-experimental-2pct",
+    "expectedUsableRiskBudget": "20000.00",
+    "expectedLimitingFactors": ["per-trade-risk", "below-one-lot"]
+  },
+  "expected": {
+    "gapRate": "0.015503875968992248062015504",
+    "structuralStopDistance": "22000",
+    "atrStopFloor": "52801.67774432723925275719532",
+    "effectiveStopDistance": "52801.67774432723925275719532",
+    "oneShareEstimatedLossWith5bpAndCosts": "54787.2769054550756331308167",
+    "ruleQuantity": "0",
+    "hermesQuantity": "0",
+    "authoritativeReason": "setup-v2:violation:below-one-lot"
+  }
+}

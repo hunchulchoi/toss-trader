@@ -60,6 +60,11 @@ MARKET_CRITIQUE = (
     "1d cycle의 intradaySample.applicable=false는 설계다. marketContext와 "
     "intradayReview.reasonPath/armRejectDetail을 써라. below-one-lot은 사이징 0주 사실이지 "
     "전략 무효 선언이 아니다. 무체결·무오류만으로 리스크 해소를 말하지 마라. "
+    "sessionAccountingV1이 있으면 paper 체결·보유·dailyBaselineEquity의 authoritative "
+    "source다. summary.fillScope=current-cycle과 intradayReview.fillScope="
+    "seoul-session-cumulative를 구분하라. sessionAccountingV1의 수치와 두 scope가 "
+    "일치하면 체결 집계 충돌로 보고하지 마라. 없거나 실제 불일치할 때만 evidence "
+    "도구로 원장을 확인하라. "
 )
 
 PANEL_RESEARCH_RULES = (

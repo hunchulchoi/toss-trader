@@ -24,7 +24,7 @@ No tasks awaiting review.
 
 ## DONE
 
-### STRAT-026 Scope RECLAIM_LOST to Hunter only
+### STRAT-027 Scope RECLAIM_LOST to Hunter only
 
 - Owner: cursor
 - Status: DONE
@@ -35,6 +35,34 @@ No tasks awaiting review.
 - Risks: not exact cash/heat engine replay; mixed noon marks are not a
   profitability claim; live paper still uses the old prompt until deploy
 - 기록 시각: 2026-08-26 14:17 KST
+
+### STRAT-026 Replay Samsung C&T event and Samsung Fire sizing gates
+
+- Owner: codex
+- Status: DONE
+- Result: freeze the actual D-1 price projection, official PIT event/flow inputs,
+  and 09:05 sizing snapshots; reproduce Samsung C&T's separate price-reference
+  failure plus event hard veto and Samsung Fire's zero-lot result under both Rule
+  and Hermes risk budgets
+- Checks: full unittest 442 tests; fixture JSON validation, changed-file Ruff,
+  and whitespace
+- Risks: adjusted daily candles are current-stored rather than immutable; the
+  fixtures are shadow evidence and do not alter strategy, Risk, orders, or fills
+- 기록 시각: 2026-08-26 14:17 KST
+
+### AI-010 Reconcile panel current-cycle and session fills
+
+- Owner: codex
+- Status: DONE
+- Result: add authoritative `sessionAccountingV1` from the paper ledger with
+  Seoul-session fills, open positions, baseline equity, cash, and equity; label
+  `summary.fills` as current-cycle and `intradayReview` fills as session-cumulative
+- Checks: full unittest 440 tests; changed-file Ruff and whitespace
+- Deployment: automation-only rollout and atomic Hermes runner replacement at
+  2026-08-26 14:05 KST; service healthy/restart 0 and runner checksum matched
+- Risks: this corrects panel evidence and wording only; it does not alter signals,
+  sizing, Risk, orders, fills, or the n8n graph
+- 기록 시각: 2026-08-26 14:05 KST
 
 ### AI-009 Make the daily panel debate improvements
 

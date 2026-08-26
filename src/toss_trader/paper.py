@@ -89,6 +89,10 @@ class PaperLedgerStore(Protocol):
         self, signal: TradeSignal, *, executed_at: datetime | None = None
     ) -> PaperFill: ...
 
+    def fills_between(
+        self, started_at: datetime, finished_at: datetime
+    ) -> tuple[PaperFill, ...]: ...
+
     def estimate_costs(self, signal: TradeSignal) -> TradeCosts: ...
 
     def record_risk_decision(
@@ -805,6 +809,27 @@ class PaperLedger:
             (day.isoformat(), self._portfolio_id),
         ).fetchone()
         return int(row[0]) if row else 0
+
+    def fills_between(
+        self, started_at: datetime, finished_at: datetime
+    ) -> tuple[PaperFill, ...]:
+        started_utc, finished_utc = _fill_range(started_at, finished_at)
+        rows = self._connection.execute(
+            """
+            SELECT fill_id, signal_id, symbol, side, quantity, price, notional,
+                   commission, tax, reason, executed_at
+            FROM paper_fills
+            WHERE portfolio_id = ?
+            ORDER BY executed_at, rowid
+            """,
+            (self._portfolio_id,),
+        ).fetchall()
+        fills = tuple(_paper_fill_from_row(row) for row in rows)
+        return tuple(
+            fill
+            for fill in fills
+            if started_utc <= fill.executed_at.astimezone(UTC) <= finished_utc
+        )
 
     def position_notional(
         self, symbol: str, *, mark_price: Decimal | None = None
@@ -1682,6 +1707,25 @@ class PostgresPaperLedger:
             row = cursor.fetchone()
         return int(row[0]) if row else 0
 
+    def fills_between(
+        self, started_at: datetime, finished_at: datetime
+    ) -> tuple[PaperFill, ...]:
+        started_utc, finished_utc = _fill_range(started_at, finished_at)
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT fill_id, signal_id, symbol, side, quantity, price,
+                       notional, commission, tax, reason, executed_at
+                FROM paper_fills
+                WHERE portfolio_id = %s
+                  AND executed_at >= %s AND executed_at <= %s
+                ORDER BY executed_at, fill_sequence
+                """,
+                (self._portfolio_id, started_utc, finished_utc),
+            )
+            rows = cursor.fetchall()
+        return tuple(_paper_fill_from_row(row) for row in rows)
+
     def position_notional(
         self, symbol: str, *, mark_price: Decimal | None = None
     ) -> Decimal:
@@ -1979,6 +2023,40 @@ def _position_accountings(
         )
         for symbol, values in state.items()
     }
+
+
+def _fill_range(
+    started_at: datetime, finished_at: datetime
+) -> tuple[datetime, datetime]:
+    started_utc = _aware_utc(started_at)
+    finished_utc = _aware_utc(finished_at)
+    if started_utc > finished_utc:
+        raise ValueError("fill range start must be at or before finish")
+    return started_utc, finished_utc
+
+
+def _paper_fill_from_row(row: Sequence[object]) -> PaperFill:
+    executed_at = row[10]
+    when = (
+        executed_at
+        if isinstance(executed_at, datetime)
+        else datetime.fromisoformat(str(executed_at))
+    )
+    if when.tzinfo is None or when.utcoffset() is None:
+        raise ValueError("paper fill time must include a timezone offset")
+    return PaperFill(
+        fill_id=str(row[0]),
+        signal_id=str(row[1]),
+        symbol=str(row[2]),
+        side=Side(str(row[3])),
+        quantity=Decimal(row[4]),
+        price=Decimal(row[5]),
+        notional=Decimal(row[6]),
+        commission=Decimal(row[7]),
+        tax=Decimal(row[8]),
+        reason=str(row[9]),
+        executed_at=when,
+    )
 
 
 def _aware_utc(value: datetime) -> datetime:

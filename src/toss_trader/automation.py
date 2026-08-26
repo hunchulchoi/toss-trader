@@ -2129,6 +2129,7 @@ def _compact_panel_cycle(value: object) -> dict[str, Any]:
             "cashBalance",
             "consecutiveApiErrors",
             "summary",
+            "sessionAccountingV1",
             "intradayReview",
             "intradaySample",
             "universe",
@@ -2211,6 +2212,7 @@ def _compact_intraday_review(value: object) -> dict[str, Any] | None:
         key: value.get(key)
         for key in (
             "schemaVersion",
+            "fillScope",
             "purpose",
             "cycles",
             "symbols",
