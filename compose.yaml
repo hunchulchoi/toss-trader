@@ -215,7 +215,7 @@ services:
         - >-
           import json, urllib.request;
           response = json.load(urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=2));
-          assert response == {'status': 'ok', 'tools': 3}
+          assert response == {'status': 'ok', 'tools': 4}
       interval: 30s
       timeout: 3s
       retries: 3

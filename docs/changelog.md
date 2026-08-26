@@ -7,6 +7,13 @@
 
 ## 2026-08-26
 
+### paper-mcp 4도구 healthcheck 정합화
+
+- 기록 시각: 2026-08-26 09:37 KST
+- 원인: cutoff 패널 근거 도구 추가로 `/healthz`가 `tools=4`를 반환하지만 compose는
+  옛 `tools=3`을 기대해 실제 응답 정상인 container를 `unhealthy`로 표시했다
+- 수정: compose healthcheck와 회귀 테스트를 4도구 계약에 맞춘다
+
 ### 시간별 시장 특이사항 검토와 Hermes timeline 오늘 기본값
 
 - 기록 시각: 2026-08-26 09:13 KST

@@ -19,6 +19,7 @@ class PaperMcpAssetsTest(unittest.TestCase):
         self.assertIn("aliases:\n          - toss-trader-paper-mcp", block)
         self.assertIn('expose:\n      - "8090"', block)
         self.assertIn("read_only: true", block)
+        self.assertIn("{'status': 'ok', 'tools': 4}", block)
         self.assertNotIn("ports:", block)
         self.assertNotIn("TOSS_CLIENT", block)
         self.assertNotIn("TOSS_ACCOUNT", block)
