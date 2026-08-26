@@ -23,8 +23,11 @@
 
 일봉 Hermes 실험에도 Hunter 재돌파 veto가 기본이라 09:05 네 신호가 전부 지연됐다.
 - 동작: `RECLAIM_LOST`는 Hunter 신호만 거부. 일봉 실험에서 그 코드만 있으면 무시하고 승인. 다른 veto는 유지. 2026-08-26 09:00~12:00 저장 JSON을 재파싱해 서산은 09:05가 덜 다치고 로보스타는 09:10이 더 싸다. 수익 근거 아님
-- 운영: 코드만, 배포 대기
+- 운영: 반영함
 - 기록 시각: 2026-08-26 14:17 KST
+- 배포 시각: 2026-08-26 14:29 KST. Infisical prod 주입으로 `automation`만
+  재빌드·재생성. health `ok`, restart 0, `TRADING_ENABLED=false`,
+  `RECLAIM_LOST` Hunter-only 프롬프트 확인. n8n graph 변경 없음
 
 ### 삼성물산 이벤트·삼성화재 0주 판정 shadow fixture
 
