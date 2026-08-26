@@ -486,6 +486,8 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("전략 토론은 금지", source)
         self.assertIn("sessionAccountingV1", source)
         self.assertIn("체결 집계 충돌로 보고하지 마라", source)
+        self.assertIn("expired-unresolved", source)
+        self.assertIn("authoritative 차단", source)
 
     def test_n8n_workflow_runs_intraday_paper_every_five_minutes(self) -> None:
         workflow = json.loads(

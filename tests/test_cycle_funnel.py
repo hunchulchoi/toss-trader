@@ -109,6 +109,35 @@ class IntradayReviewTest(unittest.TestCase):
         self.assertEqual(row["armRejectDetail"]["quantity"], "0")
         self.assertEqual(row["armRejectAt"], "t2")
 
+    def test_keeps_expired_event_shadow_detail(self) -> None:
+        review = aggregate_intraday_review(
+            [
+                {
+                    "_observedAt": "t1",
+                    "symbols": [
+                        {
+                            "symbol": "028260",
+                            "skipReason": "setup-v2:violation:event-imminent",
+                            "skipDetail": {
+                                "eventGateShadow": {
+                                    "status": "expired-unresolved",
+                                    "eventFamily": "investor-relations",
+                                    "authoritativeBlocked": True,
+                                    "shadowOnly": True,
+                                }
+                            },
+                        }
+                    ],
+                }
+            ]
+        )
+
+        row = review["symbolsDetail"][0]
+        self.assertEqual(
+            row["eventGateShadow"]["status"], "expired-unresolved"
+        )
+        self.assertEqual(row["eventGateAt"], "t1")
+
     def test_empty_insights_report_no_intraday_cycles(self) -> None:
         review = aggregate_intraday_review([])
 

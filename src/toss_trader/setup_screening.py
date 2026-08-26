@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import ROUND_FLOOR, Decimal
 from enum import StrEnum
@@ -34,6 +34,25 @@ class ValuationTier(StrEnum):
             ValuationTier.B: Decimal("1.0"),
             ValuationTier.C: Decimal("0.6"),
         }[self]
+
+
+class EventGateStatus(StrEnum):
+    ACTIVE_ENTRY_BLOCK = "active-entry-block"
+    PREANNOUNCED_UNKNOWN = "preannounced-unknown"
+    EXPIRED_UNRESOLVED = "expired-unresolved"
+
+
+@dataclass(frozen=True, slots=True)
+class EventGateEvidence:
+    status: EventGateStatus
+    event_family: str
+    receipt_no: str
+    report_name: str
+    available_at: str
+    blocked_through: str | None
+    is_entry_blocking: bool
+    is_preannounced: bool
+    scheduled_for: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +94,7 @@ class SetupContext:
     averaging_down: bool = False
     event_imminent: bool | None = None
     gap_up_chase: bool | None = None
+    event_gate: EventGateEvidence | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +113,7 @@ class SetupDecision:
     valuation_tier: ValuationTier
     confidence_multiplier: Decimal
     proposed_confidence_multiplier: Decimal
+    event_gate: EventGateEvidence | None = None
 
 
 HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS = frozenset(
@@ -106,6 +127,47 @@ def hermes_experimental_can_arm(decision: SetupDecision) -> bool:
     if decision.missing_checks:
         return False
     return set(decision.violations) <= HERMES_EXPERIMENTAL_REFERENCE_VIOLATIONS
+
+
+def event_gate_shadow_detail(decision: SetupDecision) -> dict[str, object] | None:
+    evidence = decision.event_gate
+    if evidence is None:
+        return None
+    without_event = replace(
+        decision,
+        approved=False,
+        violations=tuple(
+            violation
+            for violation in decision.violations
+            if violation != "event-imminent"
+        ),
+        event_gate=None,
+    )
+    would_rule_approve = (
+        not without_event.violations and not without_event.missing_checks
+    )
+    return {
+        "eventGateShadow": {
+            "status": evidence.status.value,
+            "eventFamily": evidence.event_family,
+            "receiptNo": evidence.receipt_no,
+            "reportName": evidence.report_name,
+            "availableAt": evidence.available_at,
+            "blockedThrough": evidence.blocked_through,
+            "scheduledFor": evidence.scheduled_for,
+            "authoritativeBlocked": (
+                "event-imminent" in decision.violations and not decision.approved
+            ),
+            "blockedThroughExpired": (
+                evidence.status is EventGateStatus.EXPIRED_UNRESOLVED
+            ),
+            "wouldRuleApproveWithoutEvent": would_rule_approve,
+            "wouldHermesReferenceArmWithoutEvent": (
+                hermes_experimental_can_arm(without_event)
+            ),
+            "shadowOnly": True,
+        }
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +186,65 @@ class EntryGateDecision:
 
 
 SetupContextFactory = Callable[[str, date, datetime, bool], SetupContext]
+
+
+def _event_datetime(value: object) -> datetime | None:
+    if value is None:
+        return None
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("event time must include a timezone offset")
+    return parsed
+
+
+def _event_text(value: object) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat() if isinstance(value, (date, datetime)) else str(value)
+
+
+def _event_family(report_name: str) -> str:
+    normalized = report_name.upper()
+    if "기업설명회" in report_name or "(IR)" in normalized:
+        return "investor-relations"
+    if any(
+        keyword in report_name
+        for keyword in (
+            "유상증자",
+            "무상증자",
+            "합병",
+            "분할",
+            "감자",
+            "공개매수",
+            "전환사채",
+        )
+    ):
+        return "capital-action"
+    if any(
+        keyword in report_name
+        for keyword in ("실적", "사업보고서", "반기보고서", "분기보고서")
+    ):
+        return "financial-report"
+    return "other"
+
+
+def _event_gate_evidence(
+    row: object, *, status: EventGateStatus
+) -> EventGateEvidence:
+    if not isinstance(row, (list, tuple)) or len(row) != 7:
+        raise TypeError("event gate row is invalid")
+    report_name = str(row[1]).strip()
+    return EventGateEvidence(
+        status=status,
+        event_family=_event_family(report_name),
+        receipt_no=str(row[0]),
+        report_name=report_name,
+        available_at=str(_event_text(row[2])),
+        blocked_through=_event_text(row[3]),
+        is_entry_blocking=bool(row[4]),
+        is_preannounced=bool(row[5]),
+        scheduled_for=_event_text(row[6]),
+    )
 
 
 class StrictSetupV2EntryGate:
@@ -228,17 +349,33 @@ class OfficialSetupContextFactory:
                 (signal_session.isoformat(), signal_session.isoformat(), decision_utc),
             ).fetchone()
             event_imminent = None
+            event_gate = None
             if coverage is not None:
-                event_imminent = connection.execute(
-                    """SELECT 1 FROM market_events_pit_v2
+                blocking_event = connection.execute(
+                    """SELECT rcept_no, report_name, available_at,
+                              blocked_through, is_entry_blocking,
+                              is_preannounced, scheduled_for
+                       FROM market_events_pit_v2
                     WHERE symbol=? AND available_at<=? AND is_entry_blocking=1
                       AND blocked_through IS NOT NULL AND ?<blocked_through
                     ORDER BY available_at DESC LIMIT 1""",
                     (symbol, decision_kst, decision_kst),
-                ).fetchone() is not None
-                if not event_imminent:
-                    event_imminent = connection.execute(
-                        """SELECT 1 FROM market_events_pit_v2 AS announced
+                ).fetchone()
+                if blocking_event is not None:
+                    event_imminent = True
+                    event_gate = _event_gate_evidence(
+                        blocking_event,
+                        status=EventGateStatus.ACTIVE_ENTRY_BLOCK,
+                    )
+                else:
+                    announced_event = connection.execute(
+                        """SELECT announced.rcept_no, announced.report_name,
+                                  announced.available_at,
+                                  announced.blocked_through,
+                                  announced.is_entry_blocking,
+                                  announced.is_preannounced,
+                                  announced.scheduled_for
+                           FROM market_events_pit_v2 AS announced
                         WHERE announced.symbol=?
                           AND announced.available_at<=?
                           AND announced.is_preannounced=1
@@ -252,7 +389,20 @@ class OfficialSetupContextFactory:
                           )
                         ORDER BY announced.available_at DESC LIMIT 1""",
                         (symbol, decision_kst, decision_kst),
-                    ).fetchone() is not None
+                    ).fetchone()
+                    event_imminent = announced_event is not None
+                    if announced_event is not None:
+                        blocked_through = _event_datetime(announced_event[3])
+                        status = (
+                            EventGateStatus.EXPIRED_UNRESOLVED
+                            if blocked_through is not None
+                            and decision_at >= blocked_through
+                            else EventGateStatus.PREANNOUNCED_UNKNOWN
+                        )
+                        event_gate = _event_gate_evidence(
+                            announced_event,
+                            status=status,
+                        )
             rows = connection.execute(
                 f"""WITH ranked_flow AS (
                     SELECT session_index, session_date, available_at,
@@ -303,6 +453,7 @@ class OfficialSetupContextFactory:
             flow_observations=observations,
             event_imminent=event_imminent,
             gap_up_chase=gap_up_chase,
+            event_gate=event_gate,
         )
 
 
@@ -472,6 +623,7 @@ def evaluate_setup(
         valuation_tier=tier,
         confidence_multiplier=Decimal("1.0"),
         proposed_confidence_multiplier=tier.proposed_multiplier,
+        event_gate=context.event_gate,
     )
 
 

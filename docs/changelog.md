@@ -7,6 +7,18 @@
 
 ## 2026-08-26
 
+### 미해소 사전공시 종료조건을 shadow로 분리 관측
+
+- 기록 시각: 2026-08-26 14:33 KST
+- 이벤트 veto를 `active-entry-block`, `preannounced-unknown`,
+  `expired-unresolved`로 분류하고 공시 식별자·시각·이벤트군을 보존한다
+- `expired-unresolved`에서는 이벤트만 제거한 Rule/Hermes 참고형 결과를
+  `shadowOnly` 반사실로 cycle·시간별·일일 패널에 전달한다
+- 삼성물산 fixture는 공식 차단을 유지하면서 Rule은 여전히 가격패턴 불승인,
+  Hermes reference만 조건부 arm 가능하다는 차이를 검증한다
+- 안전: hard veto·전략·Risk·주문·체결 변경 없음. 운영 배포 전 상태
+- 검증: full unittest 453 tests, changed-file Ruff, Git whitespace 통과
+
 ### Advisor RECLAIM_LOST를 Hunter만으로 제한
 
 일봉 Hermes 실험에도 Hunter 재돌파 veto가 기본이라 09:05 네 신호가 전부 지연됐다.

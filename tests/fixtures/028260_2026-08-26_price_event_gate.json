@@ -87,6 +87,8 @@
     "ma200": "322927.5000",
     "ma50Distance": "-0.0503",
     "eventImminent": true,
+    "eventGateStatus": "expired-unresolved",
+    "eventFamily": "investor-relations",
     "priceOnlyViolations": ["missing-price-setup"],
     "combinedViolations": ["missing-price-setup", "event-imminent"],
     "hermesCanArmPriceOnly": true,

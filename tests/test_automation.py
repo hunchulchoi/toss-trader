@@ -19,6 +19,7 @@ from toss_trader.automation import (
     PaperCycleProcess,
     PaperPortfolioProcess,
     WorkflowTaskService,
+    _compact_intraday_review,
     _comparison_payload,
     _hourly_market_payload,
     automation_response,
@@ -1258,6 +1259,31 @@ class PaperCycleNoticeTest(unittest.TestCase):
         self.assertEqual(
             payload["cycle"]["middaySnapshotV2"]["schemaVersion"], 2
         )
+
+    def test_compact_review_preserves_expired_event_shadow(self) -> None:
+        compact = _compact_intraday_review(
+            {
+                "symbolsDetail": [
+                    {
+                        "symbol": "028260",
+                        "transitionCount": 0,
+                        "eventGateShadow": {
+                            "status": "expired-unresolved",
+                            "authoritativeBlocked": True,
+                            "shadowOnly": True,
+                        },
+                        "eventGateAt": "2026-08-26T09:05:00+09:00",
+                    }
+                ]
+            }
+        )
+
+        assert compact is not None
+        detail = compact["symbolsDetail"][0]
+        self.assertEqual(
+            detail["eventGateShadow"]["status"], "expired-unresolved"
+        )
+        self.assertEqual(detail["eventGateAt"], "2026-08-26T09:05:00+09:00")
 
     def test_comparison_payload_preserves_authoritative_session_accounting(
         self,

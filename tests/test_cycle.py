@@ -18,6 +18,8 @@ from toss_trader.repository import SqliteMarketRepository
 from toss_trader.risk import RiskLimits, RiskManager
 from toss_trader.setup_screening import (
     EntryGateDecision,
+    EventGateEvidence,
+    EventGateStatus,
     SetupDecision,
     SetupType,
     ValuationTier,
@@ -1154,6 +1156,60 @@ class PaperCycleRunnerTest(unittest.TestCase):
                 finally:
                     ledger.close()
                     state.close()
+
+    def test_event_veto_keeps_expired_shadow_evidence(self) -> None:
+        market_open = datetime(2026, 8, 26, 0, 0, tzinfo=UTC)
+        base = _v2_candidate()
+        candidate = replace(
+            base,
+            decision=replace(
+                base.decision,
+                approved=False,
+                violations=("event-imminent", "missing-price-setup"),
+                event_gate=EventGateEvidence(
+                    status=EventGateStatus.EXPIRED_UNRESOLVED,
+                    event_family="investor-relations",
+                    receipt_no="20260821800764",
+                    report_name="기업설명회(IR)개최(안내공시)",
+                    available_at="2026-08-24T08:00:00+09:00",
+                    blocked_through="2026-08-26T08:00:00+09:00",
+                    is_entry_blocking=False,
+                    is_preannounced=True,
+                    scheduled_for=None,
+                ),
+            ),
+        )
+        strategy = FakeV2CycleStrategy(
+            candidate,
+            [
+                _minute_bar(
+                    market_open + timedelta(minutes=1),
+                    open_price="10",
+                    low_price="9.5",
+                )
+            ],
+        )
+
+        result = self._runner(
+            WatchlistCandleClient({"005930": [Decimal(10)]}),
+            v2_strategy=strategy,
+        ).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open + timedelta(minutes=5),
+        )
+
+        self.assertEqual(result.fill_count, 0)
+        detail = result.items[0].skip_detail
+        assert detail is not None
+        shadow = detail["eventGateShadow"]
+        self.assertEqual(shadow["status"], "expired-unresolved")
+        self.assertTrue(shadow["authoritativeBlocked"])
+        self.assertFalse(shadow["wouldRuleApproveWithoutEvent"])
+        self.assertTrue(shadow["wouldHermesReferenceArmWithoutEvent"])
 
     def test_v2_cycle_pages_back_to_toss_session_open_bar(self) -> None:
         market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)

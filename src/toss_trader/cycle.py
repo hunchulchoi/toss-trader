@@ -34,6 +34,7 @@ from .setup_screening import (
     EntryGateDecision,
     PositionSizingPolicy,
     SetupType,
+    event_gate_shadow_detail,
     hermes_experimental_can_arm,
     position_size_reference,
 )
@@ -1137,7 +1138,12 @@ class PaperCycleRunner:
             candidate,
             experimental_strategy_reference=experimental_strategy_reference,
         ):
-            return None, _v2_rejection_reason(candidate), None
+            return (
+                None,
+                _v2_rejection_reason(candidate),
+                None,
+                event_gate_shadow_detail(candidate.decision),
+            )
         if experimental_strategy_reference:
             arm_candidate_input = replace(
                 candidate,

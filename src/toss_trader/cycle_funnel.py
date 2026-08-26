@@ -62,6 +62,8 @@ def aggregate_intraday_review(
                     "reasonPath": [],
                     "armRejectDetail": None,
                     "armRejectAt": None,
+                    "eventGateShadow": None,
+                    "eventGateAt": None,
                 },
             )
             fill_side = row.get("fillSide")
@@ -104,6 +106,11 @@ def aggregate_intraday_review(
                 ):
                     state["armRejectDetail"] = skip_detail
                     state["armRejectAt"] = observed_at
+                if isinstance(skip_detail, dict):
+                    event_gate = skip_detail.get("eventGateShadow")
+                    if isinstance(event_gate, dict):
+                        state["eventGateShadow"] = event_gate
+                        state["eventGateAt"] = observed_at
 
     last_reasons = Counter(
         str(state["lastReason"])
@@ -126,6 +133,8 @@ def aggregate_intraday_review(
             "reasonPath": list(state["reasonPath"]),
             "armRejectDetail": state["armRejectDetail"],
             "armRejectAt": state["armRejectAt"],
+            "eventGateShadow": state["eventGateShadow"],
+            "eventGateAt": state["eventGateAt"],
         }
         for symbol, state in sorted(latest.items())
     )

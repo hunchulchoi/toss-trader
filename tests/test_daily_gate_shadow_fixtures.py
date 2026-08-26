@@ -16,6 +16,7 @@ from toss_trader.official_data import OfficialDataRepository
 from toss_trader.paper import toss_trade_costs
 from toss_trader.setup_screening import (
     DEFAULT_POSITION_SIZING_POLICY,
+    EventGateStatus,
     OfficialSetupContextFactory,
     SetupContext,
     SetupDecision,
@@ -23,6 +24,7 @@ from toss_trader.setup_screening import (
     ValuationTier,
     evaluate_price_setups,
     evaluate_setup,
+    event_gate_shadow_detail,
     hermes_experimental_can_arm,
 )
 from toss_trader.v2_engine import (
@@ -192,6 +194,12 @@ class SamsungCtPriceEventShadowFixtureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             context = _official_context(source, f"{directory}/market.db")
         self.assertEqual(context.event_imminent, expected["eventImminent"])
+        assert context.event_gate is not None
+        self.assertEqual(
+            context.event_gate.status,
+            EventGateStatus(expected["eventGateStatus"]),
+        )
+        self.assertEqual(context.event_gate.event_family, expected["eventFamily"])
         self.assertEqual(len(context.flow_observations), 6)
         self.assertGreater(
             context.decision_at,
@@ -221,6 +229,13 @@ class SamsungCtPriceEventShadowFixtureTest(unittest.TestCase):
             hermes_experimental_can_arm(combined),
             expected["hermesCanArmCombined"],
         )
+        detail = event_gate_shadow_detail(combined)
+        assert detail is not None
+        shadow = detail["eventGateShadow"]
+        self.assertTrue(shadow["authoritativeBlocked"])
+        self.assertTrue(shadow["shadowOnly"])
+        self.assertFalse(shadow["wouldRuleApproveWithoutEvent"])
+        self.assertTrue(shadow["wouldHermesReferenceArmWithoutEvent"])
 
 
 class SamsungFireBelowOneLotShadowFixtureTest(unittest.TestCase):

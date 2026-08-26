@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-028 Observe unresolved preannouncement expiry in shadow
+
+- Owner: codex
+- Status: DONE
+- Result: classify event veto evidence as active, unknown-schedule, or
+  expired-unresolved; preserve the event provenance and event-free Rule/Hermes
+  counterfactual through cycle, hourly, and daily panel evidence
+- Checks: Samsung C&T fixture plus cycle/funnel/compact-panel integration tests;
+  full unittest 453 tests, changed-file Ruff, and whitespace
+- Risks: authoritative event veto is unchanged; the counterfactual is shadow-only
+  and cannot establish an executable missed trade or profit
+- 기록 시각: 2026-08-26 14:33 KST
+
 ### STRAT-027 Scope RECLAIM_LOST to Hunter only
 
 - Owner: cursor

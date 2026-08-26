@@ -9,6 +9,7 @@ from toss_trader.models import Candle, Side, TradeSignal
 from toss_trader.official_data import OfficialDataRepository
 from toss_trader.repository import SqliteMarketRepository
 from toss_trader.setup_screening import (
+    EventGateStatus,
     FlowObservation,
     OfficialSetupContextFactory,
     PositionSizingPolicy,
@@ -538,6 +539,11 @@ class SetupScreeningTest(unittest.TestCase):
             )
 
             self.assertTrue(context.event_imminent)
+            assert context.event_gate is not None
+            self.assertEqual(
+                context.event_gate.status,
+                EventGateStatus.ACTIVE_ENTRY_BLOCK,
+            )
             self.assertEqual(len(context.flow_observations), 6)
             self.assertEqual(context.flow_observations[-1].foreign_net_buy, Decimal(60))
 
@@ -574,6 +580,11 @@ class SetupScreeningTest(unittest.TestCase):
             )
 
             self.assertTrue(context.event_imminent)
+            assert context.event_gate is not None
+            self.assertEqual(
+                context.event_gate.status,
+                EventGateStatus.PREANNOUNCED_UNKNOWN,
+            )
 
     def test_fails_closed_when_manual_safety_checks_are_missing(self) -> None:
         history = pullback_candles()

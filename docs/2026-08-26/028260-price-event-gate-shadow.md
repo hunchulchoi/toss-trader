@@ -30,6 +30,19 @@ blocked window 때문이 아니라 `scheduledFor=null`인 미해소 preannouncem
 fallback 때문이다. IR 공시의 실제 예정일 파싱 또는 종료 조건을 바꿀지는 별도 정책
 실험 대상이며, 이 한 건으로 hard gate를 완화하지 않는다.
 
+## 종료조건 shadow 관측
+
+- 기록 시각: 2026-08-26 14:33 KST
+- `active-entry-block`, `preannounced-unknown`, `expired-unresolved`를 구분한다.
+- 삼성물산은 `expired-unresolved / investor-relations`로 기록된다. 공식
+  `event-imminent` veto는 그대로 유지한다.
+- cycle·시간별·중간·마감 자료에는 공시 식별자와 시각, 이벤트군,
+  `wouldRuleApproveWithoutEvent`, `wouldHermesReferenceArmWithoutEvent`를
+  `shadowOnly=true`로 남긴다.
+- 이 반사실은 차단이 없었을 때 다음 gate로 넘어갈 수 있었는지만 뜻한다. 놓친 매수,
+  체결 가능성, 수익 기회로 해석하지 않는다. 10~20 거래일 관측 후 IR과 자본행동을
+  분리해 종료조건 변경 여부를 다시 판단한다.
+
 ## 재현 한계
 
 가격 fixture는 알고리즘이 실제 사용하는 200개 종가·최신 시가·직전 고가를 보존한
