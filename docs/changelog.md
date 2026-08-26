@@ -7,6 +7,18 @@
 
 ## 2026-08-26
 
+### 삼성물산 이벤트·삼성화재 0주 판정 shadow fixture
+
+- 기록 시각: 2026-08-26 14:17 KST
+- 삼성물산: D-1 200봉은 `missing-price-setup` 단독이며, 공식 PIT context의 날짜 미상
+  IR 사전공시가 별도 `event-imminent` hard veto를 추가하는 입력과 순서를 분리 재현했다
+- 삼성화재: 09:05 기준 구조 손절거리 22,000원보다 ATR 1.5배 52,801.68원이 우선하며,
+  비용 포함 1주 위험 54,787.28원이 Rule 2,305.46원·Hermes 20,000원 가용 예산을
+  모두 넘어 0주가 되는 것을 재현했다
+- 안전: 두 fixture 모두 `strategyInput=false`, `shadowOnly=true`. 신호·Risk 호출·
+  주문·fill·운영 설정 변경 없음
+- 검증: full unittest 442 tests, fixture JSON, changed-file Ruff, Git whitespace 통과
+
 ### 패널의 현재 사이클·당일 누적 체결 범위 분리
 
 - 기록 시각: 2026-08-26 14:05 KST
