@@ -33,7 +33,8 @@ No tasks awaiting review.
   stored trade JSON without calling Hermes or creating fills
 - Checks: advisor unit tests plus morning fixture replay
 - Risks: not exact cash/heat engine replay; mixed noon marks are not a
-  profitability claim; live paper still uses the old prompt until deploy
+  profitability claim
+- Deployment: 2026-08-26 14:29 KST automation-only rebuild; n8n unchanged
 - 기록 시각: 2026-08-26 14:17 KST
 
 ### STRAT-026 Replay Samsung C&T event and Samsung Fire sizing gates
