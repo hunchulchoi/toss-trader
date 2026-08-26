@@ -40,6 +40,8 @@ No tasks awaiting review.
   운영 health 확인 시각: 09:38 KST; Hermes hourly poll 등록 시각: 09:45 KST
 - 첫 운영 완료 시각: 2026-08-26 10:32 KST. 후보 2건, 15,636 token,
   timeline·Alertmanager telegram receiver 확인
+- Alert route 수정·배포: 2026-08-26 10:46 KST. 시간별 심층분석을 Failed 기본
+  토픽 5가 아닌 report 토픽 6으로 명시 routing; Alertmanager healthy, restart 0
 - 기록 시각: 2026-08-26 09:13 KST
 
 ### STRAT-024 Split pre-market scan into Rule and Hermes readiness

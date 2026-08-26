@@ -56,6 +56,11 @@
 - Telegram 토픽 수정 기록 시각: 2026-08-26 10:42 KST. 시간별 알림 전용 route가
   없어 기본 Failed 토픽 5로 전달되던 원인을 확인했다. 해당 alert를 report 토픽
   route에 명시해 이후 심층분석은 토픽 6으로 보낸다
+- Alertmanager 배포 시각: 2026-08-26 10:45 KST. Infisical prod 주입으로
+  `alertmanager`만 재빌드·재생성
+- Alertmanager 운영 확인 시각: 2026-08-26 10:46 KST. container healthy,
+  restart 0, live matcher `TossTraderHourlyMarketWatch -> telegram-report`, report
+  `message_thread_id=6` 확인. 별도 테스트 Telegram은 보내지 않았다
 
 ### 장전 스캔을 Rule/Hermes/Hunter 계약에 맞춤
 
