@@ -18,6 +18,11 @@
 - 안전: 기존 fingerprint queue dedupe를 유지하고 fingerprint가 없는 수동 shadow
   감사행은 dedupe 기준에서 건너뛴다. n8n graph·매매·Risk 계약 변경 없음
 - 검증: full unittest 436 tests, changed-file Ruff, Git whitespace 통과
+- 배포 시각: 2026-08-26 13:09 KST. Infisical prod 주입으로 `automation`만
+  재빌드·기동하고 Hermes hourly runner는 임시 파일 뒤 원자 교체했다
+- 운영 확인 시각: 2026-08-26 13:11 KST. automation healthy/restart 0,
+  runner checksum·권한·문법 일치. 읽기 전용 실측에서 11·12·13시 패널과
+  10:51 shadow 감사까지 최신 4건으로 병합됐다. n8n graph 재게시 없음
 
 ### 한전기술 gap-up-chase shadow fixture
 

@@ -32,9 +32,11 @@ No tasks awaiting review.
   audits to each changed-anomaly panel, then require the judge to report only
   new or changed facts and emit one short carry-forward line when nothing changed
 - Checks: full unittest 436 tests; changed-file Ruff and whitespace
+- Deployment: 2026-08-26 13:09 KST automation-only rollout and atomic Hermes
+  runner replacement; 13:11 KST read-only production merge smoke passed
 - Risks: only the latest four conclusions are included and each is clipped to
   700 characters; source ledgers remain the full audit record
-- 기록 시각: 2026-08-26 13:04 KST
+- 기록 시각: 2026-08-26 13:11 KST
 
 ### STRAT-025 Replay KEPCO E&C gap-up chase
 
