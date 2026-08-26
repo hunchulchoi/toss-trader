@@ -420,6 +420,46 @@ class MonitoringAssetsTest(unittest.TestCase):
             self.assertIn("missing-price-setup", prompt)
             self.assertNotIn("제공 JSON만 사용하고 도구를 호출하지 마라", prompt)
 
+    def test_hermes_panel_agents_debate_falsifiable_improvements(self) -> None:
+        namespace = runpy.run_path(
+            str(ROOT / "automation" / "hermes-panel-runner.py")
+        )
+        panel_id = "11111111-1111-4111-8111-111111111111"
+        context = {
+            "briefing": {
+                "kind": "midday",
+                "observedAt": "2026-08-26T11:50:00+09:00",
+            }
+        }
+        independent = {
+            name: namespace["_independent_prompt"](
+                name, context, panel_id=panel_id
+            )
+            for name in ("gpt", "grok", "gemini")
+        }
+        opinions = {
+            name: {"content": f"{name} 개선 가설"} for name in independent
+        }
+        review = namespace["_review_prompt"](
+            "grok", context, opinions, panel_id=panel_id
+        )
+        judge = namespace["_judge_prompt"](
+            context, opinions, opinions, panel_id=panel_id
+        )
+
+        for prompt in independent.values():
+            self.assertIn("[개선 가설]", prompt)
+            self.assertIn("shadow/fixture", prompt)
+            self.assertIn("성공 지표", prompt)
+            self.assertIn("반증", prompt)
+        self.assertIn("채택/기각/추가 자료", review)
+        self.assertIn("다른 분석가의 개선 가설", review)
+        self.assertIn("[개선 후보]", judge)
+        self.assertIn("최대 2개", judge)
+        self.assertIn("최소 변경", judge)
+        self.assertIn("중단 조건", judge)
+        self.assertIn("[개선 후보]", namespace["_briefing"](context)[2])
+
     def test_hermes_panel_runner_distinguishes_midday_from_close(self) -> None:
         namespace = runpy.run_path(
             str(ROOT / "automation" / "hermes-panel-runner.py")

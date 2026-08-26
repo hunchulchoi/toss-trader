@@ -27,7 +27,8 @@ ROLES = {
         "model": "cursor-grok-4.6-high-fast",
         "instruction": (
             "수익률·체결·신호·후보 funnel을 정량 분석하라. 비교 가능한 수치와 "
-            "데이터 한계를 구분하고, 제공되지 않은 값을 추정하지 마라."
+            "데이터 한계를 구분하고, 제공되지 않은 값을 추정하지 마라. 오늘 근거로 "
+            "검증 가능한 개선 가설과 측정 지표를 제안하라."
         ),
     },
     "grok": {
@@ -35,7 +36,8 @@ ROLES = {
         "model": "cursor-grok-4.6-high-fast",
         "instruction": (
             "이상치·장부 불일치·PIT/미래참조·데이터 누락·운영 실패 가능성을 "
-            "공격적으로 찾되, JSON에 없는 사실은 만들지 마라."
+            "공격적으로 찾되, JSON에 없는 사실은 만들지 마라. 다른 개선안의 "
+            "hindsight·표본편향·부작용과 반증 조건을 찾아라."
         ),
     },
     "gemini": {
@@ -43,7 +45,8 @@ ROLES = {
         "model": "gemini-3.7-flash-high",
         "instruction": (
             "노출·현금·손실·거절 사유·체결 및 시스템 위험을 평가하라. "
-            "universe membership과 주문 실행 Risk를 혼동하지 마라."
+            "universe membership과 주문 실행 Risk를 혼동하지 마라. 개선안의 "
+            "shadow/paper 경계, 중단 조건과 롤백 가능성을 판정하라."
         ),
     },
 }
@@ -70,6 +73,15 @@ PANEL_RESEARCH_RULES = (
     "검색 결과는 [검색 근거]에 tool/topic 또는 공식 URL과 cutoff 적합성을 남겨라. "
     "찾지 못한 정보는 '패널 JSON 생략', '원천 데이터 없음', '검색 안 함' 중 하나로 "
     "구분하라. missing-price-setup은 가격 자료 누락이 아니라 정상 패턴 미충족이다. "
+)
+
+IMPROVEMENT_DEBATE = (
+    "정상 작동 여부 감사에 그치지 말고 오늘 evidence에서 후보 발굴·진입·사이징·"
+    "청산·데이터·설명력을 개선할 반증 가능한 가설을 찾아라. 각 가설은 문제, 근거, "
+    "최소 변경, shadow/fixture 검증, 성공 지표, 반증·중단 조건을 포함한다. 개선 "
+    "판정에 필요한 내부 사실이 패널 JSON에서 생략됐으면 허용된 evidence 도구로 "
+    "확인하라. 사후 상승만으로 gate 완화나 소급 체결을 제안하지 말고, 근거가 "
+    "부족하면 규칙 변경 대신 다음 측정 항목을 제안하라. "
 )
 
 
@@ -191,12 +203,12 @@ def _briefing(context: dict[str, Any]) -> tuple[str, str, str]:
         return (
             "장중 중간 브리핑",
             "현재까지의 관측치다. 종가·일일 수익·장 마감 결과로 확정하지 마라.",
-            "[중간 결론], [합의], [이견/이상], [Risk], [오후 확인]",
+            "[중간 결론], [합의], [이견/이상], [개선 후보], [Risk], [오후 확인]",
         )
     return (
         "장마감 브리핑",
         "마감 시점 자료이지만 제공 JSON 밖의 종가나 성과를 추정하지 마라.",
-        "[오늘 결론], [합의], [이견/이상], [Risk], [내일 확인]",
+        "[오늘 결론], [합의], [이견/이상], [개선 후보], [Risk], [내일 확인]",
     )
 
 
@@ -215,6 +227,10 @@ def _independent_prompt(
         "변화, transitionCount, reasonClass, changedFacts를 우선 분석하라. "
         "changedFacts가 비었으면 '새로 바뀐 핵심 사실 없음'이라고 짧게 쓰고 같은 결론을 "
         "늘여 쓰지 마라. 정상 조건 탈락과 실제 missing-data/error를 구분하라. "
+        f"{IMPROVEMENT_DEBATE}"
+        "반드시 [개선 가설]에 우선순위가 가장 높은 제안 1~2개와 shadow/fixture "
+        "검증, 성공 지표, 반증 조건을 적어라. 증거가 없으면 [개선 가설] 없음과 "
+        "필요한 다음 측정을 적어라. "
         f"{MARKET_CRITIQUE}"
         "매매 지시·수익 보장 금지. 핵심 근거와 불확실성을 한국어 1200자 이내로 작성.\n"
         f"PANEL_ID={panel_id}\n"
@@ -238,6 +254,9 @@ def _review_prompt(
         f"{timing_guard} "
         "합의점, 충돌, 틀린 주장/과잉해석, 최종 judge가 남겨야 할 불확실성을 "
         "사유 변화와 changedFacts 중심으로 검토하고 새 사실이 없으면 반복을 지적하라. "
+        f"{IMPROVEMENT_DEBATE}"
+        "다른 분석가의 개선 가설 각각을 채택/기각/추가 자료로 판정하고, 중복 제안은 "
+        "합치며 숨은 비용과 반증 조건을 지적하라. "
         "독립 의견의 [검색 근거]를 먼저 재사용하고, 아직 풀리지 않은 충돌에만 "
         f"{PANEL_RESEARCH_RULES}"
         f"{MARKET_CRITIQUE}"
@@ -255,6 +274,23 @@ def _hermes_call(
     *,
     panel_id: str,
 ) -> dict[str, Any]:
+    return _hermes_prompt_call(
+        _judge_prompt(
+            context,
+            independent,
+            reviews,
+            panel_id=panel_id,
+        )
+    )
+
+
+def _judge_prompt(
+    context: dict[str, Any],
+    independent: dict[str, dict[str, Any]],
+    reviews: dict[str, dict[str, Any]],
+    *,
+    panel_id: str,
+) -> str:
     title, timing_guard, sections = _briefing(context)
     evidence = {
         "today": context,
@@ -267,13 +303,18 @@ def _hermes_call(
         f"evidence 밖의 사실을 만들지 마라. {timing_guard} "
         "각 의견의 [검색 근거]를 검증하고, 결론에 필요한 내부 충돌이 남았을 때만 "
         f"{PANEL_RESEARCH_RULES}"
+        f"{IMPROVEMENT_DEBATE}"
+        "[개선 후보]에는 상호검토를 통과한 최대 2개만 남겨라. 각 후보에 우선순위, "
+        "문제와 evidence, 최소 변경, shadow/fixture 검증, 성공 지표와 중단 조건을 "
+        "적어라. 당일 실전 규칙은 자동 변경하지 않는다. 채택할 근거가 없으면 "
+        "'개선 후보 없음'과 다음 측정만 적어라. "
         f"텔레그램용 한국어 평문으로 {sections}을 포함해 2800자 이내 작성하라. "
         f"{MARKET_CRITIQUE}"
         "매매 지시·수익 보장 금지.\n"
         f"PANEL_ID={panel_id}\n"
         f"EVIDENCE={json.dumps(evidence, ensure_ascii=False, separators=(',', ':'))}"
     )
-    return _hermes_prompt_call(prompt)
+    return prompt
 
 
 def _hourly_call(context: dict[str, Any], *, panel_id: str) -> dict[str, Any]:

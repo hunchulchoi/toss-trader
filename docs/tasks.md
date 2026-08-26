@@ -24,6 +24,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### AI-009 Make the daily panel debate improvements
+
+- Owner: codex
+- Status: DONE
+- Result: require GPT to propose measurable hypotheses, Grok to attack bias and
+  side effects, Gemini to define safety and rollback, and Hermes to retain at
+  most two falsifiable improvement candidates with a shadow/fixture test
+- Checks: full unittest 437 tests; changed-file Ruff and whitespace
+- Risks: the panel may recommend experiments but cannot change live rules or
+  create fills; proposals remain hypotheses until their stated metric passes
+- 기록 시각: 2026-08-26 13:34 KST
+
 ### AI-008 Give hourly Hermes prior same-day conclusions
 
 - Owner: codex
