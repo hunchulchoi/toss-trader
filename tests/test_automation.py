@@ -1259,6 +1259,44 @@ class PaperCycleNoticeTest(unittest.TestCase):
             payload["cycle"]["middaySnapshotV2"]["schemaVersion"], 2
         )
 
+    def test_comparison_payload_preserves_authoritative_session_accounting(
+        self,
+    ) -> None:
+        accounting = {
+            "schemaVersion": 1,
+            "scope": "seoul-market-session-to-observed-at",
+            "currentCycleFills": 0,
+            "sessionBuyFills": 1,
+            "sessionSellFills": 0,
+            "sessionFills": [
+                {
+                    "symbol": "005930",
+                    "side": "BUY",
+                    "quantity": "1",
+                    "price": "70000",
+                    "executedAt": "2026-08-26T09:10:00+09:00",
+                }
+            ],
+        }
+        payload = _comparison_payload(
+            {
+                "briefingKind": "midday",
+                "briefingObservedAt": "2026-08-26T11:50:00+09:00",
+                "rule": {
+                    "exitCode": 0,
+                    "cycle": {"sessionAccountingV1": accounting},
+                },
+                "hermes": {
+                    "exitCode": 0,
+                    "cycle": {"sessionAccountingV1": accounting},
+                },
+            }
+        )
+
+        portfolios = payload["cycle"]["middaySnapshotV2"]["portfolios"]
+        self.assertEqual(portfolios["rule"]["sessionAccountingV1"], accounting)
+        self.assertEqual(portfolios["hermes"]["sessionAccountingV1"], accounting)
+
     def test_comparison_payload_lifts_stored_market_context(self) -> None:
         payload = _comparison_payload(
             {

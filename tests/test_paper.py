@@ -98,6 +98,32 @@ class PaperLedgerTest(unittest.TestCase):
         with self.assertRaises(DuplicatePaperOrder):
             self.ledger.execute(trade_signal, executed_at=executed_at)
 
+    def test_reads_portfolio_fills_in_an_aware_time_range(self) -> None:
+        first_at = datetime(2026, 8, 26, 0, 10, tzinfo=UTC)
+        second_at = datetime(2026, 8, 26, 0, 20, tzinfo=UTC)
+        for index, executed_at in enumerate((first_at, second_at), start=1):
+            self.ledger.execute(
+                TradeSignal(
+                    signal_id=f"signal-{index}",
+                    symbol=f"00000{index}",
+                    side=Side.BUY,
+                    reference_price=Decimal(1000 * index),
+                    quantity=Decimal(index),
+                    reason="range-test",
+                ),
+                executed_at=executed_at,
+            )
+
+        fills = self.ledger.fills_between(
+            datetime(2026, 8, 26, 0, 15, tzinfo=UTC),
+            datetime(2026, 8, 26, 0, 30, tzinfo=UTC),
+        )
+
+        self.assertEqual([fill.signal_id for fill in fills], ["signal-2"])
+        self.assertEqual(fills[0].executed_at, second_at)
+        with self.assertRaisesRegex(ValueError, "fill range"):
+            self.ledger.fills_between(second_at, first_at)
+
     def test_recent_hourly_panel_reviews_returns_prior_same_day_judgment(
         self,
     ) -> None:

@@ -17,6 +17,7 @@ from toss_trader.cli import (
     _hunter_entry_payload,
     _intraday_backfill_start_cursor,
     _momentum_collection_symbols,
+    _paper_session_accounting,
     _recorded_momentum_symbols,
     _seoul_day_window,
     _session_candle_count,
@@ -31,6 +32,65 @@ from toss_trader.models import Candle, Side, TradeSignal
 from toss_trader.paper import PaperLedger
 from toss_trader.repository import SqliteMarketRepository
 from toss_trader.risk import RiskLimits, RiskManager
+
+
+class SessionAccountingPayloadTest(unittest.TestCase):
+    def test_distinguishes_current_cycle_from_session_fills(self) -> None:
+        ledger = PaperLedger(":memory:", portfolio_id="rule")
+        try:
+            for signal_id, symbol, executed_at in (
+                (
+                    "before-open",
+                    "005930",
+                    datetime(2026, 8, 25, 23, 50, tzinfo=UTC),
+                ),
+                (
+                    "session-buy",
+                    "000660",
+                    datetime(2026, 8, 26, 0, 10, tzinfo=UTC),
+                ),
+            ):
+                ledger.execute(
+                    TradeSignal(
+                        signal_id=signal_id,
+                        symbol=symbol,
+                        side=Side.BUY,
+                        reference_price=Decimal(10000),
+                        quantity=Decimal(1),
+                        reason="accounting-test",
+                    ),
+                    executed_at=executed_at,
+                )
+            now = datetime(2026, 8, 26, 4, 42, tzinfo=UTC)
+            ledger.record_daily_equity_baseline(
+                captured_at=now,
+                equity=Decimal("1002254.72"),
+            )
+
+            payload = _paper_session_accounting(
+                ledger,
+                now=now,
+                current_cycle_fills=0,
+                initial_cash=Decimal(1000000),
+                cash_balance=ledger.cash_balance(Decimal(1000000)),
+                equity=Decimal("1000664.72"),
+                symbol_names={"005930": "삼성전자", "000660": "SK하이닉스"},
+            )
+
+            self.assertEqual(payload["currentCycleFills"], 0)
+            self.assertEqual(payload["sessionBuyFills"], 1)
+            self.assertEqual(payload["sessionSellFills"], 0)
+            self.assertEqual(
+                [row["symbol"] for row in payload["sessionFills"]],
+                ["000660"],
+            )
+            self.assertEqual(payload["dailyBaselineEquity"], "1002254.72")
+            self.assertEqual(
+                {row["symbol"] for row in payload["positions"]},
+                {"005930", "000660"},
+            )
+        finally:
+            ledger.close()
 
 
 class IntradaySampleCollectionTest(unittest.TestCase):

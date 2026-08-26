@@ -55,7 +55,7 @@ from .official_data import (
     OfficialDataRepository,
     open_official_data_repository,
 )
-from .paper import DuplicatePaperOrder, open_paper_ledger
+from .paper import DuplicatePaperOrder, PaperLedgerStore, open_paper_ledger
 from .paper_mcp import PaperMcpService, PostgresPaperReadStore, serve_paper_mcp
 from .paper_timeline import PostgresPaperTimelineStore
 from .pit_collector import run_pit_collection, serve_pit_collector
@@ -1598,6 +1598,19 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             if interval == "1d"
             else None
         )
+        session_accounting = (
+            _paper_session_accounting(
+                paper_ledger,
+                now=now,
+                current_cycle_fills=result.fill_count,
+                initial_cash=settings.paper_initial_cash,
+                cash_balance=cash_balance,
+                equity=result.equity,
+                symbol_names=symbol_names,
+            )
+            if interval == "1d"
+            else None
+        )
         hermes_snapshot = None
         if interval == "1m" and universe_result is not None:
             failed_samples = {
@@ -1735,10 +1748,16 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 "symbols": result.symbol_count,
                 "signals": result.signal_count,
                 "fills": result.fill_count,
+                "fillScope": "current-cycle",
                 "skipped": result.skipped_count,
                 "failed": result.failed_count,
                 "idleReason": result.insight["idleReason"],
             },
+            **(
+                {"sessionAccountingV1": session_accounting}
+                if session_accounting is not None
+                else {}
+            ),
             "intradayReview": intraday_review,
             "marketContext": market_context,
             "items": [
@@ -1754,6 +1773,70 @@ def _seoul_day_window(now: datetime) -> tuple[datetime, datetime]:
     local = now.astimezone(ZoneInfo("Asia/Seoul"))
     start = local.replace(hour=9, minute=0, second=0, microsecond=0)
     return start.astimezone(UTC), now.astimezone(UTC)
+
+
+def _paper_session_accounting(
+    ledger: PaperLedgerStore,
+    *,
+    now: datetime,
+    current_cycle_fills: int,
+    initial_cash: Decimal,
+    cash_balance: Decimal,
+    equity: Decimal,
+    symbol_names: Mapping[str, str],
+) -> dict[str, Any]:
+    started_at, observed_at = _seoul_day_window(now)
+    fills = (
+        ledger.fills_between(started_at, observed_at)
+        if started_at <= observed_at
+        else ()
+    )
+    accountings = ledger.position_accountings()
+    local_zone = ZoneInfo("Asia/Seoul")
+    baseline = ledger.daily_equity_baseline(now)
+    return {
+        "schemaVersion": 1,
+        "scope": "seoul-market-session-to-observed-at",
+        "sessionStart": started_at.astimezone(local_zone).isoformat(),
+        "observedAt": observed_at.astimezone(local_zone).isoformat(),
+        "currentCycleFillScope": "current-cycle",
+        "currentCycleFills": current_cycle_fills,
+        "sessionFillScope": "seoul-session-cumulative",
+        "sessionBuyFills": sum(fill.side is Side.BUY for fill in fills),
+        "sessionSellFills": sum(fill.side is Side.SELL for fill in fills),
+        "sessionFills": [
+            {
+                "symbol": fill.symbol,
+                "name": symbol_names.get(fill.symbol, fill.symbol),
+                "side": fill.side.value,
+                "quantity": str(fill.quantity),
+                "price": str(fill.price),
+                "notional": str(fill.notional),
+                "commission": str(fill.commission),
+                "tax": str(fill.tax),
+                "executedAt": fill.executed_at.astimezone(local_zone).isoformat(),
+            }
+            for fill in fills
+        ],
+        "dailyBaselineEquity": str(baseline) if baseline is not None else None,
+        "initialCash": str(initial_cash),
+        "cashBalance": str(cash_balance),
+        "equity": str(equity),
+        "positions": [
+            {
+                "symbol": accounting.symbol,
+                "name": symbol_names.get(accounting.symbol, accounting.symbol),
+                "quantity": str(accounting.quantity),
+                "costBasis": str(accounting.cost_basis),
+                "realizedPnl": str(accounting.realized_pnl),
+                "totalCosts": str(accounting.total_costs),
+            }
+            for accounting in sorted(
+                accountings.values(), key=lambda value: value.symbol
+            )
+            if accounting.quantity > 0
+        ],
+    }
 
 
 def _intraday_review_for_day(store: CycleStateStore, now: datetime) -> dict[str, Any]:

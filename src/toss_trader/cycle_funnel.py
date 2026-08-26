@@ -141,6 +141,7 @@ def aggregate_intraday_review(
     )
     return {
         "schemaVersion": 2,
+        "fillScope": "seoul-session-cumulative",
         "purpose": REVIEW_PURPOSE,
         "cycles": len(insights) if cycle_count is None else cycle_count,
         "symbols": len(latest),

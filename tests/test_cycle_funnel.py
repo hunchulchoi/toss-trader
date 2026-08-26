@@ -48,6 +48,7 @@ class IntradayReviewTest(unittest.TestCase):
         self.assertEqual(review["symbols"], 2)
         self.assertEqual(review["buyFills"], 1)
         self.assertEqual(review["sellFills"], 0)
+        self.assertEqual(review["fillScope"], "seoul-session-cumulative")
         self.assertEqual(review["lastReasons"]["filled:BUY"], 1)
         self.assertEqual(review["lastReasons"]["setup-v2:missing:flow-history"], 1)
         samsung = next(
