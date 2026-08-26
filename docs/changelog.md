@@ -16,8 +16,14 @@
   `shadowOnly` 반사실로 cycle·시간별·일일 패널에 전달한다
 - 삼성물산 fixture는 공식 차단을 유지하면서 Rule은 여전히 가격패턴 불승인,
   Hermes reference만 조건부 arm 가능하다는 차이를 검증한다
-- 안전: hard veto·전략·Risk·주문·체결 변경 없음. 운영 배포 전 상태
+- 안전: hard veto·전략·Risk·주문·체결 변경 없음
 - 검증: full unittest 453 tests, changed-file Ruff, Git whitespace 통과
+- 기록 시각: 2026-08-27 08:36 KST
+- 배포: automation 컨테이너 실제 시작 시각은 2026-08-26 15:09:34 KST.
+  Infisical prod 주입으로 automation만 재빌드했고 health `healthy`, restart 0,
+  `expired-unresolved` import를 확인했다. Hermes runner는 원자 교체했으며 교체
+  exec 시각은 별도 보존되지 않아 추정하지 않는다. 2026-08-27 08:35 KST에
+  repository와 container checksum 일치, Hermes restart 0을 확인했다. n8n graph 변경 없음
 
 ### Advisor RECLAIM_LOST를 Hunter만으로 제한
 

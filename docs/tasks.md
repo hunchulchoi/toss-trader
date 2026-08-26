@@ -35,6 +35,9 @@ No tasks awaiting review.
   full unittest 453 tests, changed-file Ruff, and whitespace
 - Risks: authoritative event veto is unchanged; the counterfactual is shadow-only
   and cannot establish an executable missed trade or profit
+- Deployment: automation started 2026-08-26 15:09:34 KST with health healthy and
+  restart 0; Hermes runner checksum matched at 2026-08-27 08:35 KST; n8n graph
+  unchanged
 - 기록 시각: 2026-08-26 14:33 KST
 
 ### STRAT-027 Scope RECLAIM_LOST to Hunter only
