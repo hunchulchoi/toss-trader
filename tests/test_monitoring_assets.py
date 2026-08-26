@@ -815,6 +815,11 @@ class MonitoringAssetsTest(unittest.TestCase):
         self.assertIn("message_thread_id: __TELEGRAM_TOPIC__", template)
         self.assertIn("message_thread_id: 5", template)
         self.assertIn("TossTraderMarketScan", template)
+        self.assertIn(
+            '- receiver: telegram-report\n      matchers:\n'
+            '        - alertname="TossTraderHourlyMarketWatch"',
+            template,
+        )
         self.assertIn("TossTraderPaperCycleNotice", template)
         self.assertIn("group_wait: 0s", template)
         self.assertIn("umask 077", renderer.read_text())

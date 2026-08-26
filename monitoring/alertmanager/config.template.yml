@@ -18,6 +18,9 @@ route:
         - alertname="TossTraderMarketScan"
     - receiver: telegram-report
       matchers:
+        - alertname="TossTraderHourlyMarketWatch"
+    - receiver: telegram-report
+      matchers:
         - alertname="TossTraderPaperCycleNotice"
       group_wait: 0s
 

@@ -53,6 +53,9 @@
 - 심층분석 완료: 2026-08-26 10:32 KST. Hermes 15,636 token, panel succeeded,
   timeline 본문 저장, Alertmanager `TossTraderHourlyMarketWatch`의 telegram receiver
   수락 확인
+- Telegram 토픽 수정 기록 시각: 2026-08-26 10:42 KST. 시간별 알림 전용 route가
+  없어 기본 Failed 토픽 5로 전달되던 원인을 확인했다. 해당 alert를 report 토픽
+  route에 명시해 이후 심층분석은 토픽 6으로 보낸다
 
 ### 장전 스캔을 Rule/Hermes/Hunter 계약에 맞춤
 
