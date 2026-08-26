@@ -19,6 +19,7 @@ from toss_trader.automation import (
     PaperCycleProcess,
     PaperPortfolioProcess,
     WorkflowTaskService,
+    _compact_intraday_review,
     _comparison_payload,
     _hourly_market_payload,
     automation_response,
@@ -1296,6 +1297,37 @@ class PaperCycleNoticeTest(unittest.TestCase):
         portfolios = payload["cycle"]["middaySnapshotV2"]["portfolios"]
         self.assertEqual(portfolios["rule"]["sessionAccountingV1"], accounting)
         self.assertEqual(portfolios["hermes"]["sessionAccountingV1"], accounting)
+
+    def test_compact_review_preserves_expired_event_shadow(self) -> None:
+        review = _compact_intraday_review(
+            {
+                "cycles": 1,
+                "symbols": 1,
+                "symbolsDetail": [
+                    {
+                        "symbol": "028260",
+                        "lastReason": "setup-v2:violation:event-imminent",
+                        "transitionCount": 0,
+                        "eventGateAt": "2026-08-26T09:05:00+09:00",
+                        "eventGateShadow": {
+                            "status": "expired-unresolved",
+                            "eventFamily": "investor-relations",
+                            "authoritativeBlocked": True,
+                            "shadowOnly": True,
+                        },
+                    }
+                ],
+            }
+        )
+
+        assert review is not None
+        detail = review["symbolsDetail"][0]
+        self.assertEqual(
+            detail["eventGateShadow"]["status"], "expired-unresolved"
+        )
+        self.assertEqual(
+            detail["eventGateAt"], "2026-08-26T09:05:00+09:00"
+        )
 
     def test_comparison_payload_lifts_stored_market_context(self) -> None:
         payload = _comparison_payload(

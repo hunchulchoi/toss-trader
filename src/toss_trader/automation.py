@@ -1697,8 +1697,11 @@ def _hourly_portfolio(
     review = review if isinstance(review, dict) else {}
     details = review.get("symbolsDetail")
     details = details if isinstance(details, (list, tuple)) else ()
-    states = [
-        {
+    states = []
+    for item in details:
+        if not isinstance(item, dict) or str(item.get("symbol") or "") not in watched:
+            continue
+        state = {
             key: item.get(key)
             for key in (
                 "symbol",
@@ -1712,9 +1715,10 @@ def _hourly_portfolio(
                 "armRejectAt",
             )
         }
-        for item in details
-        if isinstance(item, dict) and str(item.get("symbol") or "") in watched
-    ]
+        if isinstance(item.get("eventGateShadow"), dict):
+            state["eventGateShadow"] = item["eventGateShadow"]
+            state["eventGateAt"] = item.get("eventGateAt")
+        states.append(state)
     return {
         key: cycle.get(key)
         for key in (
@@ -1901,6 +1905,11 @@ def _hourly_anomalies(
                         "lastReason": state.get("lastReason"),
                         "reasonClass": state.get("reasonClass"),
                         "armRejectDetail": state.get("armRejectDetail"),
+                        **(
+                            {"eventGateShadow": state["eventGateShadow"]}
+                            if isinstance(state.get("eventGateShadow"), dict)
+                            else {}
+                        ),
                     }
                     for portfolio_id, state in symbol_states
                 ],
@@ -2188,6 +2197,8 @@ def _compact_intraday_review(value: object) -> dict[str, Any] | None:
                         "reasonPath",
                         "armRejectDetail",
                         "armRejectAt",
+                        "eventGateShadow",
+                        "eventGateAt",
                     )
                 },
                 "reasonCounts": dict(

@@ -64,7 +64,11 @@ MARKET_CRITIQUE = (
     "source다. summary.fillScope=current-cycle과 intradayReview.fillScope="
     "seoul-session-cumulative를 구분하라. sessionAccountingV1의 수치와 두 scope가 "
     "일치하면 체결 집계 충돌로 보고하지 마라. 없거나 실제 불일치할 때만 evidence "
-    "도구로 원장을 확인하라. "
+    "도구로 원장을 확인하라. eventGateShadow.status=expired-unresolved면 "
+    "authoritative 차단은 유지된 상태다. eventFamily·blockedThrough·"
+    "wouldRuleApproveWithoutEvent·"
+    "wouldHermesReferenceArmWithoutEvent를 분리해 shadow 반사실로만 평가하고 놓친 "
+    "매수로 확정하지 마라. "
 )
 
 PANEL_RESEARCH_RULES = (
