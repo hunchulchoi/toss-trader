@@ -11,8 +11,9 @@
 
 장전 리포트가 Rule strict 승인만 보여 Hermes 실험·Hunter를 0후보로 오해하게 만들었다.
 - 동작: 같은 `DISCOVERY_SYMBOLS`에서 Rule 승인과 Hermes 실험 후보를 분리 집계한다. `missing-price-setup` 등은 Hermes 참고, `event-imminent`는 하드 차단. 풀이 고정 discovery이며 08:35 D-1/Top30/Hunter와 다름을 리포트·Hermes 프롬프트에 명시
-- 운영: 코드만, 배포 대기
+- 운영: 반영함
 - 기록 시각: 2026-08-26 08:53 KST
+- 배포 시각: 2026-08-26 09:02 KST automation 재빌드. n8n market-scan import·publish·재시작. 09:04 KST `POST /run-market-scan` Telegram `accepted`
 
 ### Hermes changedFacts 완전성·cycle 예약 현금 의미 분리
 
