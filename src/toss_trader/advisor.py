@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 from .automation import HermesAnalysis, HermesAnalyzer
-from .execution import TradeAdvice
+from .execution import HERMES_HUNTER_SIGNAL_REASON, TradeAdvice
 from .models import Candle, TradeSignal
 from .paper import PaperLedgerStore
 from .risk import RiskContext
@@ -25,8 +25,10 @@ HERMES_TRADE_PROMPT = (
     "필수 데이터 결손·임박 이벤트·갭·수량·현금·시간·Risk 차단은 이미 하드 "
     "게이트이므로 우회할 수 없다. "
     "한도 숫자만으로 승인하지 마라. "
-    "거부할 경우 허용 vetoCodes는 LIQUIDITY_TOO_THIN, RECLAIM_LOST, "
-    "MARKET_DIVERGENCE, DATA_MISSING, EVENT_RISK뿐이다. 수치 evidence 없이 "
+    "거부할 경우 허용 vetoCodes는 LIQUIDITY_TOO_THIN, MARKET_DIVERGENCE, "
+    "DATA_MISSING, EVENT_RISK뿐이다. RECLAIM_LOST는 signal.reason이 "
+    "Hermes Hunter momentum reclaim일 때만 허용한다. 일봉 setup-v2 실험 "
+    "신호에는 재돌파 유실을 거부 근거로 쓰지 마라. 수치 evidence 없이 "
     "임의 저항선이나 막연한 힘 부족을 거부 근거로 쓰지 마라. "
     'JSON 한 개만 응답하라: {"approved": true 또는 false, '
     '"rationale": "한국어 1~3문장", "vetoCodes": [], "evidence": {}}. '
@@ -102,21 +104,26 @@ class HermesTradeAdvisor:
             payload["market"] = dict(review)
         try:
             usage = self._analyzer.analyze(payload)
-            advice = _parse_advice(usage.content)
+            advice, ignored_veto_codes = _parse_advice(
+                usage.content, signal_reason=signal.reason
+            )
+            details: dict[str, object] = {
+                "portfolioId": "hermes",
+                "signalId": signal.signal_id,
+                "symbol": signal.symbol,
+                "side": signal.side.value,
+                "approved": advice.approved,
+                "rationale": advice.rationale,
+                "vetoCodes": list(advice.veto_codes),
+                "evidence": dict(advice.evidence or {}),
+            }
+            if ignored_veto_codes:
+                details["ignoredVetoCodes"] = list(ignored_veto_codes)
             self._record(
                 status="succeeded",
                 started_at=started_at,
                 usage=usage,
-                details={
-                    "portfolioId": "hermes",
-                    "signalId": signal.signal_id,
-                    "symbol": signal.symbol,
-                    "side": signal.side.value,
-                    "approved": advice.approved,
-                    "rationale": advice.rationale,
-                    "vetoCodes": list(advice.veto_codes),
-                    "evidence": dict(advice.evidence or {}),
-                },
+                details=details,
             )
             return advice
         except Exception as error:
@@ -368,7 +375,15 @@ def review_momentum_shadow_once(
         raise
 
 
-def _parse_advice(content: str) -> TradeAdvice:
+def parse_hermes_trade_advice(
+    content: str, *, signal_reason: str
+) -> tuple[TradeAdvice, tuple[str, ...]]:
+    return _parse_advice(content, signal_reason=signal_reason)
+
+
+def _parse_advice(
+    content: str, *, signal_reason: str
+) -> tuple[TradeAdvice, tuple[str, ...]]:
     normalized = content.strip()
     if normalized.startswith("```"):
         lines = normalized.splitlines()
@@ -394,14 +409,27 @@ def _parse_advice(content: str) -> TradeAdvice:
         isinstance(code, str) and code in allowed_veto_codes for code in veto_codes
     ):
         raise ValueError("Hermes trade response contains invalid vetoCodes")
+    unique_codes = tuple(dict.fromkeys(veto_codes))
+    ignored_veto_codes: tuple[str, ...] = ()
+    if signal_reason != HERMES_HUNTER_SIGNAL_REASON:
+        ignored_veto_codes = tuple(
+            code for code in unique_codes if code == "RECLAIM_LOST"
+        )
+        unique_codes = tuple(code for code in unique_codes if code != "RECLAIM_LOST")
+    approved = value["approved"]
+    if ignored_veto_codes and not unique_codes:
+        approved = True
     evidence = value.get("evidence", {})
     if not isinstance(evidence, Mapping):
         raise TypeError("Hermes trade response evidence must be an object")
-    return TradeAdvice(
-        approved=value["approved"],
-        rationale=rationale.strip()[:1000],
-        veto_codes=tuple(dict.fromkeys(veto_codes)),
-        evidence=dict(evidence),
+    return (
+        TradeAdvice(
+            approved=approved,
+            rationale=rationale.strip()[:1000],
+            veto_codes=unique_codes,
+            evidence=dict(evidence),
+        ),
+        ignored_veto_codes,
     )
 
 

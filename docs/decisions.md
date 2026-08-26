@@ -1,5 +1,20 @@
 # Architecture Decisions
 
+## ADR-016 Scope RECLAIM_LOST to Hunter signals
+
+Status: accepted 2026-08-26
+
+- Keep `RECLAIM_LOST` as a valid Hermes trade veto only when
+  `signal.reason` is Hunter momentum reclaim.
+- If a daily setup-v2 / Hermes experimental response uses only that code,
+  strip it and treat the advice as approved. Other vetoes stay fail-closed.
+- Do not treat a one-morning counterfactual as proof that earlier entries
+  are more profitable.
+
+Reason: the prompt already prioritized reclaim for Hunter, but the allowlist
+applied the same veto to v2.3 daily experiments. On 2026-08-26 the 09:05
+four-name reject delayed 로보스타 into a cheaper print and 서산 into a chase.
+
 ## ADR-015 Gate hourly LLM analysis with deterministic anomaly detection
 
 Status: accepted 2026-08-26

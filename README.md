@@ -231,7 +231,8 @@ KODEX 200/KODEX 코스닥150 방향 동조, stop 거리 3% 상한, 1.5R 목표�
 Rule은 D-1 setup-first 통과자 상위 15종을 strict v2.3으로 평가한다. Hermes는
 Rule 종목을 우선 포함하고 D-1 유동성 순 정적 적격 보통주로 최대 30종을 채운다.
 Hermes에서 `missing-price-setup`·`rsi-chase`·`falling-knife`는 advisor 참고
-근거다. PIT·이벤트 데이터 결손, 임박 이벤트, 갭, 수량·현금·Risk, 개장 후
+근거다. `RECLAIM_LOST` veto는 Hunter 재돌파 신호에만 적용한다. PIT·이벤트
+데이터 결손, 임박 이벤트, 갭, 수량·현금·Risk, 개장 후
 30분 제한은 계속 deterministic hard gate다. 후보·전략 계약이 달라 직접 A/B가 아니다.
 Rule sizing은 거래당 0.5%·전체 heat 2%·UNKNOWN cluster 1%다. Hermes
 experimental paper만 거래당 2%·전체/UNKNOWN cluster 6%를 사용한다. 양쪽 모두

@@ -24,6 +24,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-026 Scope RECLAIM_LOST to Hunter only
+
+- Owner: cursor
+- Status: DONE
+- Result: daily Hermes experimental advice ignores a lone `RECLAIM_LOST`
+  veto; Hunter signals still reject on it. Replayed 2026-08-26 09:00–12:00
+  stored trade JSON without calling Hermes or creating fills
+- Checks: advisor unit tests plus morning fixture replay
+- Risks: not exact cash/heat engine replay; mixed noon marks are not a
+  profitability claim; live paper still uses the old prompt until deploy
+- 기록 시각: 2026-08-26 14:17 KST
+
 ### AI-009 Make the daily panel debate improvements
 
 - Owner: codex

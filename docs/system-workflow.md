@@ -404,7 +404,7 @@ flowchart TD
 | 구분 | 평가 입력 | 거부 조건 | 기록 결과 |
 |---|---|---|---|
 | `universe` | 종목 유형·보통주 여부·거래 상태·정지 여부·기준가 | 로컬 검증: 비주식/우선주, 비활성·정지, 가격 오류 | `dynamic_universe_decisions`에 후보별 raw/eligible rank·승인·위반·선정 여부. n8n 호출 없음 |
-| `trade` | 신호·포지션·현금·장 상태·Hermes | Hermes: 로컬 한도 먼저. 통과 후 advisor+n8n. Rule: n8n 1회 | 판단은 `paper_risk_decisions`. 승인만 fill. 한도 거부는 `hermes_trade` 없음 |
+| `trade` | 신호·포지션·현금·장 상태·Hermes | Hermes: 로컬 한도 먼저. 통과 후 advisor+n8n. `RECLAIM_LOST`는 Hunter만. Rule: n8n 1회 | 판단은 `paper_risk_decisions`. 승인만 fill. 한도 거부는 `hermes_trade` 없음 |
 
 RiskManager는 추천·실주문을 하지 않는다. timeout·인증·JSON 오류는 모두
 `risk-manager-workflow-unavailable`로 체결 차단. parent/child execution ID와

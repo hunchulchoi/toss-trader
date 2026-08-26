@@ -4,11 +4,13 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from toss_trader.advisor import (
+    HERMES_TRADE_PROMPT,
     HermesTradeAdvisor,
     hermes_market_review,
     review_momentum_shadow_once,
 )
 from toss_trader.automation import HermesAnalysis
+from toss_trader.execution import HERMES_HUNTER_SIGNAL_REASON
 from toss_trader.models import Candle, Side, TradeSignal
 from toss_trader.paper import PaperLedger
 from toss_trader.risk import RiskContext
@@ -167,6 +169,80 @@ class HermesTradeAdvisorTest(unittest.TestCase):
 
         run = self.ledger.recent_automation_runs(run_type="hermes_trade")[0]
         self.assertEqual(run["status"], "failed")
+
+    def test_prompt_scopes_reclaim_lost_to_hunter(self) -> None:
+        self.assertIn("Hermes Hunter momentum reclaim일 때만", HERMES_TRADE_PROMPT)
+
+    def test_strips_reclaim_lost_on_daily_setup_signal(self) -> None:
+        analyzer = StubAnalyzer(
+            HermesAnalysis(
+                content=(
+                    '{"approved": false, "rationale": "재돌파 실패",'
+                    '"vetoCodes":["RECLAIM_LOST"]}'
+                )
+            )
+        )
+        advisor = HermesTradeAdvisor(
+            analyzer=analyzer,  # type: ignore[arg-type]
+            audit=self.ledger,
+            symbol_names={"005930": "삼성전자"},
+        )
+
+        advice = advisor.advise(self.signal, self.context)
+
+        self.assertTrue(advice.approved)
+        self.assertEqual(advice.veto_codes, ())
+        run = self.ledger.recent_automation_runs(run_type="hermes_trade")[0]
+        self.assertEqual(run["details"]["vetoCodes"], [])
+        self.assertEqual(run["details"]["ignoredVetoCodes"], ["RECLAIM_LOST"])
+
+    def test_keeps_reclaim_lost_on_hunter_signal(self) -> None:
+        analyzer = StubAnalyzer(
+            HermesAnalysis(
+                content=(
+                    '{"approved": false, "rationale": "재돌파 실패",'
+                    '"vetoCodes":["RECLAIM_LOST"]}'
+                )
+            )
+        )
+        advisor = HermesTradeAdvisor(
+            analyzer=analyzer,  # type: ignore[arg-type]
+            audit=self.ledger,
+            symbol_names={"005930": "삼성전자"},
+        )
+        hunter = TradeSignal(
+            signal_id="hermes:hunter-1",
+            symbol="005930",
+            side=Side.BUY,
+            reference_price=Decimal(70000),
+            quantity=Decimal(1),
+            reason=HERMES_HUNTER_SIGNAL_REASON,
+        )
+
+        advice = advisor.advise(hunter, self.context)
+
+        self.assertFalse(advice.approved)
+        self.assertEqual(advice.veto_codes, ("RECLAIM_LOST",))
+
+    def test_keeps_other_vetoes_after_stripping_reclaim_lost(self) -> None:
+        analyzer = StubAnalyzer(
+            HermesAnalysis(
+                content=(
+                    '{"approved": false, "rationale": "유동성 부족",'
+                    '"vetoCodes":["RECLAIM_LOST","LIQUIDITY_TOO_THIN"]}'
+                )
+            )
+        )
+        advisor = HermesTradeAdvisor(
+            analyzer=analyzer,  # type: ignore[arg-type]
+            audit=self.ledger,
+            symbol_names={"005930": "삼성전자"},
+        )
+
+        advice = advisor.advise(self.signal, self.context)
+
+        self.assertFalse(advice.approved)
+        self.assertEqual(advice.veto_codes, ("LIQUIDITY_TOO_THIN",))
 
     def test_rejects_ambiguous_symbol_without_company_name(self) -> None:
         advisor = HermesTradeAdvisor(

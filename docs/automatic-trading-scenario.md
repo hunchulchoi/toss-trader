@@ -155,6 +155,9 @@ n8n의 각 task 호출마다 automation service가 별도 프로세스로
 Hermes: 정적 적격·유동성 Top30에서 가격 셋업·RSI·수급 방향은 참고 근거로
 advisor가 판단한다. 필수 데이터·이벤트·갭·수량·시간·로컬 hard preflight는
 계속 deterministic 차단이다. 한도 거부 → 판단 1행, token 0.
+`RECLAIM_LOST` veto는 Hunter 눌림 재돌파 신호에만 쓴다. 일봉 Hermes 실험
+응답이 그 코드만 내면 무시하고 승인으로 본다. 2026-08-26 오전 저장 JSON
+재파싱은 [reclaim-lost-morning-replay.md](2026-08-26/reclaim-lost-morning-replay.md).
 Hermes experimental sizing은 거래당 2%, 전체 open heat 6%, 단일 UNKNOWN
 cluster heat 6%다. Rule의 0.5%/2%/1%와 분리되며 주문 70만원·현금·계좌
 RiskManager 한도는 동일하다.
