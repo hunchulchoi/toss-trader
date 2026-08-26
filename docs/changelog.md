@@ -19,6 +19,9 @@
   확인한다. 근거가 부족하면 gate 완화 대신 다음 측정 항목을 제안한다
 - 안전: 당일 실전 규칙·체결을 자동 변경하지 않으며 매매 지시·소급 체결을 금지한다
 - 검증: full unittest 437 tests, changed-file Ruff, Git whitespace 통과
+- 배포 시각: 2026-08-26 13:37 KST. Hermes hourly/daily 공용 runner를 임시 파일
+  뒤 원자 교체하고 checksum·소유권·권한·Python 문법 일치를 확인했다. n8n graph와
+  automation 서비스 변경 없음
 
 ### 시간별 Hermes에 같은 날 이전 결론 전달
 

@@ -32,9 +32,11 @@ No tasks awaiting review.
   side effects, Gemini to define safety and rollback, and Hermes to retain at
   most two falsifiable improvement candidates with a shadow/fixture test
 - Checks: full unittest 437 tests; changed-file Ruff and whitespace
+- Deployment: Hermes runner atomic replacement and checksum/compile verification
+  completed at 2026-08-26 13:37 KST; n8n graph unchanged
 - Risks: the panel may recommend experiments but cannot change live rules or
   create fills; proposals remain hypotheses until their stated metric passes
-- 기록 시각: 2026-08-26 13:34 KST
+- 기록 시각: 2026-08-26 13:37 KST
 
 ### AI-008 Give hourly Hermes prior same-day conclusions
 
