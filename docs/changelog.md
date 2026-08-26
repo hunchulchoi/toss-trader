@@ -7,6 +7,20 @@
 
 ## 2026-08-26
 
+### 패널의 현재 사이클·당일 누적 체결 범위 분리
+
+- 기록 시각: 2026-08-26 14:05 KST
+- 원장 증거: Rule/Hermes 1d cycle에 `sessionAccountingV1`을 추가해 서울장 09:00부터
+  관측시각까지의 체결 시각·수량·단가·비용, 현재 보유, daily baseline, 현금·자산을
+  같은 cutoff로 제공한다
+- 범위: `summary.fills`는 `current-cycle`, `intradayReview`는
+  `seoul-session-cumulative`로 명시한다. 둘이 원장 누계와 맞으면 패널이 체결 집계
+  충돌로 보고하지 않고, 실제 불일치할 때만 읽기 전용 evidence 도구를 호출한다
+- 안전: 설명 데이터만 보완했다. 신호·전략·사이징·Risk·주문·체결·n8n graph 변경 없음
+- 검증: full unittest 440 tests, changed-file Ruff, Git whitespace 통과
+- 배포 시각: 2026-08-26 14:05 KST. Infisical prod 주입으로 automation만 재빌드하고
+  Hermes runner를 원자 교체했다. automation healthy/restart 0, runner checksum 일치
+
 ### 일일 다중분석을 개선 가설 토론으로 확장
 
 - 기록 시각: 2026-08-26 13:34 KST

@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### AI-010 Reconcile panel current-cycle and session fills
+
+- Owner: codex
+- Status: DONE
+- Result: add authoritative `sessionAccountingV1` from the paper ledger with
+  Seoul-session fills, open positions, baseline equity, cash, and equity; label
+  `summary.fills` as current-cycle and `intradayReview` fills as session-cumulative
+- Checks: full unittest 440 tests; changed-file Ruff and whitespace
+- Deployment: automation-only rollout and atomic Hermes runner replacement at
+  2026-08-26 14:05 KST; service healthy/restart 0 and runner checksum matched
+- Risks: this corrects panel evidence and wording only; it does not alter signals,
+  sizing, Risk, orders, fills, or the n8n graph
+- 기록 시각: 2026-08-26 14:05 KST
+
 ### AI-009 Make the daily panel debate improvements
 
 - Owner: codex
