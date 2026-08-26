@@ -24,6 +24,21 @@ No tasks awaiting review.
 
 ## DONE
 
+### AI-007 Add an hourly anomaly market watch
+
+- Owner: codex
+- Status: DONE
+- Result: on Korean market days, inspect stored Rule/Hermes market context and
+  gate transitions every hour from 10:03 through 15:03; persist every review in
+  the Hermes timeline, queue one cutoff-bound Hermes investigation only for a
+  new or changed anomaly, and send only that judgment to Telegram
+- Checks: 431 unit tests; live n8n node and full-workflow validation;
+  changed-file Ruff and Git whitespace
+- Risks: the watched sample is bounded rather than market-wide; later price
+  strength is review evidence, not proof of a missed executable entry; the
+  checked-in workflow remains inactive until a separate authorized publish
+- 기록 시각: 2026-08-26 09:13 KST
+
 ### AI-006 Give panel agents bounded evidence search
 
 - Owner: codex

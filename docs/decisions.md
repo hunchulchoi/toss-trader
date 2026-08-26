@@ -1,5 +1,26 @@
 # Architecture Decisions
 
+## ADR-015 Gate hourly LLM analysis with deterministic anomaly detection
+
+Status: accepted 2026-08-26
+
+- Run the market-day watch at 10:03 through 15:03 KST, offset from the normal
+  five-minute paper cycle. Persist every check, but invoke one Hermes judge and
+  send Telegram only when the anomaly identity is new or materially changed.
+- Use stored session bars, market context, portfolio reason transitions, and
+  operational counters as primary evidence. Allow only the existing cutoff-bound
+  panel MCP and official public web sources; preserve their post-cutoff labels.
+- Treat a later outperforming no-BUY symbol as hindsight review evidence only.
+  It cannot authorize a trade, relax a gate, or establish that an executable
+  entry was missed.
+- Show both the deterministic check and any Hermes judgment in the timeline
+  conversation view. Store the Hermes content and token usage in the panel
+  opinion ledger.
+
+Reason: invoking an LLM every five minutes repeats the same frozen evidence and
+creates alert and token noise. A deterministic hourly prefilter preserves the
+audit trail while reserving research and Telegram for changed evidence.
+
 ## ADR-014 Give panel agents cutoff-bound evidence search
 
 Status: accepted 2026-08-26

@@ -7,6 +7,24 @@
 
 ## 2026-08-26
 
+### 시간별 시장 특이사항 검토와 Hermes timeline 오늘 기본값
+
+- 기록 시각: 2026-08-26 09:13 KST
+- 감시: 한국장 영업일 10:03~15:03에 매시간 Rule/Hermes의 저장된 시장 시세·
+  거절 전이·오류 상태를 점검한다. 시장 급변·벤치마크 괴리·자료/운영 장애와
+  무매수 뒤 상대 강세 종목을 구분한다
+- 알림: 모든 점검은 `hourly_market_watch` 감사행으로 남기되, 새롭거나 달라진
+  특이사항만 Hermes 심층검토 queue에 넣고 최종 판단만 Telegram으로 보낸다.
+  동일 특이사항은 재전송하지 않는다
+- 근거: Hermes는 저장 cutoff의 `toss-panel`과 필요한 공식 KRX·KIS·OpenDART·
+  공공데이터 웹만 제한 검색한다. 사후 상승은 검토 후보이며 놓친 체결 가능 매수나
+  게이트 완화의 증거가 아니다
+- 화면: deterministic 점검과 Hermes 의견/token을 timeline의 `시간별 감시` 대화로
+  표시한다. Hermes 대화 날짜는 서울 기준 오늘이 기본이며 자료가 0건이어도 오늘
+  선택지를 유지한다
+- 검증: 431 unit tests, n8n node·workflow validation, changed-file Ruff와
+  Git whitespace. workflow publish·서비스 배포는 별도다
+
 ### 패널 agent 제한 검색과 데이터 누락 의미 분리
 
 - 기록 시각: 2026-08-26 08:39 KST

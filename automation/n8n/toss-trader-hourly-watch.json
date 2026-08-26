@@ -1,0 +1,286 @@
+{
+  "id": "toss-trader-hourly-watch",
+  "name": "Toss Trader Hourly Market Watch",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "3 10-15 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "schedule",
+      "name": "평일 10:03-15:03 매시간",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {},
+      "id": "manual",
+      "name": "수동 테스트",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://toss-trader-automation:8088/workflow/market-session",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-hourly-watch\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"market-session\" } } }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "market-session",
+      "name": "Toss 한국장 일정 확인",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [280, 80],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "business-day",
+              "leftValue": "={{ $('Toss 한국장 일정 확인').item.json.isBusinessDay }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "business-day",
+      "name": "한국장 영업일?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [520, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://toss-trader-automation:8088/workflow/paper-rule-1d",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-hourly-watch\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"rule-hourly-snapshot\", \"portfolioId\": \"rule\", \"interval\": \"1d\" } } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 600000
+        }
+      },
+      "id": "rule",
+      "name": "Rule 시간별 읽기 Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [760, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "rule-ok",
+              "leftValue": "={{ $('Rule 시간별 읽기 Snapshot').item.json.exitCode ?? 1 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "rule-ok",
+      "name": "Rule Snapshot 정상?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1000, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://toss-trader-automation:8088/workflow/report-failure",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-hourly-watch\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"rule-hourly-snapshot\", \"status\": \"failed\", \"portfolioId\": \"rule\", \"interval\": \"1d\" }, \"response\": $('Rule 시간별 읽기 Snapshot').item.json } }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "rule-failure",
+      "name": "Rule Snapshot 실패 Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [1240, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://toss-trader-automation:8088/workflow/paper-hermes-1d",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-hourly-watch\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"hermes-hourly-snapshot\", \"portfolioId\": \"hermes\", \"interval\": \"1d\" }, \"rule\": $('Rule 시간별 읽기 Snapshot').item.json } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 600000
+        }
+      },
+      "id": "hermes",
+      "name": "Hermes 시간별 읽기 Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [1240, -40]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hermes-ok",
+              "leftValue": "={{ $('Hermes 시간별 읽기 Snapshot').item.json.exitCode ?? 1 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hermes-ok",
+      "name": "Hermes Snapshot 정상?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1480, -40]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://toss-trader-automation:8088/workflow/report-failure",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-hourly-watch\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"hermes-hourly-snapshot\", \"status\": \"failed\", \"portfolioId\": \"hermes\", \"interval\": \"1d\" }, \"response\": $('Hermes 시간별 읽기 Snapshot').item.json } }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "hermes-failure",
+      "name": "Hermes Snapshot 실패 Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [1720, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://toss-trader-automation:8088/workflow/hourly-panel-enqueue",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"_workflow\": { \"workflowId\": \"toss-trader-hourly-watch\", \"executionId\": $execution.id, \"trigger\": $execution.mode, \"stage\": \"hourly-panel-enqueue\", \"interval\": \"1d\" }, \"observedAt\": $now.setZone(\"Asia/Seoul\").toISO(), \"rule\": $('Rule 시간별 읽기 Snapshot').item.json, \"hermes\": $('Hermes 시간별 읽기 Snapshot').item.json } }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "enqueue",
+      "name": "새 특이사항 심층분석 Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [1720, -80],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "평일 10:03-15:03 매시간": {
+      "main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]
+    },
+    "수동 테스트": {
+      "main": [[{"node": "Toss 한국장 일정 확인", "type": "main", "index": 0}]]
+    },
+    "Toss 한국장 일정 확인": {
+      "main": [[{"node": "한국장 영업일?", "type": "main", "index": 0}]]
+    },
+    "한국장 영업일?": {
+      "main": [[{"node": "Rule 시간별 읽기 Snapshot", "type": "main", "index": 0}], []]
+    },
+    "Rule 시간별 읽기 Snapshot": {
+      "main": [[{"node": "Rule Snapshot 정상?", "type": "main", "index": 0}]]
+    },
+    "Rule Snapshot 정상?": {
+      "main": [
+        [{"node": "Hermes 시간별 읽기 Snapshot", "type": "main", "index": 0}],
+        [{"node": "Rule Snapshot 실패 Telegram", "type": "main", "index": 0}]
+      ]
+    },
+    "Hermes 시간별 읽기 Snapshot": {
+      "main": [[{"node": "Hermes Snapshot 정상?", "type": "main", "index": 0}]]
+    },
+    "Hermes Snapshot 정상?": {
+      "main": [
+        [{"node": "새 특이사항 심층분석 Queue", "type": "main", "index": 0}],
+        [{"node": "Hermes Snapshot 실패 Telegram", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul",
+    "errorWorkflow": "toss-trader-workflow-error"
+  },
+  "pinData": {},
+  "versionId": "99999999-3b3d-4b74-b836-d41814d84864"
+}

@@ -178,6 +178,15 @@ def _token(usage: dict[str, Any], *keys: str) -> int:
 def _briefing(context: dict[str, Any]) -> tuple[str, str, str]:
     value = context.get("briefing")
     kind = value.get("kind") if isinstance(value, dict) else "close"
+    if kind == "hourly":
+        return (
+            "시간별 시장 감시",
+            (
+                "현재 시각까지 저장된 감시 표본이다. 사후 가격으로 당시 매수 가능성을 "
+                "확정하거나 실시간 전략을 바꾸지 마라."
+            ),
+            "[시간별 결론], [놓친 후보], [원인], [보완 실험], [데이터 상태]",
+        )
     if kind == "midday":
         return (
             "장중 중간 브리핑",
@@ -264,6 +273,35 @@ def _hermes_call(
         f"PANEL_ID={panel_id}\n"
         f"EVIDENCE={json.dumps(evidence, ensure_ascii=False, separators=(',', ':'))}"
     )
+    return _hermes_prompt_call(prompt)
+
+
+def _hourly_call(context: dict[str, Any], *, panel_id: str) -> dict[str, Any]:
+    prompt = (
+        "너는 Toss Trader paper 시간별 시장 감시의 anomaly judge Hermes다. "
+        "hourlyWatchV1.anomalies를 우선 검증하고 시장 급변, 데이터·운영 장애, "
+        "신호가 없었던 뒤 강하게 오른 감시종목의 거절 원인을 구분하라. "
+        "hindsight-review-candidate는 사후 검토 후보일 뿐 놓친 체결 가능 매수나 "
+        "수익 증거가 아니다. 게이트 완화·소급 체결·즉시 매매를 제안하지 말고, "
+        "원인이 데이터/실행/Risk/전략 중 무엇인지와 다음 shadow·fixture 검증만 적어라. "
+        "내부 사실이 생략됐거나 충돌할 때만 toss_paper_panel_evidence를 최대 2회, "
+        "시장 사건 확인이 결론에 꼭 필요할 때만 KRX·KIS Developers·OpenDART·"
+        "공공데이터포털 공식 웹을 최대 3개 검색하라. URL과 게시/관측 시각을 적고, "
+        "cutoff 뒤 공개 사실은 post-cutoff-research로 표시해 당시 매매 입력으로 "
+        "쓰지 마라. missing-price-setup은 데이터 누락이 아닌 정상 가격패턴 탈락이다. "
+        "[시간별 결론], [놓친 후보], [원인], [보완 실험], [데이터 상태] 순서로 "
+        "텔레그램용 한국어 2400자 이내. 매매 지시·수익 보장 금지.\n"
+        f"PANEL_ID={panel_id}\n"
+        f"EVIDENCE={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}"
+    )
+    opinion = _hermes_prompt_call(prompt, content_limit=3200)
+    opinion["role"] = "hourly anomaly judge"
+    return opinion
+
+
+def _hermes_prompt_call(
+    prompt: str, *, content_limit: int = 3800
+) -> dict[str, Any]:
     started_at = datetime.now(UTC)
     with tempfile.TemporaryDirectory(prefix="toss-panel-") as temp_dir:
         usage_path = Path(temp_dir) / "usage.json"
@@ -304,7 +342,7 @@ def _hermes_call(
         "role": "final judge",
         "provider": str(usage.get("provider") or "hermes"),
         "model": str(usage.get("model") or "hermes-default"),
-        "content": process.stdout.strip()[:3800],
+        "content": process.stdout.strip()[:content_limit],
         "startedAt": started_at.isoformat(),
         "finishedAt": finished_at.isoformat(),
         "promptTokens": prompt_tokens,
@@ -350,8 +388,18 @@ def main() -> int:
     context = claimed.get("context")
     if not isinstance(context, dict):
         raise TypeError("claimed panel context is invalid")
+    briefing = context.get("briefing")
+    briefing = briefing if isinstance(briefing, dict) else {}
+    hourly = briefing.get("kind") == "hourly"
     opinions: list[dict[str, Any]] = []
     try:
+        if hourly:
+            judge = _hourly_call(context, panel_id=panel_id)
+            _post(
+                "/workflow/hourly-panel-complete",
+                {"panelId": panel_id, "opinion": judge},
+            )
+            return 0
         independent = _run_round(
             {
                 name: _independent_prompt(name, context, panel_id=panel_id)
@@ -386,7 +434,11 @@ def main() -> int:
         )
     except Exception as error:
         _post(
-            "/workflow/daily-panel-fail",
+            (
+                "/workflow/hourly-panel-fail"
+                if hourly
+                else "/workflow/daily-panel-fail"
+            ),
             {"panelId": panel_id, "error": str(error)[:1000]},
         )
         raise

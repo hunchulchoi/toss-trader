@@ -10,11 +10,18 @@
 |---|---|---|
 | 평일 08:30 | market scan | 장전 후보 분석·Telegram 리포트. 체결 없음 |
 | 평일 09:00~15:20, 5분 간격 | Rule 1m → Hermes 1m | 같은 시장 snapshot으로 독립 paper 장부 비교 |
+| 평일 10:03~15:03, 매시간 | Rule/Hermes 1d 읽기 snapshot → 시간별 감시 | 저장된 1분봉·거절 상태로 시장 급변, 자료/운영 장애, 사후 검토 후보 탐지. 새 특이사항만 Telegram |
 | 평일 11:50 | Rule 1d → Hermes 1d → midday review | 현재까지의 1m 퍼널·체결·위험과 저장된 시세 대비 중간 브리핑. 마감 확정 아님 |
 | 평일 15:40 | Rule 1d → Hermes 1d → daily review | 당일 1m cycle 퍼널·체결·규칙 준수와 시세 대비 마감 리뷰 |
 
 모든 schedule은 먼저 Toss 한국장 calendar를 확인한다. 휴장 또는 calendar 조회
 실패면 이후 scan, cycle, Hermes, Telegram 작업을 실행하지 않는다.
+
+시간별 감시는 deterministic 이상 탐지를 먼저 수행한다. 정상 점검과 동일한 이상은
+`automation_run_logs.hourly_market_watch`에만 남기고 Telegram을 생략한다. 새 이상이
+있을 때만 Hermes 한 명이 저장 cutoff 안의 paper 근거와 필요한 공식 KRX·KIS·
+OpenDART·공공데이터 자료를 제한 검색한다. 사후 상승은 원인 검토 후보일 뿐, 당시
+실행 가능한 매수를 놓쳤다는 증거나 게이트 완화 근거가 아니다.
 
 ## One intraday cycle
 

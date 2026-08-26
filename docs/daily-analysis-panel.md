@@ -58,6 +58,30 @@ tokens are stored in `daily_analysis_opinions`. Telegram receives only the
 Hermes judgment, capped below 4000 characters; the full evidence remains in the
 database.
 
+## Hourly market watch
+
+`toss-trader-hourly-watch` runs at 10:03 through 15:03 KST on Korean market
+days. It reads the Rule and Hermes daily snapshots without placing an order,
+then deterministically checks stored session bars and reason transitions for:
+
+- cycle/API/data failures and missing one-minute coverage;
+- benchmark moves or divergence;
+- watched symbols that had no BUY and later outperformed enough to require a
+  hindsight review.
+
+Every check is written to `automation_run_logs` as `hourly_market_watch` and is
+shown in the timeline Hermes conversation view. An identical anomaly is
+suppressed; no-anomaly checks remain visible but do not send Telegram. A new or
+changed anomaly queues one Hermes judge, whose full opinion and token usage are
+stored in `daily_analysis_opinions`. Only that final judgment is sent to
+Telegram. The judge has the same `web,toss-panel` boundary and official-source,
+cutoff, and post-cutoff rules described above. It cannot change a gate or place
+an order.
+
+The Hermes conversation page opens on the current Seoul date, including a
+current-date option when there are no rows yet. Users may explicitly select
+`전체 날짜` for historical conversations.
+
 ## Hermes cron installation
 
 The checked-in runner is the canonical source. Deployment copies it to

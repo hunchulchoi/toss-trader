@@ -337,6 +337,60 @@ class TimelineWebTest(unittest.TestCase):
         self.assertEqual(payload["decisions"], [])
         self.assertEqual(payload["hermesConversations"], [])
 
+    def test_hourly_panel_is_exposed_as_hourly_hermes_conversation(self) -> None:
+        observed = datetime(2026, 8, 26, 2, 3, tzinfo=UTC)
+        payload = build_paper_timeline(
+            initial_rows=(("rule", "1000000"), ("hermes", "1000000")),
+            fill_rows=(),
+            mark_rows=(),
+            cycle_rows=(),
+            hermes_log_rows=(
+                (
+                    "watch-1",
+                    "hourly_market_watch",
+                    "succeeded",
+                    "no-anomaly",
+                    observed,
+                    observed,
+                    0,
+                    0,
+                    0,
+                    None,
+                    {"assistant": "시간별 자동 점검: 새 특이사항 없음"},
+                ),
+            ),
+            panel_rows=(
+                (
+                    "panel-hourly-1",
+                    "succeeded",
+                    observed,
+                    observed,
+                    {"briefing": {"kind": "hourly"}},
+                    None,
+                    "judge:hermes",
+                    "hourly anomaly judge",
+                    "openai",
+                    "gpt-5.6-terra",
+                    "시간별 특이사항 검토",
+                    observed,
+                    observed,
+                    100,
+                    20,
+                    120,
+                ),
+            ),
+            default_initial_cash=Decimal(1000000),
+        )
+
+        items = {item["runId"]: item for item in payload["hermesConversations"]}
+        self.assertEqual(items["panel-hourly-1"]["runType"], "hourly")
+        self.assertEqual(items["panel-hourly-1"]["kind"], "시간별 감시")
+        self.assertEqual(
+            items["panel-hourly-1"]["assistant"], "시간별 특이사항 검토"
+        )
+        self.assertEqual(items["watch-1"]["runType"], "hourly")
+        self.assertIn("새 특이사항 없음", items["watch-1"]["assistant"])
+
     def test_hunter_timeline_calculates_outcome_and_hermes_subset(self) -> None:
         evaluated_at = datetime(2026, 8, 25, 1, 1, tzinfo=UTC)
         plan = {
@@ -416,6 +470,7 @@ class TimelineWebTest(unittest.TestCase):
         self.assertIn(b'data-testid="hunter-shadow"', root[2])
         self.assertIn(b'data-testid="cycle-timeline"', cycles[2])
         self.assertIn(b'data-testid="hermes-log"', hermes[2])
+        self.assertIn("시간별 감시".encode(), hermes[2])
         self.assertIn(b".sparkline", css[2])
         self.assertIn(b".cycle-row", cycle_css[2])
         self.assertIn(b".hermes-body", hermes_css[2])
@@ -426,6 +481,8 @@ class TimelineWebTest(unittest.TestCase):
         self.assertIn(b"seoulToday", cycle_script[2])
         self.assertNotIn(b"key.slice(-5)", cycle_script[2])
         self.assertIn(b"hermesConversations", hermes_script[2])
+        self.assertIn(b"date: today", hermes_script[2])
+        self.assertIn(b"[today, ...conversations()", hermes_script[2])
         self.assertIn(b"https://www.tossinvest.com/stocks/A", script[2])
         self.assertIn(b"stock-order-link", css[2])
         self.assertEqual(json.loads(api[2])["portfolios"]["hermes"]["label"], "Hermes")
