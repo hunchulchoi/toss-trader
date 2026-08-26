@@ -47,7 +47,7 @@ def _candle(row: list[str]) -> Candle:
 
 
 class GapChaseShadowFixtureTest(unittest.TestCase):
-    def test_hanwha_engineering_gap_rejection_and_path_evidence(self) -> None:
+    def test_kepco_engineering_gap_rejection_and_path_evidence(self) -> None:
         fixture = json.loads(FIXTURE_PATH.read_text())
         source = fixture["candidate"]
         expected = fixture["expected"]
