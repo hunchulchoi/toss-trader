@@ -86,9 +86,10 @@ current-date option when there are no rows yet. Users may explicitly select
 
 The checked-in runner is the canonical source. Deployment copies it to
 `/opt/data/scripts/toss-trader-daily-panel.py` in the main Hermes container's
-persistent data mount, then creates two no-agent jobs:
+persistent data mount, then creates three no-agent jobs:
 
 ```text
+hourly schedule: 5-19 1-5 * * 1-5 (UTC = 10:05-14:19 KST)
 midday schedule: 50-59 2 * * 1-5 (UTC = 11:50-11:59 KST)
 closing schedule: * 6-8 * * 1-5 (UTC = 15:00-17:59 KST)
 script: toss-trader-daily-panel.py
@@ -96,8 +97,9 @@ mode: --no-agent
 delivery: local
 ```
 
-The two polls use the same idempotent claim endpoint and are silent when no job
-exists. A model or persistence failure marks the
+The three polls use the same idempotent claim endpoint and are silent when no
+job exists. The closing poll also consumes the 15:03 hourly queue, avoiding an
+overlapping fourth poll window. A model or persistence failure marks the
 panel failed and sends the existing critical workflow alert. `TRADING_ENABLED`
 is unrelated and remains `false`; the panel cannot place orders.
 

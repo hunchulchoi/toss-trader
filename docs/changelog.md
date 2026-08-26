@@ -41,6 +41,9 @@
   모든 HTTP를 pin한 execution `4122` 성공 후 게시
 - 운영 확인: 2026-08-26 09:38 KST. 세 서비스 healthy, runner checksum 일치,
   Hermes 웹의 오늘 기본 날짜·시간별 감시 필터 확인. 첫 실데이터 예약은 10:03 KST
+- Hermes poll 등록 시각: 2026-08-26 09:45 KST. `toss-trader-hourly-panel`
+  (`e68aa6439712`)을 UTC `5-19 1-5 * * 1-5` no-agent로 등록했다. 10~14시
+  queue는 정각 후 5~19분에 소비하고, 15:03 queue는 기존 close poll이 소비한다
 
 ### 장전 스캔을 Rule/Hermes/Hunter 계약에 맞춤
 

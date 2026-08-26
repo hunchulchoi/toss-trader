@@ -38,7 +38,7 @@ No tasks awaiting review.
   strength is review evidence, not proof of a missed executable entry; first
   live-data scheduled execution remains pending at 10:03 KST
 - 운영 배포 시각: 2026-08-26 09:25 KST; n8n 게시 확인 시각: 09:36 KST;
-  운영 health 확인 시각: 09:38 KST
+  운영 health 확인 시각: 09:38 KST; Hermes hourly poll 등록 시각: 09:45 KST
 - 기록 시각: 2026-08-26 09:13 KST
 
 ### STRAT-024 Split pre-market scan into Rule and Hermes readiness
