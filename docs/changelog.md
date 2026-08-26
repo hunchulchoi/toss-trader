@@ -7,6 +7,15 @@
 
 ## 2026-08-26
 
+### 한전기술 gap-up-chase shadow fixture
+
+- 기록 시각: 2026-08-26 10:55 KST
+- 한전기술(052690)의 D-1 후보와 09:01~09:30 실제 1분봉을 fixture로 고정하고,
+  Hermes experimental override 뒤에도 +8.3579% 시초 갭이 3% hard gate에서
+  `setup-v2:violation:gap-up-chase`로 거절되는 것을 재현했다
+- authoritative plan은 없음을 유지하고, 09:05 기준 ATR·stop 반사실과 10:51까지
+  MAE/MFE·고점 되밀림만 별도 shadow 증거로 기록했다. signal·Risk·fill 없음
+
 ### paper-mcp 4도구 healthcheck 정합화
 
 - 기록 시각: 2026-08-26 09:37 KST

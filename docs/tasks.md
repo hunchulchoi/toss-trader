@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-025 Replay KEPCO E&C gap-up chase
+
+- Owner: codex
+- Status: DONE
+- Result: persisted a 2026-08-26 052690 shadow fixture and reproduced the
+  Hermes experimental `gap-up-chase` hard rejection against the stored 09:01
+  through 09:30 one-minute path; recorded ATR/stop counterfactual and the
+  cutoff-bound chase drawdown without creating a signal, Risk call, or fill
+- Checks: targeted fixture unit test and Git whitespace
+- Risks: current-stored adjusted D-1 candle is not an immutable exact replay;
+  one hindsight winner cannot justify changing the 3% gap threshold
+- 기록 시각: 2026-08-26 10:55 KST
+
 ### AI-007 Add an hourly anomaly market watch
 
 - Owner: codex
