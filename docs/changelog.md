@@ -15,6 +15,10 @@
   `setup-v2:violation:gap-up-chase`로 거절되는 것을 재현했다
 - authoritative plan은 없음을 유지하고, 09:05 기준 ATR·stop 반사실과 10:51까지
   MAE/MFE·고점 되밀림만 별도 shadow 증거로 기록했다. signal·Risk·fill 없음
+- 운영 감사 기록 시각: 2026-08-26 10:58 KST. `hourly_market_watch`의
+  `shadow-fixture` 행 `6af7388b-03b9-473b-b9e6-0f544d6c1bc2`로 저장
+- timeline 확인 시각: 2026-08-26 10:59 KST. 오늘 Hermes 대화의 `시간별 감시`,
+  status `succeeded`, token 0, 본문 누락 없음으로 노출 확인
 
 ### paper-mcp 4도구 healthcheck 정합화
 

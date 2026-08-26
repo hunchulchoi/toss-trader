@@ -4,6 +4,8 @@
 - 시장자료 cutoff: 2026-08-26 10:51 KST
 - 범위: paper-only, `strategyInput=false`, `shadowOnly=true`
 - 원천: `market_candles`, `paper_cycle_runs`
+- timeline 감사행: `6af7388b-03b9-473b-b9e6-0f544d6c1bc2` (`shadow-fixture`,
+  2026-08-26 10:58 KST)
 
 ## 판정 재현
 
