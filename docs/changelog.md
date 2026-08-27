@@ -24,6 +24,16 @@
 - 구버전 cycle의 `correction` 감사 annotation을 timeline API에 보존하고
   `selectionSnapshotDrift`를 `선정 후 일봉변경`으로 표시한다. 이는 체결·현금·
   포지션·캔들 원장을 고치는 필드가 아니다
+- 기록 시각: 2026-08-27 09:42 KST
+- 운영 배포: automation·timeline 실제 시작 09:36:05 KST. 두 서비스 healthy,
+  restart 0, `TRADING_ENABLED=false`; Hermes runner는 09:42 KST checksum 일치와
+  restart 0 확인. n8n graph 변경 없음
+- DB 보정: 09:40:50 KST 이전 구버전 Rule 1m cycle 9행의 `cycle_insight`에만
+  `dailyCandidates=5`, 실제 시초 대기 수, `selectionSnapshotDrift=1`과 복구용
+  `originalFunnel`을 기록했다. universe 승인 6종 중 로보스타(090360)의 구버전
+  재평가 drift를 명시했으며 signal·fill·failed 열, 체결·현금·포지션·캔들은 불변이다
+- 운영 확인: 09:40 새 cycle은 보정 없이 `dailyCandidates=5`를 자동 기록했고
+  signal 0, fill 0, failed 0이었다
 
 ## 2026-08-26
 

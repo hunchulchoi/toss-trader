@@ -37,8 +37,15 @@ No tasks awaiting review.
   and whitespace
 - Risks: `evaluated` keeps its historical meaning for compatibility; thresholds,
   entry window, sizing, Risk, orders, and fills are unchanged
+- Deployment: automation and timeline started 2026-08-27 09:36:05 KST;
+  both healthy, restart 0, and `TRADING_ENABLED=false`. Hermes runner checksum
+  matched at 09:42 KST without a container restart; n8n graph unchanged
+- Data correction: at 2026-08-27 09:40:50 KST, added recoverable audit-only
+  annotations to nine legacy Rule 1m `cycle_insight` rows; original funnels are
+  embedded and fill/signal/failure ledger columns were not changed
 - 기록 시각: 2026-08-27 08:59 KST
 - 기록 시각: 2026-08-27 09:33 KST
+- 기록 시각: 2026-08-27 09:42 KST
 
 ### STRAT-028 Observe unresolved preannouncement expiry in shadow
 
