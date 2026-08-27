@@ -9,6 +9,18 @@ No tasks awaiting start.
 
 ## IN PROGRESS
 
+### STRAT-030 Collect forward setup parameter shadows
+
+- Owner: codex
+- Status: IN PROGRESS
+- Goal: keep production Rule/Hermes gates unchanged while persisting daily
+  price/setup parameter A/B evidence for MA50 distance, gap, sizing risk, ATR
+  floor, and oversold confirmation from the already collected research pool
+- Safety: shadow-only, `strategyInput=false`, no signals, Risk calls, fills,
+  orders, database backdating, or live rule changes
+- Started: 2026-08-27 22:08 KST
+- 기록 시각: 2026-08-27 22:08 KST
+
 ### DATA-002 Resume OpenDART financial backfill
 
 - Owner: codex/cursor
