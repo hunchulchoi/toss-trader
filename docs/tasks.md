@@ -34,6 +34,22 @@ No tasks awaiting review.
 
 ## DONE
 
+### DATA-019 Enforce first-observed availability for DataGo universe rows
+
+- Owner: codex
+- Status: DONE
+- Result: changed `set_universe_availability()` to use the later of the D+2
+  08:00 KST source policy and each row's timezone-aware `retrieved_at`; recent
+  sessions without a resolvable D+2 session remain unavailable
+- Checks: full unittest 466, scoped Ruff, whitespace; production audit across
+  45,957 rows reports `available_at < retrieved_at=0`, effective availability
+  mismatch 0, and retroactive session-date 18:30 rows 0
+- Production: Infisical prod one-off corrected 40,207 rows at
+  2026-08-27 17:38 KST; `TRADING_ENABLED=false`, no order or service restart
+- Risks: 8/18~8/21 remains `price-only-counterfactual`; this correction does not
+  manufacture exact historical ranking, metadata, flow, or event snapshots
+- 기록 시각: 2026-08-27 17:39 KST
+
 ### DATA-018 Roll back retroactive available_at mutation and enforce strict PIT boundaries
 
 - Owner: agy

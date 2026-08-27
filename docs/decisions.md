@@ -179,6 +179,10 @@ Status: accepted 2026-08-15
 - Unknown filing time becomes next observed market session 08:00 KST.
 - Unscheduled events may only block after availability, never before receipt.
 - DataGo archive rows are not assumed available at the historical close.
+- DataGo universe `published_at` records source provenance. Strategy
+  `available_at` is the later of the conservative D+2 08:00 KST policy and the
+  row's actual timezone-aware `retrieved_at`; unresolved recent sessions remain
+  unavailable.
 - `security_type=UNKNOWN` forbids TopN eligibility. Name heuristics are not an
   official instrument master.
 - Forward-consensus multipliers remain x1.0 until licensed PIT snapshots exist.

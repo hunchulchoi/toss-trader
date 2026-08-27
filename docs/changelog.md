@@ -7,6 +7,20 @@
 
 ## 2026-08-27
 
+### DataGo 유니버스 actual-retrieval 가용시점 강제
+
+- 기록 시각: 2026-08-27 17:39 KST
+- 구멍: 기존 `set_universe_availability()`가 DataGo 공급자 지연만 적용해, 늦게
+  백필한 40,207행의 `available_at`이 실제 `retrieved_at`보다 앞섰다. 문서상
+  counterfactual 제한만으로는 과거 cutoff 쿼리의 오사용을 막지 못했다
+- 수정: 확정 가능한 세션의 `available_at`을
+  `max(D+2 08:00 KST, retrieved_at)`으로 계산하고 timezone 없는 수집 시각은
+  전체 UPDATE 전에 거부한다. 최근 두 미확정 세션은 기존처럼 `NULL`이다
+- 운영 교정: Infisical prod one-off로 유니버스 45,957행을 재계산했다. 변경 대상
+  40,207행, 교정 후 `available_at < retrieved_at=0`, 새 계약 불일치 0,
+  임의 세션 당일 18:30 행 0이다. 주문·서비스 재시작 없음
+- 검증: 전체 unittest 466, scoped Ruff, whitespace
+
 ### 8/18~21 임의 available_at 역기록 전면 롤백 및 Strict PIT 원칙 복원
 
 - 기록 시각: 2026-08-27 17:02 KST
