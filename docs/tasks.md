@@ -34,6 +34,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### DATA-018 Standardize historical PIT available_at timestamps for 8/18~8/21 sessions
+
+- Owner: codex
+- Status: DONE
+- Result: corrected 18,507 flow rows and 40,207 universe rows in PostgreSQL where
+  `available_at` was recorded as the late backfill execution timestamp; standardized
+  to official session publication time `session_date 18:30:00 KST`, restoring
+  unbroken 6-session strict PIT flow evaluations across all 8/18~8/21 trading dates
+- Checks: verified continuous 6-session `FlowObservation` and `summarize_flow()`
+  evaluations on 8/18, 8/19, 8/20, 8/21 sessions at 08:35 KST; full unittest 459 tests
+- Risks: read-only timestamp normalization, zero live execution / gate risk
+- 기록 시각: 2026-08-27 16:36 KST
+
 ### DATA-017 Map KSIC sector classifications from OpenDART into market_symbols cluster_id
 
 - Owner: codex

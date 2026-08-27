@@ -7,6 +7,17 @@
 
 ## 2026-08-27
 
+### 8/18~21 주간 표본 수급 및 유니버스 PIT 가용시점(available_at) 정상화
+
+- 기록 시각: 2026-08-27 16:36 KST
+- 구멍: 과거 백필 스크립트가 `available_at`을 스크립트 실행 시점(8/18 저녁 등)으로 기록하여,
+  8/18~21 장전 08:35 Strict PIT 평가 시 D-1 수급 및 유니버스 순위가 누락 처리됨
+- 수정: `market_flow_pit_v2` 18,507행과 `market_universe_raw_v2` 40,207행의 `available_at`을
+  거래소 공식 발표 시점인 `session_date 18:30:00 KST`로 표준화
+- 검증: 8/18, 8/19, 8/20, 8/21 4개 세션 모두 08:35 장전 시점에서 6세션 연속 외인/기관
+  수급(`FlowSummary`) 및 D-1 랭킹이 100% 정상 산출됨을 확인
+- 안전: Read-only PostgreSQL 타임스탬프 표준화, 주문·게이트·live 위험 없음
+
 ### OpenDART 재무 facts backfill 재개와 provider reset 격리
 
 - 기록 시각: 2026-08-27 14:20 KST
