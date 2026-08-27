@@ -128,6 +128,14 @@ class MarketCollectorTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(client.stock_calls, [("005930", "000660")])
 
+    def test_upserts_and_resolves_symbol_clusters(self) -> None:
+        count = self.repository.upsert_symbol_clusters(
+            {"005930": "전기전자", "000660": "전기전자"}
+        )
+        self.assertEqual(count, 2)
+        clusters = self.repository.symbol_clusters(["005930", "000660", "999999"])
+        self.assertEqual(clusters, {"005930": "전기전자", "000660": "전기전자"})
+
     def test_rejects_malformed_api_candle_without_writing(self) -> None:
         payload = candle_payload()
         payload["candles"][0]["highPrice"] = "not-a-number"

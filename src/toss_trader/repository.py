@@ -15,7 +15,11 @@ class MarketRepository(Protocol):
 
     def upsert_symbol_names(self, names: Mapping[str, str]) -> int: ...
 
+    def upsert_symbol_clusters(self, clusters: Mapping[str, str]) -> int: ...
+
     def symbol_names(self, symbols: Sequence[str]) -> dict[str, str]: ...
+
+    def symbol_clusters(self, symbols: Sequence[str]) -> dict[str, str]: ...
 
     def latest_candles(
         self, symbol: str, interval: str, *, limit: int
@@ -34,6 +38,8 @@ class MarketReadRepository(Protocol):
     def count(self, symbol: str, interval: str) -> int: ...
 
     def symbol_names(self, symbols: Sequence[str]) -> dict[str, str]: ...
+
+    def symbol_clusters(self, symbols: Sequence[str]) -> dict[str, str]: ...
 
     def close(self) -> None: ...
 
@@ -56,7 +62,8 @@ CREATE TABLE IF NOT EXISTS market_candles (
 SQLITE_SYMBOL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS market_symbols (
     symbol TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL
+    display_name TEXT NOT NULL,
+    cluster_id TEXT NOT NULL DEFAULT 'UNKNOWN'
 )
 """
 
@@ -78,7 +85,8 @@ CREATE TABLE IF NOT EXISTS market_candles (
 POSTGRES_SYMBOL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS market_symbols (
     symbol TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL
+    display_name TEXT NOT NULL,
+    cluster_id TEXT NOT NULL DEFAULT 'UNKNOWN'
 )
 """
 
@@ -95,6 +103,12 @@ class SqliteMarketRepository:
         self._connection = sqlite3.connect(database_path)
         self._connection.execute(SQLITE_SCHEMA)
         self._connection.execute(SQLITE_SYMBOL_SCHEMA)
+        try:
+            self._connection.execute(
+                "ALTER TABLE market_symbols ADD COLUMN cluster_id TEXT NOT NULL DEFAULT 'UNKNOWN'"
+            )
+        except sqlite3.OperationalError:
+            pass
         self._connection.commit()
 
     def close(self) -> None:
@@ -136,6 +150,19 @@ class SqliteMarketRepository:
             )
         return len(names)
 
+    def upsert_symbol_clusters(self, clusters: Mapping[str, str]) -> int:
+        if not clusters:
+            return 0
+        with self._connection:
+            self._connection.executemany(
+                """
+                INSERT INTO market_symbols (symbol, display_name, cluster_id) VALUES (?, ?, ?)
+                ON CONFLICT(symbol) DO UPDATE SET cluster_id = excluded.cluster_id
+                """,
+                [(str(s), str(s), str(c)) for s, c in clusters.items()],
+            )
+        return len(clusters)
+
     def symbol_names(self, symbols: Sequence[str]) -> dict[str, str]:
         if not symbols:
             return {}
@@ -146,6 +173,17 @@ class SqliteMarketRepository:
             tuple(symbols),
         ).fetchall()
         return {str(symbol): str(name) for symbol, name in rows}
+
+    def symbol_clusters(self, symbols: Sequence[str]) -> dict[str, str]:
+        if not symbols:
+            return {}
+        placeholders = ",".join("?" for _ in symbols)
+        rows = self._connection.execute(
+            f"SELECT symbol, cluster_id FROM market_symbols "
+            f"WHERE symbol IN ({placeholders})",
+            tuple(symbols),
+        ).fetchall()
+        return {str(symbol): str(cluster_id) for symbol, cluster_id in rows}
 
     def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
         _validate_limit(limit)
@@ -223,6 +261,17 @@ class SqliteMarketReadRepository:
         ).fetchall()
         return {str(symbol): str(name) for symbol, name in rows}
 
+    def symbol_clusters(self, symbols: Sequence[str]) -> dict[str, str]:
+        if not symbols:
+            return {}
+        placeholders = ",".join("?" for _ in symbols)
+        rows = self._connection.execute(
+            f"SELECT symbol, cluster_id FROM market_symbols "
+            f"WHERE symbol IN ({placeholders})",
+            tuple(symbols),
+        ).fetchall()
+        return {str(symbol): str(cluster_id) for symbol, cluster_id in rows}
+
 
 class PostgresMarketRepository:
     def __init__(
@@ -255,6 +304,9 @@ class PostgresMarketRepository:
         with self._connection.cursor() as cursor:
             cursor.execute(POSTGRES_SCHEMA)
             cursor.execute(POSTGRES_SYMBOL_SCHEMA)
+            cursor.execute(
+                "ALTER TABLE market_symbols ADD COLUMN IF NOT EXISTS cluster_id TEXT NOT NULL DEFAULT 'UNKNOWN'"
+            )
             cursor.execute(POSTGRES_INDEX)
         self._connection.commit()
 
@@ -299,6 +351,20 @@ class PostgresMarketRepository:
         self._connection.commit()
         return len(names)
 
+    def upsert_symbol_clusters(self, clusters: Mapping[str, str]) -> int:
+        if not clusters:
+            return 0
+        with self._connection.cursor() as cursor:
+            cursor.executemany(
+                """
+                INSERT INTO market_symbols (symbol, display_name, cluster_id) VALUES (%s, %s, %s)
+                ON CONFLICT(symbol) DO UPDATE SET cluster_id = EXCLUDED.cluster_id
+                """,
+                [(str(s), str(s), str(c)) for s, c in clusters.items()],
+            )
+        self._connection.commit()
+        return len(clusters)
+
     def symbol_names(self, symbols: Sequence[str]) -> dict[str, str]:
         if not symbols:
             return {}
@@ -311,6 +377,19 @@ class PostgresMarketRepository:
             )
             rows = cursor.fetchall()
         return {str(symbol): str(name) for symbol, name in rows}
+
+    def symbol_clusters(self, symbols: Sequence[str]) -> dict[str, str]:
+        if not symbols:
+            return {}
+        placeholders = ",".join("%s" for _ in symbols)
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT symbol, cluster_id FROM market_symbols "
+                f"WHERE symbol IN ({placeholders})",
+                tuple(symbols),
+            )
+            rows = cursor.fetchall()
+        return {str(symbol): str(cluster_id) for symbol, cluster_id in rows}
 
     def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
         _validate_limit(limit)
@@ -432,6 +511,24 @@ class PostgresMarketReadRepository:
             raise RuntimeError("PostgreSQL market symbol query failed") from error
         self._connection.rollback()
         return {str(symbol): str(name) for symbol, name in rows}
+
+    def symbol_clusters(self, symbols: Sequence[str]) -> dict[str, str]:
+        if not symbols:
+            return {}
+        placeholders = ",".join("%s" for _ in symbols)
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    f"SELECT symbol, cluster_id FROM market_symbols "
+                    f"WHERE symbol IN ({placeholders})",
+                    tuple(symbols),
+                )
+                rows = cursor.fetchall()
+        except self._database_error as error:
+            self._connection.rollback()
+            raise RuntimeError("PostgreSQL market symbol cluster query failed") from error
+        self._connection.rollback()
+        return {str(symbol): str(cluster_id) for symbol, cluster_id in rows}
 
 
 def open_market_repository(

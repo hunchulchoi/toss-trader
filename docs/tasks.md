@@ -24,6 +24,19 @@ No tasks awaiting review.
 
 ## DONE
 
+### DATA-017 Map KSIC sector classifications from OpenDART into market_symbols cluster_id
+
+- Owner: codex
+- Status: DONE
+- Result: created `sectors.py` standard industry mapping from KSIC codes, added
+  `cluster_id` column to `market_symbols` schema in SQLite and PostgreSQL, updated
+  `OfficialV2CycleStrategy.cluster_id` to query actual sector clusters, and synced
+  351 universe symbols across 20 distinct industry sectors via `sync-symbol-sectors`
+- Checks: full unittest 459 tests; changed-file Ruff and Git whitespace; live DB inspection
+  confirming sector distribution (전기전자 76, 서비스업 55, 기계 39, 화학 27, 운수장비 26, 의약품 26 등)
+- Risks: unmapped symbols/ETFs safely fall back to `UNKNOWN` conservative cluster
+- 기록 시각: 2026-08-27 12:51 KST
+
 ### STRAT-029 Preserve Rule D-1 candidates through the opening wait
 
 - Owner: codex

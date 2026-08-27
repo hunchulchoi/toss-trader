@@ -7,6 +7,15 @@
 
 ## 2026-08-27
 
+### OpenDART 표준산업분류(KSIC) 기반 업종 클러스터(cluster_id) 연동
+
+- 기록 시각: 2026-08-27 12:51 KST
+- 배포 시각: 2026-08-27 12:47 KST
+- 구멍: 토스증권 Open API에 업종 필드가 없어 모든 종목이 보수적 기본값인 `UNKNOWN` 클러스터로 단일화되어 동일 업종 Heat 한도가 전체 포지션에 묶여 있었음
+- 동작: OpenDART 기업개황(`company.json`)의 `induty_code`(한국표준산업분류 KSIC)를 표준 거래소 업종(전기전자, 의약품, 운수장비, 기계, 화학, 서비스업 등)으로 매핑([`sectors.py`](file:///mnt/dgst/volume/toss-trader/src/toss_trader/sectors.py))하고 `market_symbols.cluster_id`에 적재. `OfficialV2CycleStrategy.cluster_id(symbol)`가 실제 업종을 반환하도록 개선
+- 결과: 유니버스 404개 후보 중 351개 종목의 실제 업종 매핑 완료 (전기전자 76, 서비스업 55, 기계 39, 화학 27, 운수장비 26, 의약품 26 등). 비매핑 종목/ETF는 `UNKNOWN`으로 안전 fallback
+- 배포: `automation`, `timeline`, `pit-collector` 컨테이너 재빌드 및 DB 동기화 완료
+
 ### Rule 일봉 후보와 첫 분봉 대기 상태 분리
 
 - 기록 시각: 2026-08-27 08:59 KST

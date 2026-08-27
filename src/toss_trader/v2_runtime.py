@@ -81,7 +81,6 @@ class OfficialV2CycleStrategy:
         return completed[-1] if completed else None
 
     def cluster_id(self, symbol: str) -> str:
-        del symbol
-        # No trustworthy sector master is available yet. Treat every unknown
-        # instrument as one conservative cluster instead of bypassing the cap.
-        return "UNKNOWN"
+        clusters = self._repository.symbol_clusters([symbol])
+        cluster = clusters.get(symbol, "").strip()
+        return cluster if cluster else "UNKNOWN"

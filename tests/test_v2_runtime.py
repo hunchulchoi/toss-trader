@@ -93,6 +93,12 @@ class OfficialV2CycleStrategyTest(unittest.TestCase):
         self.assertEqual(self.strategy.cluster_id("005930"), "UNKNOWN")
         self.assertEqual(self.strategy.cluster_id("005380"), "UNKNOWN")
 
+    def test_mapped_symbol_returns_cluster(self) -> None:
+        self.repository.upsert_symbol_clusters({"005930": "전기전자", "005380": "운수장비"})
+        self.assertEqual(self.strategy.cluster_id("005930"), "전기전자")
+        self.assertEqual(self.strategy.cluster_id("005380"), "운수장비")
+        self.assertEqual(self.strategy.cluster_id("999999"), "UNKNOWN")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -170,6 +170,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     migrate_pit.add_argument("--source", required=True)
 
+    sync_sectors = subparsers.add_parser(
+        "sync-symbol-sectors",
+        help="sync sector cluster_id for market symbols from OpenDART",
+    )
+    sync_sectors.add_argument("--symbols", nargs="+")
+
     stored_strategy = subparsers.add_parser(
         "scan-ma", help="evaluate MA crossover from stored candles"
     )
@@ -406,6 +412,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _import_krx_flow_csv(settings, args)
         if args.command == "migrate-official-sqlite":
             return _migrate_official_sqlite(settings, args)
+        if args.command == "sync-symbol-sectors":
+            return _sync_symbol_sectors(settings, args)
         if args.command == "scan-ma":
             return _scan_ma(settings, args)
         if args.command == "backtest-ma":
@@ -654,6 +662,66 @@ def _migrate_official_sqlite(settings: Settings, args: argparse.Namespace) -> in
         )
     finally:
         repository.close()
+
+
+def _sync_symbol_sectors(settings: Settings, args: argparse.Namespace) -> int:
+    dart_key = os.environ.get("OPENDART_API_KEY", "")
+    if not dart_key:
+        raise ValueError("OPENDART_API_KEY is required to sync symbol sectors")
+    repository = open_market_repository(
+        postgres_parameters=settings.postgres_connection_parameters(),
+        sqlite_path=settings.market_db_path,
+    )
+    from .official_data import OfficialApiClient
+    from .sectors import ksic_to_sector
+    import urllib.request
+    import json
+
+    symbols = args.symbols
+    if not symbols:
+        postgres_params = settings.postgres_connection_parameters()
+        if postgres_params:
+            import psycopg
+
+            with psycopg.connect(**postgres_params) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT symbol FROM market_symbols WHERE symbol ~ '^[0-9]{6}$'"
+                    )
+                    symbols = [r[0] for r in cur.fetchall()]
+        else:
+            rows = repository._connection.execute(
+                "SELECT symbol FROM market_symbols WHERE symbol GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
+            ).fetchall()
+            symbols = [r[0] for r in rows]
+
+    if not symbols:
+        return _emit({"synced": 0, "candidates": 0, "tradingEnabled": False})
+
+    client = OfficialApiClient(
+        opendart_api_key=dart_key,
+        datago_api_key="unused",
+    )
+    dart_corps = client.dart_corporations()
+    clusters: dict[str, str] = {}
+    for sym in symbols:
+        corp_code = dart_corps.get(sym)
+        if not corp_code:
+            continue
+        try:
+            url = f"https://opendart.fss.or.kr/api/company.json?crtfc_key={dart_key}&corp_code={corp_code}"
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                induty_code = data.get("induty_code")
+                sector = ksic_to_sector(induty_code)
+                if sector != "UNKNOWN":
+                    clusters[sym] = sector
+        except Exception:
+            continue
+
+    count = repository.upsert_symbol_clusters(clusters)
+    repository.close()
+    return _emit({"synced": count, "candidates": len(symbols), "tradingEnabled": False})
 
 
 def _kis_credentials() -> tuple[str, str]:
