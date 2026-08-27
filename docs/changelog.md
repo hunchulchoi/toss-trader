@@ -7,6 +7,22 @@
 
 ## 2026-08-27
 
+### OpenDART 재무 facts backfill 재개와 provider reset 격리
+
+- 기록 시각: 2026-08-27 14:20 KST
+- 결과: 2024-2026 CFS/OFS를 idempotent 수집해 PostgreSQL에 facts 669,391행,
+  351종, valuation snapshot 3,262행을 확보했다. 유효 PER 233행, PBR 355행;
+  receipt/fs_div 이상은 0이다
+- PIT: `available_at IS NULL` 175행은 전부 419080의 2026-08-26 접수분이며,
+  다음 관측 세션이 아직 없어 정상 null이다. 임의 시각을 채우지 않았다
+- 미완료: bulk 결과 `failedRequests=230`. 이후 OpenDART `corpCode.xml`이 계속
+  connection reset했고, 저장된 351개 공식 corp_code로 우회 retry했지만 12분간
+  facts 증가가 없어 one-off만 중단했다. 완료·0실패로 기록하지 않는다
+- 보완: corporation archive 다운로드도 JSON API처럼 network/429/5xx를 3회
+  retry한다. 기존 facts는 batch commit되어 보존됐다
+- 안전: valuation multiplier는 계속 `1.0`; setup-v2.3 gate·Risk·주문 입력 변경 없음.
+  `TRADING_ENABLED=false`, live service 재시작 없음
+
 ### OpenDART 표준산업분류(KSIC) 기반 업종 클러스터(cluster_id) 연동
 
 - 기록 시각: 2026-08-27 12:51 KST

@@ -5,18 +5,28 @@ agents must sync from `main` before claiming or handing off work.
 
 ## TODO
 
-### DATA-002 Resume OpenDART financial backfill
-
-- Owner: codex/cursor
-- Status: TODO
-- Goal: resume idempotent CFS/OFS collection for the remaining symbols and then
-  collect event pages after the provider stops resetting connections
-- Acceptance: 200-symbol completeness manifest, zero failed requests, event
-  coverage manifest, and a final read-only audit
+No tasks awaiting start.
 
 ## IN PROGRESS
 
-No tasks in progress.
+### DATA-002 Resume OpenDART financial backfill
+
+- Owner: codex/cursor
+- Status: BLOCKED
+- Goal: resume idempotent CFS/OFS collection for the remaining symbols and then
+  collect event pages after the provider stops resetting connections
+- Progress: production PostgreSQL now has 669,391 facts for 351 symbols and
+  3,262 valuation snapshots from 2024-2026. Receipt/fs_div validation is clean;
+  175 facts without `available_at` all belong to one 2026-08-26 receipt whose
+  next observed market session is not yet available, so the PIT null is correct
+- Blocker: bulk output reported 230 failed financial requests. OpenDART then
+  continuously reset `corpCode.xml`; a cached-corporation retry ran 12 minutes
+  without facts progress and was stopped. Existing rows remained committed
+- Acceptance remains unmet: zero failed requests and complete report manifest
+- Safety: valuation remains disconnected from live sizing (`multiplier=1.0`),
+  `TRADING_ENABLED=false`, no order or live service restart
+- Checks: full unittest 464, scoped Ruff, whitespace, and final read-only DB audit
+- 기록 시각: 2026-08-27 14:20 KST
 
 ## REVIEW
 
