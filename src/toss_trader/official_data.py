@@ -1136,7 +1136,7 @@ class OfficialDataRepository:
 
     def set_universe_availability(self, sessions: Sequence[date]) -> None:
         ordered = sorted(set(sessions))
-        updates: list[tuple[str | None, str | None, str]] = []
+        schedule: dict[date, tuple[str | None, datetime | None]] = {}
         for index, session in enumerate(ordered):
             published_session = ordered[index + 1] if index + 1 < len(ordered) else None
             available_session = ordered[index + 2] if index + 2 < len(ordered) else None
@@ -1146,15 +1146,46 @@ class OfficialDataRepository:
                 else None
             )
             available_at = (
-                datetime.combine(available_session, time(8), tzinfo=SEOUL).isoformat()
+                datetime.combine(available_session, time(8), tzinfo=SEOUL)
                 if available_session
                 else None
             )
-            updates.append((published_at, available_at, session.isoformat()))
+            schedule[session] = (published_at, available_at)
+
+        rows = self._connection.execute(
+            """SELECT session_date, symbol, source, retrieved_at
+            FROM market_universe_raw_v2 ORDER BY session_date, symbol, source"""
+        ).fetchall()
+        updates: list[tuple[str | None, str | None, str, str, str]] = []
+        for raw_session, symbol, source, raw_retrieved_at in rows:
+            session = date.fromisoformat(str(raw_session))
+            if session not in schedule:
+                continue
+            retrieved_at = datetime.fromisoformat(str(raw_retrieved_at))
+            if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
+                raise ValueError(
+                    "universe retrieved_at must include a timezone offset"
+                )
+            published_at, source_available_at = schedule[session]
+            effective_available_at = (
+                max(source_available_at, retrieved_at).isoformat()
+                if source_available_at is not None
+                else None
+            )
+            updates.append(
+                (
+                    published_at,
+                    effective_available_at,
+                    session.isoformat(),
+                    str(symbol),
+                    str(source),
+                )
+            )
         with self._connection:
             self._connection.executemany(
                 """UPDATE market_universe_raw_v2
-                SET published_at=?, available_at=? WHERE session_date=?""",
+                SET published_at=?, available_at=?
+                WHERE session_date=? AND symbol=? AND source=?""",
                 updates,
             )
 

@@ -134,6 +134,135 @@ class OfficialDataTest(unittest.TestCase):
 
         self.assertEqual(categories, {"005930": "KOSPI"})
 
+    def test_universe_availability_never_precedes_actual_retrieval(self) -> None:
+        sessions = ("2026-08-14", "2026-08-18", "2026-08-19", "2026-08-20")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "market.db"
+            repository = OfficialDataRepository(str(path))
+            rows = []
+            for index, session in enumerate(sessions):
+                rows.append(
+                    {
+                        "session_date": session,
+                        "symbol": f"{index + 1:06d}",
+                        "isin_code": f"KR7{index + 1:09d}",
+                        "display_name": f"종목{index + 1}",
+                        "market_category": "KOSPI",
+                        "close_price": "100",
+                        "market_cap": "1",
+                        "trading_value": "1",
+                        "listed_share_count": "1",
+                        "security_type": "COMMON",
+                        "source": "data.go.kr:GetStockPriceInfo",
+                        "source_record_id": f"{session}:{index + 1:06d}",
+                        "published_at": None,
+                        "available_at": None,
+                        "retrieved_at": "2026-08-18T00:00:00+00:00",
+                        "payload_hash": session,
+                    }
+                )
+            rows.append(
+                {
+                    **rows[0],
+                    "symbol": "005930",
+                    "source_record_id": "2026-08-14:005930",
+                    "retrieved_at": "2026-08-27T03:47:13.311800+00:00",
+                }
+            )
+            repository.upsert_universe_rows(rows)
+
+            repository.set_universe_availability(
+                [date.fromisoformat(session) for session in sessions]
+            )
+            repository.close()
+
+            connection = sqlite3.connect(path)
+            stored = connection.execute(
+                "SELECT session_date, symbol, published_at, available_at "
+                "FROM market_universe_raw_v2 ORDER BY session_date, symbol"
+            ).fetchall()
+            connection.close()
+
+        self.assertEqual(
+            stored,
+            [
+                (
+                    "2026-08-14",
+                    "000001",
+                    "2026-08-18T13:00:00+09:00",
+                    "2026-08-19T08:00:00+09:00",
+                ),
+                (
+                    "2026-08-14",
+                    "005930",
+                    "2026-08-18T13:00:00+09:00",
+                    "2026-08-27T03:47:13.311800+00:00",
+                ),
+                (
+                    "2026-08-18",
+                    "000002",
+                    "2026-08-19T13:00:00+09:00",
+                    "2026-08-20T08:00:00+09:00",
+                ),
+                (
+                    "2026-08-19",
+                    "000003",
+                    "2026-08-20T13:00:00+09:00",
+                    None,
+                ),
+                ("2026-08-20", "000004", None, None),
+            ],
+        )
+
+    def test_universe_availability_rejects_naive_retrieval_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "market.db"
+            repository = OfficialDataRepository(str(path))
+            repository.upsert_universe_rows(
+                [
+                    {
+                        "session_date": session,
+                        "symbol": "005930",
+                        "isin_code": "KR7005930003",
+                        "display_name": "삼성전자",
+                        "market_category": "KOSPI",
+                        "close_price": "100",
+                        "market_cap": "1",
+                        "trading_value": "1",
+                        "listed_share_count": "1",
+                        "security_type": "COMMON",
+                        "source": "data.go.kr:GetStockPriceInfo",
+                        "source_record_id": f"{session}:005930",
+                        "published_at": None,
+                        "available_at": None,
+                        "retrieved_at": retrieved_at,
+                        "payload_hash": session,
+                    }
+                    for session, retrieved_at in (
+                        ("2026-08-14", "2026-08-18T00:00:00+00:00"),
+                        ("2026-08-18", "2026-08-19T00:00:00"),
+                        ("2026-08-19", "2026-08-20T00:00:00+00:00"),
+                    )
+                ]
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, "universe retrieved_at must include a timezone offset"
+            ):
+                repository.set_universe_availability(
+                    [date(2026, 8, 14), date(2026, 8, 18), date(2026, 8, 19)]
+                )
+            repository.close()
+
+            connection = sqlite3.connect(path)
+            stored = connection.execute(
+                "SELECT COUNT(*) FROM market_universe_raw_v2 "
+                "WHERE published_at IS NOT NULL OR available_at IS NOT NULL"
+            ).fetchone()[0]
+            connection.close()
+
+        self.assertEqual(stored, 0)
+
     def test_kis_flow_uses_official_tr_and_parses_daily_amounts(self) -> None:
         class FakeTransport:
             def __init__(self) -> None:
