@@ -105,6 +105,12 @@ def _payload():
                     "idleReason": "setup-v2-block",
                     "newBuysAllowed": True,
                     "funnel": {"scanned": 15, "setupV2Blocked": 15},
+                    "correction": {
+                        "kind": "legacy-daily-snapshot-drift",
+                        "universeApproved": 6,
+                        "runtimeDailyCandidates": 5,
+                        "symbols": ["090360"],
+                    },
                     "reasons": {"setup-v2-block": 15},
                     "symbols": [
                         {
@@ -304,6 +310,10 @@ class TimelineWebTest(unittest.TestCase):
         runs = {run["runId"]: run for run in payload["cycleTimeline"]["runs"]}
         self.assertEqual(runs["rule-run"]["durationMs"], 12000)
         self.assertEqual(
+            runs["rule-run"]["correction"]["universeApproved"],
+            6,
+        )
+        self.assertEqual(
             runs["rule-run"]["symbolStates"][0]["name"],
             "삼성전자",
         )
@@ -479,6 +489,7 @@ class TimelineWebTest(unittest.TestCase):
         self.assertIn(b"cycleTimeline", cycle_script[2])
         self.assertIn("일봉 후보".encode(), cycle_script[2])
         self.assertIn("첫 분봉 대기".encode(), cycle_script[2])
+        self.assertIn("선정 후 일봉변경".encode(), cycle_script[2])
         self.assertIn(b"hour12: false", cycle_script[2])
         self.assertIn(b"seoulToday", cycle_script[2])
         self.assertNotIn(b"key.slice(-5)", cycle_script[2])

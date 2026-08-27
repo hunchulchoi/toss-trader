@@ -60,6 +60,8 @@ MARKET_CRITIQUE = (
     "Rule에서는 정식 승인 후보다. evaluated는 대기·차단이 "
     "없는 종목 수라 후보 수로 쓰지 마라. openingBarPending은 승인 후보가 첫 완결 "
     "1분봉을 기다리는 정상 상태이며 0후보나 setup 차단으로 해석하지 마라. "
+    "selectionSnapshotDrift는 구버전에서 universe 선정 뒤 일봉 재수집으로 판정이 "
+    "달라진 감사 보정값이다. correction을 함께 읽고 전략 탈락으로 재분류하지 마라. "
     "universe.runId=null 이고 refreshed=false면 당일 freeze cacheHit이지 데이터 오류가 아니다. "
     "1d cycle의 intradaySample.applicable=false는 설계다. marketContext와 "
     "intradayReview.reasonPath/armRejectDetail을 써라. below-one-lot은 사이징 0주 사실이지 "

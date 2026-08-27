@@ -624,6 +624,7 @@ def _cycle_timeline(
                 "newBuysAllowed": insight.get("newBuysAllowed"),
                 "funnel": _mapping_or_empty(insight.get("funnel")),
                 "reasons": _mapping_or_empty(insight.get("reasons")),
+                "correction": _mapping_or_empty(insight.get("correction")),
                 "symbolStates": symbol_states,
             }
         )

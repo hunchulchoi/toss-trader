@@ -20,6 +20,10 @@
 - 안전: setup-v2.3 기준, 진입시간, 사이징, Risk, 주문, 체결 변경 없음
 - 검증: full unittest 455 tests, changed-file Ruff, Python/JavaScript syntax,
   Git whitespace 통과
+- 기록 시각: 2026-08-27 09:33 KST
+- 구버전 cycle의 `correction` 감사 annotation을 timeline API에 보존하고
+  `selectionSnapshotDrift`를 `선정 후 일봉변경`으로 표시한다. 이는 체결·현금·
+  포지션·캔들 원장을 고치는 필드가 아니다
 
 ## 2026-08-26
 
