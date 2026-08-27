@@ -192,6 +192,16 @@ RiskManager, paper fill을 만들지 않는다. 분석 시 같은 `reclaimedAt` 
 entry/stop/1.5R 계획을 감사 로그에 저장한다. 원본 결과는 계속
 `strategyInput=false`, `shadowOnly=true`다.
 
+같은 10:00 cycle의 `setup-parameter-shadow-v1`은 known research pool의 D-1
+완결 일봉과 09:01~09:30 완전 30봉을 고정해 MA50 이격 2%/4%, 갭 2%/3%,
+거래당 위험 0.5%/1%, ATR stop 1배/1.5배, oversold 확인 조건을 비교한다.
+일봉 200개와 opening 30봉 hash, 근거 수치, 격리 수량을
+`automation_run_logs`에 하루 한 번 저장한다. 일부 opening 봉이 없으면 10:05까지
+한 번 더 수집하고 끝내 불완전하면 failed audit로 남긴다. 성공 뒤에는 setup
+variant 종목을 일반 30봉 수집 풀에 유지해 장 마감까지 outcome 분석용 1분봉을
+연속 보존한다. 이 경로는 가격 파라미터 연구 전용이며 PIT 수급·이벤트 승인이나
+실제 포트폴리오 heat를 재현하지 않는다.
+
 Hermes는 최대 2개를 `approve/watch/reject`로 검토하고 의견·token을 별도 감사
 로그에 저장한다. 그중 `approve`만 공유 snapshot의 `hunterEntry`로 승격한다.
 Hermes portfolio는 10:01~10:05 KST에 최신 완결 1분봉으로 가격을 다시 잡고,
@@ -217,7 +227,7 @@ timeline의 기존 가상 stop/1.5R 성과도 별도 연구 지표로 계속 남
 | `paper_v2_position_plans` | entry·stop·heat·exit pending 상태 |
 | `paper_portfolio_snapshots` | equity·실현/미실현손익·비용 |
 | `paper_cycle_runs` | 상태, count, API streak, `cycle_insight` |
-| `automation_run_logs` | `momentum-shadow` 후보·가상 계획, `momentum-shadow-advice` Hermes 의견·token |
+| `automation_run_logs` | `momentum-shadow` 후보·가상 계획, `momentum-shadow-advice` Hermes 의견·token, `setup-parameter-shadow` 가격 파라미터 A/B 증거 |
 | `automation_run_logs` | n8n stage, Hermes 근거·token, 실패 |
 
 종목 한 개의 오류는 나머지 종목을 막지 않는다. 일부 오류는

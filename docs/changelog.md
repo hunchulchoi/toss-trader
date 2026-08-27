@@ -7,6 +7,19 @@
 
 ## 2026-08-27
 
+### setup-v2 가격 파라미터 forward shadow
+
+- 10:00 KST known research pool에서 D-1 일봉 200개와 opening 30개 1분봉을
+  고정해 MA50 이격 2%/4%, gap 2%/3%, 위험 0.5%/1%, ATR 1배/1.5배,
+  oversold 확인 조건을 같은 표본으로 비교한다
+- 결과·일봉/opening hash·근거값·격리 수량을
+  `automation_run_logs(run_type=setup-parameter-shadow)`에 하루 한 번 저장한다.
+  incomplete opening은 10:05까지 재수집하고 끝내 부족하면 failed audit다
+- 성공 뒤 variant 종목을 기존 1분봉 수집 풀에 유지해 장중 path를 쌓는다.
+  `strategyInput=false`, `shadowOnly=true`, `strictPITApproved=false`; Rule,
+  Hermes, Risk, 주문, 체결 변경 없음
+- 기록 시각: 2026-08-27 22:23 KST
+
 ### automation·timeline main checksum 정합 배포
 
 - 배포 시각: 2026-08-27 21:27 KST

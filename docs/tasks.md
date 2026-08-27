@@ -9,18 +9,6 @@ No tasks awaiting start.
 
 ## IN PROGRESS
 
-### STRAT-030 Collect forward setup parameter shadows
-
-- Owner: codex
-- Status: IN PROGRESS
-- Goal: keep production Rule/Hermes gates unchanged while persisting daily
-  price/setup parameter A/B evidence for MA50 distance, gap, sizing risk, ATR
-  floor, and oversold confirmation from the already collected research pool
-- Safety: shadow-only, `strategyInput=false`, no signals, Risk calls, fills,
-  orders, database backdating, or live rule changes
-- Started: 2026-08-27 22:08 KST
-- 기록 시각: 2026-08-27 22:08 KST
-
 ### DATA-002 Resume OpenDART financial backfill
 
 - Owner: codex/cursor
@@ -45,6 +33,23 @@ No tasks awaiting start.
 No tasks awaiting review.
 
 ## DONE
+
+### STRAT-030 Collect forward setup parameter shadows
+
+- Owner: codex
+- Status: DONE
+- Result: the 10:00 Rule cycle now stores one daily
+  `setup-parameter-shadow-v1` audit comparing MA50 distance 2%/4%, gap 2%/3%,
+  risk 0.5%/1%, ATR floor 1x/1.5x, and two oversold confirmations from the
+  known research pool. Daily/opening hashes and isolated sizing evidence are
+  retained; setup rows remain in the 1m collection pool through the session
+- Safety: `strategyInput=false`, `shadowOnly=true`, `strictPITApproved=false`;
+  no signal, Risk call, fill, order, live rule, or historical DB rewrite
+- Checks: full unittest 475, targeted unittest 47, scoped Ruff, whitespace
+- Risk: this is price-only research with fixed 1,000,000 KRW and zero heat;
+  10-20 independent forward sessions are required before parameter promotion
+- Commit: `4a828ba`
+- 기록 시각: 2026-08-27 22:27 KST
 
 ### OPS-004 Align automation and timeline images with main
 

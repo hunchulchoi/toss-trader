@@ -228,6 +228,15 @@ Rule 매매 평가는 가격 setup 통과 풀에서 최대 15종으로 유지한
 KODEX 200/KODEX 코스닥150 방향 동조, stop 거리 3% 상한, 1.5R 목표를 평가해
 상위 2개를 `automation_run_logs(run_type=momentum-shadow)`에 하루 한 번 저장한다.
 이는 배포 이후 forward 연구 표본이며 매수 신호나 과거 누락 복원이 아니다.
+같은 10:00 cycle은 known research pool 전체를 대상으로 가격 파라미터 shadow도
+하루 한 번 계산한다. 현행 MA50 이격 4%와 2%, 갭 3%와 2%, 거래당 위험
+0.5%와 1%, ATR stop 1.5배와 1배, RSI 35·전고점 돌파와 RSI 40·전일종가
+돌파를 같은 D-1·09:01~09:30 증거로 비교한다. 결과와 일봉·opening hash는
+`automation_run_logs(run_type=setup-parameter-shadow)`에 저장한다. 대상 종목의
+1분봉은 이후 cycle에도 이어서 모아 주말 outcome 진단에 쓴다. 계산은 고정
+100만원·기존 heat 0의 격리 sizing이며 실제 포트폴리오 주문 가능 수량이 아니다.
+`strategyInput=false`, `shadowOnly=true`, `strictPITApproved=false`라 Rule,
+Hermes, Risk, 주문, 체결을 바꾸지 않는다.
 Rule은 D-1 setup-first 통과자 상위 15종을 strict v2.3으로 평가한다. Hermes는
 Rule 종목을 우선 포함하고 D-1 유동성 순 정적 적격 보통주로 최대 30종을 채운다.
 Hermes에서 `missing-price-setup`·`rsi-chase`·`falling-knife`는 advisor 참고
