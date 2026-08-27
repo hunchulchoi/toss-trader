@@ -5,7 +5,10 @@ import tempfile
 import unittest
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
+from zipfile import ZipFile
 
 from toss_trader.client import HttpResponse
 from toss_trader.kis_flow import (
@@ -24,6 +27,40 @@ from toss_trader.official_data import (
 
 
 class OfficialDataTest(unittest.TestCase):
+    def test_dart_corporations_retries_network_reset(self) -> None:
+        archive_buffer = BytesIO()
+        with ZipFile(archive_buffer, "w") as archive:
+            archive.writestr(
+                "CORPCODE.xml",
+                "<result><list><corp_code>00123456</corp_code>"
+                "<stock_code>0004V0</stock_code></list></result>",
+            )
+
+        class FakeTransport:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def send(self, request, timeout):
+                del request, timeout
+                self.calls += 1
+                if self.calls == 1:
+                    raise ConnectionResetError("reset")
+                return HttpResponse(200, {}, archive_buffer.getvalue())
+
+        transport = FakeTransport()
+        client = OfficialApiClient(
+            opendart_api_key="dart-key",
+            datago_api_key="unused",
+            transport=transport,
+        )
+
+        with patch("toss_trader.official_data.sleep") as sleeper:
+            corporations = client.dart_corporations()
+
+        self.assertEqual(corporations, {"0004V0": "00123456"})
+        self.assertEqual(transport.calls, 2)
+        sleeper.assert_called_once_with(0.5)
+
     def test_dart_company_returns_validated_profile(self) -> None:
         class FakeTransport:
             def send(self, request, timeout):

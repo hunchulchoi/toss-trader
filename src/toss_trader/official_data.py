@@ -426,9 +426,22 @@ class OfficialApiClient:
         return payload
 
     def _get_bytes(self, base_url: str, query: Mapping[str, object]) -> bytes:
-        response = self._transport.send(
-            HttpRequest("GET", f"{base_url}?{urlencode(query)}", {}), self._timeout
-        )
+        request = HttpRequest("GET", f"{base_url}?{urlencode(query)}", {})
+        response = None
+        for attempt in range(3):
+            try:
+                response = self._transport.send(request, self._timeout)
+            except OSError as error:
+                if attempt == 2:
+                    raise RuntimeError("official API network failure") from error
+                sleep(0.5 * (attempt + 1))
+                continue
+            if response.status not in {429, 500, 502, 503, 504}:
+                break
+            if attempt < 2:
+                sleep(0.5 * (attempt + 1))
+        if response is None:
+            raise RuntimeError("official API did not respond")
         if response.status != 200:
             raise RuntimeError(f"official API HTTP {response.status}")
         return response.body
