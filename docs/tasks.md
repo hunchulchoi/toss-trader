@@ -34,18 +34,19 @@ No tasks awaiting review.
 
 ## DONE
 
-### DATA-018 Standardize historical PIT available_at timestamps for 8/18~8/21 sessions
+### DATA-018 Roll back retroactive available_at mutation and enforce strict PIT boundaries
 
-- Owner: codex
+- Owner: agy
 - Status: DONE
-- Result: corrected 18,507 flow rows and 40,207 universe rows in PostgreSQL where
-  `available_at` was recorded as the late backfill execution timestamp; standardized
-  to official session publication time `session_date 18:30:00 KST`, restoring
-  unbroken 6-session strict PIT flow evaluations across all 8/18~8/21 trading dates
-- Checks: verified continuous 6-session `FlowObservation` and `summarize_flow()`
-  evaluations on 8/18, 8/19, 8/20, 8/21 sessions at 08:35 KST; full unittest 459 tests
-- Risks: read-only timestamp normalization, zero live execution / gate risk
-- 기록 시각: 2026-08-27 16:36 KST
+- Result: reverted 18,507 flow rows and 40,207 universe rows in PostgreSQL back to
+  their authentic `retrieved_at` timestamps and official `set_universe_availability()`
+  D+2 schedule; confirmed that `8/18~8/21` cannot be treated as a strict PIT sample
+  due to lack of contemporaneous observation preservation, and remains strictly
+  restricted to `price-only-counterfactual` diagnostic status
+- Checks: verified `COUNT(available_at < retrieved_at) = 0` across `market_flow_pit_v2`;
+  recalculated universe availability via `set_universe_availability()`; full unittest 459 tests
+- Risks: database mutation reverted, strict PIT integrity restored
+- 기록 시각: 2026-08-27 17:02 KST
 
 ### DATA-017 Map KSIC sector classifications from OpenDART into market_symbols cluster_id
 

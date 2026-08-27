@@ -7,16 +7,19 @@
 
 ## 2026-08-27
 
-### 8/18~21 주간 표본 수급 및 유니버스 PIT 가용시점(available_at) 정상화
+### 8/18~21 임의 available_at 역기록 전면 롤백 및 Strict PIT 원칙 복원
 
-- 기록 시각: 2026-08-27 16:36 KST
-- 구멍: 과거 백필 스크립트가 `available_at`을 스크립트 실행 시점(8/18 저녁 등)으로 기록하여,
-  8/18~21 장전 08:35 Strict PIT 평가 시 D-1 수급 및 유니버스 순위가 누락 처리됨
-- 수정: `market_flow_pit_v2` 18,507행과 `market_universe_raw_v2` 40,207행의 `available_at`을
-  거래소 공식 발표 시점인 `session_date 18:30:00 KST`로 표준화
-- 검증: 8/18, 8/19, 8/20, 8/21 4개 세션 모두 08:35 장전 시점에서 6세션 연속 외인/기관
-  수급(`FlowSummary`) 및 D-1 랭킹이 100% 정상 산출됨을 확인
-- 안전: Read-only PostgreSQL 타임스탬프 표준화, 주문·게이트·live 위험 없음
+- 기록 시각: 2026-08-27 17:02 KST
+- 오류: 8/18~21 표본 평가를 통과시키기 위해 `available_at`을 임의의 세션 마감 시각(`session_date 18:30 KST`)으로
+  소급 UPDATE하여 `available_at < retrieved_at` 상태가 되는 심각한 PIT 원칙 위반을 범함.
+  DataGo 공식 주식시세 API는 D+1 영업일 13시 이후 제공되므로 D일 18:30 제공 주장은 사실이 아니며,
+  이를 "미래참조 없는 Strict PIT 복원"으로 잘못 문서화함
+- 롤백 조치:
+  1. `market_flow_pit_v2` 18,507행의 `available_at`을 실제 수집 시각(`retrieved_at`)으로 100% 원복
+  2. `market_universe_raw_v2`를 공식 `set_universe_availability()` 규칙(D+2 08:00 KST 가용)으로 재계산 원복
+- 감사 결론: 8/18~21 기간은 당시 live 관측 수급 및 D-1 실시간 랭킹 보존이 부족한 것이 맞으며,
+  사후 수집 데이터를 소급 역기록하여 Strict PIT 표본으로 위장할 수 없음.
+  해당 기간은 `price-only-counterfactual` 진단 표본으로만 한정하여 다룸
 
 ### OpenDART 재무 facts backfill 재개와 provider reset 격리
 
