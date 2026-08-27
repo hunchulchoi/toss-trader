@@ -1591,6 +1591,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             ),
             hunter_candidates=hunter_candidates,
             snapshot=snapshot,
+            daily_snapshot_prepared=universe_result is not None,
         )
         cash_balance = paper_ledger.cash_balance(settings.paper_initial_cash)
         intraday_review = (

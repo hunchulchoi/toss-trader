@@ -1625,6 +1625,56 @@ class PaperCycleRunnerTest(unittest.TestCase):
             client.before_calls,
         )
 
+    def test_v2_opening_wait_counts_as_daily_candidate(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+        )
+
+        result = self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open - timedelta(minutes=25),
+        )
+
+        self.assertEqual(
+            result.items[0].skip_reason,
+            "setup-v2:waiting:first-session-bar",
+        )
+        self.assertEqual(result.insight["funnel"]["dailyCandidates"], 1)
+        self.assertEqual(result.insight["funnel"]["openingBarPending"], 1)
+        self.assertEqual(result.insight["funnel"]["evaluated"], 0)
+
+    def test_v2_prepare_reuses_universe_daily_snapshot(self) -> None:
+        market_open = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
+        client = WatchlistCandleClient(
+            {"005930": [Decimal(10), Decimal(10), Decimal(10), Decimal(12)]}
+        )
+        strategy = FakeV2CycleStrategy(
+            _v2_candidate(),
+            [_minute_bar(market_open, open_price="10", low_price="9.5")],
+        )
+
+        self._runner(client, v2_strategy=strategy).run(
+            symbols=("005930",),
+            interval="1m",
+            short_window=2,
+            long_window=3,
+            quantity=Decimal(1),
+            now=market_open - timedelta(minutes=25),
+            daily_snapshot_prepared=True,
+        )
+
+        self.assertIn(("005930", "1m", 4), client.interval_calls)
+        self.assertNotIn(("005930", "1d", 200), client.interval_calls)
+
     def test_1m_continuation_skips_when_daily_trend_is_not_risk_on(self) -> None:
         self.market_repository.upsert_candles(_daily_trend("005930", rising=False))
         client = WatchlistCandleClient(

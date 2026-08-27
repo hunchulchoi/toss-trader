@@ -597,6 +597,7 @@ def _cycle_timeline(
                         "skipReason": raw_state.get("skipReason"),
                         "error": raw_state.get("error"),
                         "fillSide": raw_state.get("fillSide"),
+                        "dailyCandidate": bool(raw_state.get("dailyCandidate")),
                     }
                 )
         runs.append(

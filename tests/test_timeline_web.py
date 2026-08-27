@@ -477,6 +477,8 @@ class TimelineWebTest(unittest.TestCase):
         self.assertIn(b"state.data.portfolios", script[2])
         self.assertIn(b"momentumShadow", script[2])
         self.assertIn(b"cycleTimeline", cycle_script[2])
+        self.assertIn("일봉 후보".encode(), cycle_script[2])
+        self.assertIn("첫 분봉 대기".encode(), cycle_script[2])
         self.assertIn(b"hour12: false", cycle_script[2])
         self.assertIn(b"seoulToday", cycle_script[2])
         self.assertNotIn(b"key.slice(-5)", cycle_script[2])

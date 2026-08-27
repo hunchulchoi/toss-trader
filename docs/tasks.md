@@ -24,6 +24,20 @@ No tasks awaiting review.
 
 ## DONE
 
+### STRAT-029 Preserve Rule D-1 candidates through the opening wait
+
+- Owner: codex
+- Status: DONE
+- Result: reuse the universe-prepared D-1 candle snapshot during the same and
+  cached Seoul session instead of recollecting and revising it inside each 1m
+  cycle; expose `dailyCandidates` and `openingBarPending` so an approved setup
+  waiting for the first completed minute is not reported as zero candidates
+- Checks: full unittest 455 tests; changed-file Ruff, Python/JavaScript syntax,
+  and whitespace
+- Risks: `evaluated` keeps its historical meaning for compatibility; thresholds,
+  entry window, sizing, Risk, orders, and fills are unchanged
+- 기록 시각: 2026-08-27 08:59 KST
+
 ### STRAT-028 Observe unresolved preannouncement expiry in shadow
 
 - Owner: codex

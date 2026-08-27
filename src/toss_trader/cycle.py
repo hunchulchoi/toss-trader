@@ -110,6 +110,7 @@ class SymbolCycleResult:
     short_ma: Decimal | None = None
     long_ma: Decimal | None = None
     ma_relation: str | None = None
+    daily_candidate: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,6 +206,7 @@ class PaperCycleRunner:
         trend_entry_symbols: tuple[str, ...] = (),
         trend_entry_key: str | None = None,
         new_buys_allowed: bool = True,
+        daily_snapshot_prepared: bool = False,
     ) -> PaperCycleSnapshot:
         size = len(symbols)
         collections: list[CollectionResult | None] = [None] * size
@@ -229,7 +231,11 @@ class PaperCycleRunner:
                         else long_window + 1
                     ),
                 )
-                if self._v2_strategy is not None and interval == "1m":
+                if (
+                    self._v2_strategy is not None
+                    and interval == "1m"
+                    and not daily_snapshot_prepared
+                ):
                     daily_collection = self._collector.collect(
                         symbol=symbol,
                         interval="1d",
@@ -358,6 +364,7 @@ class PaperCycleRunner:
         experimental_strategy_reference: bool = False,
         hunter_candidates: Mapping[str, Mapping[str, Any]] | None = None,
         snapshot: PaperCycleSnapshot | None = None,
+        daily_snapshot_prepared: bool = False,
     ) -> PaperCycleResult:
         previous_api_errors = self._state.latest_consecutive_api_errors()
         run_id = self._state.start_run(
@@ -376,6 +383,7 @@ class PaperCycleRunner:
                 trend_entry_symbols=trend_entry_symbols,
                 trend_entry_key=trend_entry_key,
                 new_buys_allowed=new_buys_allowed,
+                daily_snapshot_prepared=daily_snapshot_prepared,
             )
             _validate_snapshot(prepared, symbols=symbols, interval=interval, now=now)
             result = self._run_started(
@@ -677,6 +685,15 @@ class PaperCycleRunner:
                 sell_dropped=sell_dropped[index],
                 already_held=already_held[index],
                 ma_state=ma_states[index],
+                daily_candidate=(
+                    v2_candidates[index] is not None
+                    and _v2_candidate_can_arm(
+                        v2_candidates[index],
+                        experimental_strategy_reference=(
+                            experimental_strategy_reference
+                        ),
+                    )
+                ),
             )
             for index, symbol in enumerate(symbols)
         )
@@ -1578,6 +1595,7 @@ def _symbol_result(
     sell_dropped: bool,
     already_held: bool,
     ma_state: MaCrossoverEvaluation | None,
+    daily_candidate: bool = False,
     skip_detail: dict[str, Any] | None = None,
 ) -> SymbolCycleResult:
     decision = execution.decision if execution else None
@@ -1606,6 +1624,7 @@ def _symbol_result(
         short_ma=ma_state.short_ma if ma_state else None,
         long_ma=ma_state.long_ma if ma_state else None,
         ma_relation=ma_state.relation if ma_state else None,
+        daily_candidate=daily_candidate,
     )
 
 
@@ -1656,6 +1675,11 @@ def _cycle_insight(
     )
     funnel = {
         "scanned": len(items),
+        "dailyCandidates": sum(item.daily_candidate for item in items),
+        "openingBarPending": sum(
+            item.skip_reason == "setup-v2:waiting:first-session-bar"
+            for item in items
+        ),
         "evaluated": sum(
             item.error is None and item.skip_reason is None for item in items
         ),
@@ -1698,6 +1722,7 @@ def _symbol_insight(item: SymbolCycleResult) -> dict[str, Any]:
         "skipReason": item.skip_reason,
         "error": item.error,
         "fillSide": item.fill.side.value if item.fill is not None else None,
+        "dailyCandidate": item.daily_candidate,
     }
     if item.skip_detail:
         payload["skipDetail"] = item.skip_detail

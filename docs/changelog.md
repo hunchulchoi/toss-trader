@@ -5,6 +5,22 @@
 쓴다. 배포 시각이 다르면 실제 배포 시각을 별도로 쓴다.
 매매 권고 아님.
 
+## 2026-08-27
+
+### Rule 일봉 후보와 첫 분봉 대기 상태 분리
+
+- 기록 시각: 2026-08-27 08:59 KST
+- `dailyCandidates`는 해당 portfolio가 D-1 일봉 판정 뒤 arm 가능한 후보 수,
+  `openingBarPending`은 첫 완결 1분봉을 기다리는 수로 cycle funnel에 기록한다
+- 기존 `evaluated`는 호환을 위해 유지하지만 후보 수로 해석하지 않는다. timeline과
+  Hermes 패널도 이 계약을 사용해 `첫 분봉 대기`를 0후보·가격 차단으로 쓰지 않는다
+- D-1 known-pool universe가 일봉 평가를 마쳤으면 같은 서울 세션 1m cycle은 일봉을
+  다시 수집하지 않는다. universe freeze 직후 수정 일봉으로 후보 판정이 뒤집히던
+  경로를 차단한다
+- 안전: setup-v2.3 기준, 진입시간, 사이징, Risk, 주문, 체결 변경 없음
+- 검증: full unittest 455 tests, changed-file Ruff, Python/JavaScript syntax,
+  Git whitespace 통과
+
 ## 2026-08-26
 
 ### 미해소 사전공시 종료조건을 shadow로 분리 관측

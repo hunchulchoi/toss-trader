@@ -418,6 +418,8 @@ class MonitoringAssetsTest(unittest.TestCase):
             self.assertIn("post-cutoff-research", prompt)
             self.assertIn("임의 SQL·terminal", prompt)
             self.assertIn("missing-price-setup", prompt)
+            self.assertIn("dailyCandidates는 해당 portfolio가 arm 가능한", prompt)
+            self.assertIn("openingBarPending", prompt)
             self.assertNotIn("제공 JSON만 사용하고 도구를 호출하지 마라", prompt)
 
     def test_hermes_panel_agents_debate_falsifiable_improvements(self) -> None:

@@ -20,6 +20,8 @@ const reasonLabels = {
 };
 const funnelLabels = {
   scanned: "스캔",
+  dailyCandidates: "일봉 후보",
+  openingBarPending: "첫 분봉 대기",
   evaluated: "평가",
   skippedCandles: "캔들 부족",
   setupV2Blocked: "v2 차단",

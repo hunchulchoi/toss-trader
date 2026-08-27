@@ -112,6 +112,9 @@ session, including a valid zero-symbol result.
 
 Same-day Toss and afternoon KRX rankings no longer change the production entry
 membership. They may be retained later as non-authoritative shadow research.
+The 1m runner reuses that prepared D-1 daily snapshot for the frozen Seoul
+session; it must not recollect daily candles and silently revise membership
+between universe selection and opening-bar evaluation.
 The 10-minute entry window, opening gap check, sizing, heat, cash, account Risk,
 and held-position SELL paths remain unchanged.
 
