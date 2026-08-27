@@ -34,6 +34,18 @@ No tasks awaiting review.
 
 ## DONE
 
+### OPS-004 Align automation and timeline images with main
+
+- Owner: codex
+- Status: DONE
+- Result: rebuilt only automation and timeline from canonical main so the stale
+  CLI, official-data, repository, and sector helpers now match the pushed source
+- Checks: both health endpoints returned `ok`; restart count 0,
+  `TRADING_ENABLED=false`, and all audited runtime checksums match main
+- Production: Infisical prod `--no-deps` rollout at 2026-08-27 21:27 KST; n8n,
+  Hermes, PostgreSQL, orders, and unrelated containers were not changed
+- 기록 시각: 2026-08-27 21:38 KST
+
 ### DATA-019 Enforce first-observed availability for DataGo universe rows
 
 - Owner: codex

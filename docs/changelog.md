@@ -7,6 +7,18 @@
 
 ## 2026-08-27
 
+### automation·timeline main checksum 정합 배포
+
+- 배포 시각: 2026-08-27 21:27 KST
+- 구멍: `pit-collector`는 최신 main과 일치했지만 automation의 `cli.py`,
+  `official_data.py`, `repository.py`, `sectors.py`와 timeline의 `repository.py`가
+  12:47 KST 배포본에 머물러 모든 운영 이미지가 main과 같지는 않았다
+- 조치: Infisical prod 주입 후 `--no-deps`로 automation·timeline만 재빌드·재생성
+- 검증: 두 서비스 health `ok`, restart 0, `TRADING_ENABLED=false`; 오늘 변경된
+  automation·timeline 런타임 파일 checksum 모두 main 일치. n8n·Hermes·DB·주문
+  변경 없음
+- 기록 시각: 2026-08-27 21:38 KST
+
 ### DataGo 유니버스 actual-retrieval 가용시점 강제
 
 - 기록 시각: 2026-08-27 17:39 KST
