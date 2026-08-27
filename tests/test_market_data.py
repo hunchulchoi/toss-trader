@@ -136,6 +136,13 @@ class MarketCollectorTest(unittest.TestCase):
         clusters = self.repository.symbol_clusters(["005930", "000660", "999999"])
         self.assertEqual(clusters, {"005930": "전기전자", "000660": "전기전자"})
 
+    def test_lists_numeric_and_alphanumeric_symbols(self) -> None:
+        self.repository.upsert_symbol_names(
+            {"005930": "삼성전자", "0004V0": "신형 보통주"}
+        )
+
+        self.assertEqual(self.repository.symbols(), ("0004V0", "005930"))
+
     def test_rejects_malformed_api_candle_without_writing(self) -> None:
         payload = candle_payload()
         payload["candles"][0]["highPrice"] = "not-a-number"
@@ -221,6 +228,7 @@ class FakeCursor:
     def __init__(self) -> None:
         self.executed: list[tuple[str, object | None]] = []
         self.batch: tuple[str, list[tuple]] | None = None
+        self.rows: list[tuple] = []
 
     def __enter__(self) -> Self:
         return self
@@ -233,6 +241,9 @@ class FakeCursor:
 
     def executemany(self, query: str, params: list[tuple]) -> None:
         self.batch = (query, params)
+
+    def fetchall(self) -> list[tuple]:
+        return self.rows
 
 
 class FakeConnection:
@@ -252,6 +263,28 @@ class FakeConnection:
 
 
 class PostgresMarketRepositoryTest(unittest.TestCase):
+    def test_lists_numeric_and_alphanumeric_symbols(self) -> None:
+        connection = FakeConnection()
+        connection.cursor_instance.rows = [("0004V0",), ("005930",)]
+        repository = PostgresMarketRepository(
+            {
+                "host": "postgres.internal",
+                "port": 5432,
+                "user": "trader",
+                "password": "secret",
+                "dbname": "toss_trader",
+            },
+            connect=lambda **kwargs: connection,
+        )
+
+        symbols = repository.symbols()
+        repository.close()
+
+        self.assertEqual(symbols, ("0004V0", "005930"))
+        self.assertIn(
+            "ORDER BY symbol", connection.cursor_instance.executed[-1][0]
+        )
+
     def test_read_repository_forces_read_only_without_schema_ddl(self) -> None:
         connection = FakeConnection()
         received: dict = {}

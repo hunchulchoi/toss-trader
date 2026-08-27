@@ -15,6 +15,7 @@ from toss_trader.kis_flow import (
 )
 from toss_trader.official_data import (
     FinancialFact,
+    OfficialApiClient,
     OfficialDataCollector,
     OfficialDataRepository,
     compute_ttm_eps,
@@ -23,6 +24,46 @@ from toss_trader.official_data import (
 
 
 class OfficialDataTest(unittest.TestCase):
+    def test_dart_company_returns_validated_profile(self) -> None:
+        class FakeTransport:
+            def send(self, request, timeout):
+                del timeout
+                self.request = request
+                return HttpResponse(
+                    200,
+                    {},
+                    b'{"status":"000","corp_name":"Example","induty_code":"551"}',
+                )
+
+        transport = FakeTransport()
+        profile = OfficialApiClient(
+            opendart_api_key="dart-key",
+            datago_api_key="unused",
+            transport=transport,
+        ).dart_company(corp_code="00123456")
+
+        self.assertEqual(profile["induty_code"], "551")
+        self.assertIn("corp_code=00123456", transport.request.url)
+
+    def test_dart_company_rejects_provider_error(self) -> None:
+        class FakeTransport:
+            def send(self, request, timeout):
+                del request, timeout
+                return HttpResponse(
+                    200,
+                    {},
+                    b'{"status":"013","message":"no data"}',
+                )
+
+        client = OfficialApiClient(
+            opendart_api_key="dart-key",
+            datago_api_key="unused",
+            transport=FakeTransport(),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "OpenDART error 013"):
+            client.dart_company(corp_code="00123456")
+
     def test_market_categories_use_latest_observed_session_at_or_before_cutoff(
         self,
     ) -> None:

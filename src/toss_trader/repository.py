@@ -21,6 +21,8 @@ class MarketRepository(Protocol):
 
     def symbol_clusters(self, symbols: Sequence[str]) -> dict[str, str]: ...
 
+    def symbols(self) -> tuple[str, ...]: ...
+
     def latest_candles(
         self, symbol: str, interval: str, *, limit: int
     ) -> list[Candle]: ...
@@ -184,6 +186,12 @@ class SqliteMarketRepository:
             tuple(symbols),
         ).fetchall()
         return {str(symbol): str(cluster_id) for symbol, cluster_id in rows}
+
+    def symbols(self) -> tuple[str, ...]:
+        rows = self._connection.execute(
+            "SELECT symbol FROM market_symbols ORDER BY symbol"
+        ).fetchall()
+        return tuple(str(row[0]) for row in rows)
 
     def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
         _validate_limit(limit)
@@ -390,6 +398,12 @@ class PostgresMarketRepository:
             )
             rows = cursor.fetchall()
         return {str(symbol): str(cluster_id) for symbol, cluster_id in rows}
+
+    def symbols(self) -> tuple[str, ...]:
+        with self._connection.cursor() as cursor:
+            cursor.execute("SELECT symbol FROM market_symbols ORDER BY symbol")
+            rows = cursor.fetchall()
+        return tuple(str(row[0]) for row in rows)
 
     def latest_candles(self, symbol: str, interval: str, *, limit: int) -> list[Candle]:
         _validate_limit(limit)

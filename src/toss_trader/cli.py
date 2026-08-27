@@ -674,54 +674,53 @@ def _sync_symbol_sectors(settings: Settings, args: argparse.Namespace) -> int:
     )
     from .official_data import OfficialApiClient
     from .sectors import ksic_to_sector
-    import urllib.request
-    import json
 
-    symbols = args.symbols
-    if not symbols:
-        postgres_params = settings.postgres_connection_parameters()
-        if postgres_params:
-            import psycopg
+    try:
+        symbols = tuple(args.symbols or repository.symbols())
+        if not symbols:
+            return _emit({"synced": 0, "candidates": 0, "tradingEnabled": False})
 
-            with psycopg.connect(**postgres_params) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT symbol FROM market_symbols WHERE symbol ~ '^[0-9]{6}$'"
-                    )
-                    symbols = [r[0] for r in cur.fetchall()]
-        else:
-            rows = repository._connection.execute(
-                "SELECT symbol FROM market_symbols WHERE symbol GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
-            ).fetchall()
-            symbols = [r[0] for r in rows]
+        client = OfficialApiClient(
+            opendart_api_key=dart_key,
+            datago_api_key="unused",
+        )
+        dart_corps = client.dart_corporations()
+        clusters: dict[str, str] = {}
+        missing_corporation = 0
+        unmapped_industry = 0
+        failed_symbols: list[str] = []
+        for symbol in symbols:
+            corp_code = dart_corps.get(symbol)
+            if not corp_code:
+                missing_corporation += 1
+                continue
+            try:
+                profile = client.dart_company(corp_code=corp_code)
+                sector = ksic_to_sector(profile["induty_code"])
+            except (RuntimeError, TypeError, ValueError, KeyError):
+                failed_symbols.append(symbol)
+                continue
+            if sector == "UNKNOWN":
+                unmapped_industry += 1
+                continue
+            clusters[symbol] = sector
+        if failed_symbols:
+            raise RuntimeError(
+                f"OpenDART company profile failed for {len(failed_symbols)} symbols"
+            )
 
-    if not symbols:
-        return _emit({"synced": 0, "candidates": 0, "tradingEnabled": False})
-
-    client = OfficialApiClient(
-        opendart_api_key=dart_key,
-        datago_api_key="unused",
-    )
-    dart_corps = client.dart_corporations()
-    clusters: dict[str, str] = {}
-    for sym in symbols:
-        corp_code = dart_corps.get(sym)
-        if not corp_code:
-            continue
-        try:
-            url = f"https://opendart.fss.or.kr/api/company.json?crtfc_key={dart_key}&corp_code={corp_code}"
-            with urllib.request.urlopen(url, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                induty_code = data.get("induty_code")
-                sector = ksic_to_sector(induty_code)
-                if sector != "UNKNOWN":
-                    clusters[sym] = sector
-        except Exception:
-            continue
-
-    count = repository.upsert_symbol_clusters(clusters)
-    repository.close()
-    return _emit({"synced": count, "candidates": len(symbols), "tradingEnabled": False})
+        count = repository.upsert_symbol_clusters(clusters)
+        return _emit(
+            {
+                "synced": count,
+                "candidates": len(symbols),
+                "missingCorporation": missing_corporation,
+                "unmappedIndustry": unmapped_industry,
+                "tradingEnabled": False,
+            }
+        )
+    finally:
+        repository.close()
 
 
 def _kis_credentials() -> tuple[str, str]:

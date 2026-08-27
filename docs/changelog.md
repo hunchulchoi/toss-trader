@@ -15,6 +15,13 @@
 - 동작: OpenDART 기업개황(`company.json`)의 `induty_code`(한국표준산업분류 KSIC)를 표준 거래소 업종(전기전자, 의약품, 운수장비, 기계, 화학, 서비스업 등)으로 매핑([`sectors.py`](file:///mnt/dgst/volume/toss-trader/src/toss_trader/sectors.py))하고 `market_symbols.cluster_id`에 적재. `OfficialV2CycleStrategy.cluster_id(symbol)`가 실제 업종을 반환하도록 개선
 - 결과: 유니버스 404개 후보 중 351개 종목의 실제 업종 매핑 완료 (전기전자 76, 서비스업 55, 기계 39, 화학 27, 운수장비 26, 의약품 26 등). 비매핑 종목/ETF는 `UNKNOWN`으로 안전 fallback
 - 배포: `automation`, `timeline`, `pit-collector` 컨테이너 재빌드 및 DB 동기화 완료
+- 기록 시각: 2026-08-27 13:11 KST
+- 후속 감사: `UNKNOWN` 75개를 공식 DART 기업개황과 대조했다. 실제 보통주 9개 중
+  영숫자 단축코드 6개는 숫자-only 조회 버그, 아난티·자이에스앤디·쿠쿠홈시스는
+  KSIC `55/68/76` 누락이었다. 우선주 4개와 ETF/ETN 62개는 DART 상장법인
+  코드가 없어 `UNKNOWN` 유지가 맞다
+- 보완: 모든 단축코드를 DART 법인목록과 교차하고, 회사개황 API 실패 시 부분 결과를
+  저장하지 않도록 fail-closed 처리했다. 업종 매핑·Risk·주문 규칙 변경 없음
 
 ### Rule 일봉 후보와 첫 분봉 대기 상태 분리
 

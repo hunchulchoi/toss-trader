@@ -323,6 +323,21 @@ class OfficialApiClient:
             raise TypeError("OpenDART list is missing")
         return [dict(row) for row in rows if isinstance(row, Mapping)]
 
+    def dart_company(self, *, corp_code: str) -> dict[str, Any]:
+        if not corp_code.strip():
+            raise ValueError("corp_code must not be empty")
+        payload = self._get_json(
+            f"{OPENDART_BASE_URL}/company.json",
+            {"crtfc_key": self._dart_key, "corp_code": corp_code},
+        )
+        status = str(payload.get("status", ""))
+        if status != "000":
+            raise RuntimeError(f"OpenDART error {status}: {payload.get('message', '')}")
+        induty_code = payload.get("induty_code")
+        if not isinstance(induty_code, str):
+            raise TypeError("OpenDART company industry code is missing")
+        return payload
+
     def dart_events(
         self, *, start: date, end: date, page: int = 1, page_count: int = 100
     ) -> dict[str, Any]:

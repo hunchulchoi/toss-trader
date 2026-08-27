@@ -36,6 +36,13 @@ No tasks awaiting review.
   confirming sector distribution (전기전자 76, 서비스업 55, 기계 39, 화학 27, 운수장비 26, 의약품 26 등)
 - Risks: unmapped symbols/ETFs safely fall back to `UNKNOWN` conservative cluster
 - 기록 시각: 2026-08-27 12:51 KST
+- Follow-up: audited all 75 `UNKNOWN` rows against OpenDART; fixed six
+  alphanumeric common-share codes and KSIC prefixes 55/68/76. The remaining
+  66 rows are four preferred shares and 62 ETF/ETN instruments and deliberately
+  retain the conservative fallback. Company-profile errors now fail atomically
+  instead of silently freezing a partial sync
+- Checks: sector/market/official-data 34 tests; changed-file Ruff and whitespace
+- 기록 시각: 2026-08-27 13:11 KST
 
 ### STRAT-029 Preserve Rule D-1 candidates through the opening wait
 

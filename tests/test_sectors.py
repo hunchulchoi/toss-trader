@@ -14,6 +14,9 @@ class SectorsTest(unittest.TestCase):
         self.assertEqual(ksic_to_sector("41112"), "건설업")
         self.assertEqual(ksic_to_sector("108"), "음식료품")
         self.assertEqual(ksic_to_sector("70113"), "서비스업")
+        self.assertEqual(ksic_to_sector("551"), "서비스업")
+        self.assertEqual(ksic_to_sector("681"), "서비스업")
+        self.assertEqual(ksic_to_sector("762"), "서비스업")
 
     def test_defaults_unknown_to_unknown_cluster(self) -> None:
         self.assertEqual(ksic_to_sector(None), "UNKNOWN")
