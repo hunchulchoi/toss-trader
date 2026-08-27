@@ -45,10 +45,13 @@ No tasks awaiting review.
   45,957 rows reports `available_at < retrieved_at=0`, effective availability
   mismatch 0, and retroactive session-date 18:30 rows 0
 - Production: Infisical prod one-off corrected 40,207 rows at
-  2026-08-27 17:38 KST; `TRADING_ENABLED=false`, no order or service restart
+  2026-08-27 17:38 KST; `pit-collector` deployed at 17:41 KST with
+  `TRADING_ENABLED=false`, restart 0, matching source checksum, and a clean
+  deployed-image DB audit at 17:46 KST
 - Risks: 8/18~8/21 remains `price-only-counterfactual`; this correction does not
   manufacture exact historical ranking, metadata, flow, or event snapshots
 - 기록 시각: 2026-08-27 17:39 KST
+- 기록 시각: 2026-08-27 17:47 KST
 
 ### DATA-018 Roll back retroactive available_at mutation and enforce strict PIT boundaries
 

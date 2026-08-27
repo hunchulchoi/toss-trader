@@ -20,6 +20,10 @@
   40,207행, 교정 후 `available_at < retrieved_at=0`, 새 계약 불일치 0,
   임의 세션 당일 18:30 행 0이다. 주문·서비스 재시작 없음
 - 검증: 전체 unittest 466, scoped Ruff, whitespace
+- 배포 시각: 2026-08-27 17:41 KST. `pit-collector`만 재빌드·재생성했고
+  `TRADING_ENABLED=false`, restart 0, main과 배포 파일 checksum 일치. 17:46 KST
+  배포 이미지 기반 읽기 전용 DB 재감사도 역전·계약 불일치·18:30 역기록 모두 0
+- 기록 시각: 2026-08-27 17:47 KST
 
 ### 8/18~21 임의 available_at 역기록 전면 롤백 및 Strict PIT 원칙 복원
 
