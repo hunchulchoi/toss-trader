@@ -41,8 +41,12 @@ No tasks awaiting review.
   66 rows are four preferred shares and 62 ETF/ETN instruments and deliberately
   retain the conservative fallback. Company-profile errors now fail atomically
   instead of silently freezing a partial sync
-- Checks: sector/market/official-data 34 tests; changed-file Ruff and whitespace
+- Checks: full unittest 463 tests; changed-file Ruff and whitespace; production
+  one-off sync 9/9 and read-only audit showing 360 mapped, 66 deliberate fallback
+- Production: Infisical prod one-off sync at 2026-08-27 13:13 KST;
+  `TRADING_ENABLED=false`, no order or service restart
 - 기록 시각: 2026-08-27 13:11 KST
+- 기록 시각: 2026-08-27 13:13 KST
 
 ### STRAT-029 Preserve Rule D-1 candidates through the opening wait
 

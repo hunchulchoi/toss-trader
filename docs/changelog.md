@@ -22,6 +22,11 @@
   코드가 없어 `UNKNOWN` 유지가 맞다
 - 보완: 모든 단축코드를 DART 법인목록과 교차하고, 회사개황 API 실패 시 부분 결과를
   저장하지 않도록 fail-closed 처리했다. 업종 매핑·Risk·주문 규칙 변경 없음
+- 기록 시각: 2026-08-27 13:13 KST
+- DB 동기화 시각: 2026-08-27 13:13 KST. Infisical prod 주입의 one-off
+  `sync-symbol-sectors`로 공식 확인 9종만 upsert했다. `synced=9`, 실패·누락 0,
+  재감사 결과 전체 426개 중 360개가 업종 매핑됐고 남은 `UNKNOWN` 66개는
+  우선주 4개와 ETF/ETN 62개뿐이다. `TRADING_ENABLED=false`; 주문·서비스 재시작 없음
 
 ### Rule 일봉 후보와 첫 분봉 대기 상태 분리
 
