@@ -367,6 +367,23 @@ class PaperLedgerTest(unittest.TestCase):
         self.assertEqual(runs[0]["totalTokens"], 442)
         self.assertEqual(runs[0]["details"]["errors"], 0)
 
+    def test_records_setup_parameter_shadow_audit(self) -> None:
+        observed_at = datetime(2026, 8, 27, 1, tzinfo=UTC)
+
+        run_id = self.ledger.record_automation_run(
+            run_type="setup-parameter-shadow",
+            status="succeeded",
+            stage="evaluated",
+            started_at=observed_at,
+            finished_at=observed_at,
+            details={"ruleVersion": "setup-parameter-shadow-v1"},
+        )
+
+        runs = self.ledger.recent_automation_runs(
+            run_type="setup-parameter-shadow"
+        )
+        self.assertEqual(runs[0]["runId"], run_id)
+
 
 class FakePaperCursor:
     def __init__(self) -> None:

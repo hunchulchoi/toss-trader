@@ -2130,6 +2130,7 @@ def _automation_run_values(
         "hourly_market_watch",
         "momentum-shadow",
         "momentum-shadow-advice",
+        "setup-parameter-shadow",
         "n8n_flow",
     }:
         raise ValueError("unknown automation run type")
@@ -2326,6 +2327,7 @@ def _validate_automation_query(
         "hourly_market_watch",
         "momentum-shadow",
         "momentum-shadow-advice",
+        "setup-parameter-shadow",
         "n8n_flow",
     }:
         raise ValueError("unknown automation run type")

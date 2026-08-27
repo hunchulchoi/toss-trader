@@ -18,9 +18,12 @@ from toss_trader.cli import (
     _intraday_backfill_start_cursor,
     _momentum_collection_symbols,
     _paper_session_accounting,
+    _record_setup_parameter_shadow_once,
     _recorded_momentum_symbols,
+    _recorded_setup_parameter_symbols,
     _seoul_day_window,
     _session_candle_count,
+    _setup_parameter_shadow_recorded,
     build_parser,
     main,
 )
@@ -181,6 +184,75 @@ class IntradaySampleCollectionTest(unittest.TestCase):
             [("069500", "1m", 200), ("229200", "1m", 200)],
         )
         self.assertEqual(result["extraSymbols"], ["069500", "229200"])
+
+    def test_setup_parameter_shadow_audit_is_idempotent_and_queryable(self) -> None:
+        class Ledger:
+            def __init__(self) -> None:
+                self.rows: list[dict[str, object]] = []
+
+            def recent_automation_runs(self, **kwargs):
+                return [
+                    row
+                    for row in self.rows
+                    if row["runType"] == kwargs.get("run_type")
+                ]
+
+            def record_automation_run(self, **kwargs):
+                run_id = f"parameter-{len(self.rows) + 1}"
+                self.rows.append(
+                    {
+                        "runId": run_id,
+                        "runType": kwargs["run_type"],
+                        "status": kwargs["status"],
+                        "details": dict(kwargs["details"]),
+                    }
+                )
+                return run_id
+
+        ledger = Ledger()
+        observed_at = datetime(2026, 8, 27, 1, tzinfo=UTC)
+        first = {
+            "status": "evaluated",
+            "ruleVersion": "setup-parameter-shadow-v1",
+            "sessionDate": "2026-08-27",
+        }
+        second = dict(first)
+
+        first_id = _record_setup_parameter_shadow_once(
+            ledger, payload=first, observed_at=observed_at
+        )
+        second_id = _record_setup_parameter_shadow_once(
+            ledger, payload=second, observed_at=observed_at
+        )
+
+        self.assertEqual(first_id, second_id)
+        self.assertEqual(len(ledger.rows), 1)
+        self.assertEqual(ledger.rows[0]["status"], "succeeded")
+        self.assertTrue(
+            _setup_parameter_shadow_recorded(
+                ledger, session_date="2026-08-27"
+            )
+        )
+        self.assertFalse(first["cacheHit"])
+        self.assertTrue(second["cacheHit"])
+        ledger.rows[0]["details"]["rows"] = [
+            {"symbol": "005930"},
+            {"symbol": "000660"},
+            {"symbol": "005930"},
+        ]
+        self.assertEqual(
+            _recorded_setup_parameter_symbols(
+                ledger, session_date="2026-08-27"
+            ),
+            ("005930", "000660"),
+        )
+
+    def test_setup_parameter_shadow_is_an_automation_query_type(self) -> None:
+        args = build_parser().parse_args(
+            ["automation-runs", "--type", "setup-parameter-shadow"]
+        )
+
+        self.assertEqual(args.type, "setup-parameter-shadow")
 
     def test_momentum_evaluation_collects_full_research_pool(self) -> None:
         self.assertEqual(

@@ -69,6 +69,10 @@ from .risk import (
     RiskManager,
     UniverseRiskContext,
 )
+from .setup_parameter_shadow import (
+    RULE_VERSION as SETUP_PARAMETER_SHADOW_RULE_VERSION,
+)
+from .setup_parameter_shadow import evaluate_setup_parameter_shadow
 from .setup_screening import OfficialSetupContextFactory
 from .strategy import MaCrossoverEvaluation, ma_crossover_signal
 from .timeline_web import serve_timeline
@@ -280,7 +284,14 @@ def build_parser() -> argparse.ArgumentParser:
     automation_runs.add_argument("--limit", type=int, default=100)
     automation_runs.add_argument(
         "--type",
-        choices=("all", "daily", "market_scan", "hermes_trade", "n8n_flow"),
+        choices=(
+            "all",
+            "daily",
+            "market_scan",
+            "hermes_trade",
+            "setup-parameter-shadow",
+            "n8n_flow",
+        ),
         default="all",
     )
     automation_runs.add_argument(
@@ -1311,12 +1322,16 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
     now = snapshot.evaluated_at if snapshot is not None else datetime.now(UTC)
     market_context = None
     momentum_shadow = None
+    setup_parameter_shadow = None
+    setup_parameter_recorded_symbols: tuple[str, ...] = ()
     momentum_ranked_symbols: tuple[str, ...] = ()
     momentum_ranking_error: str | None = None
     momentum_research_pool: tuple[str, ...] = ()
     momentum_markets: dict[str, str] = {}
     momentum_context_ready = False
     momentum_evaluation_due = False
+    setup_parameter_evaluation_due = False
+    setup_parameter_signal_session: date | None = None
     momentum_session: MarketSession | None = None
     with ExitStack() as stack:
         client = _client(settings)
@@ -1455,6 +1470,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             ):
                 try:
                     signal_session = previous_kr_business_date(calendar, now)
+                    setup_parameter_signal_session = signal_session
                     day_start = datetime.combine(
                         now.astimezone(ZoneInfo("Asia/Seoul")).date(),
                         datetime.min.time(),
@@ -1473,10 +1489,24 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                     )
                     momentum_session = calendar.regular_session("KR", now=now)
                     momentum_context_ready = True
+                    setup_parameter_recorded_symbols = (
+                        _recorded_setup_parameter_symbols(
+                            paper_ledger,
+                            session_date=momentum_session.business_date.isoformat(),
+                        )
+                    )
                     if time(10, 0) <= local_time < time(10, 6):
                         momentum_evaluation_due = not _momentum_shadow_recorded(
                             paper_ledger,
                             session_date=momentum_session.business_date.isoformat(),
+                        )
+                        setup_parameter_evaluation_due = not (
+                            _setup_parameter_shadow_recorded(
+                                paper_ledger,
+                                session_date=(
+                                    momentum_session.business_date.isoformat()
+                                ),
+                            )
                         )
                     if local_time <= time(10, 0):
                         momentum_ranked_symbols = _momentum_ranked_symbols(
@@ -1510,13 +1540,20 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 cycle_symbols=symbols,
                 collection_symbols=tuple(
                     dict.fromkeys(
-                        (*universe_result.collection_symbols, *momentum_ranked_symbols)
+                        (
+                            *universe_result.collection_symbols,
+                            *momentum_ranked_symbols,
+                            *setup_parameter_recorded_symbols,
+                        )
                     )
                 ),
                 extra_symbols=_momentum_collection_symbols(
                     research_pool=momentum_research_pool,
                     benchmark_symbols=settings.market_benchmark_symbols,
-                    evaluation_due=momentum_evaluation_due,
+                    evaluation_due=(
+                        momentum_evaluation_due
+                        or setup_parameter_evaluation_due
+                    ),
                 ),
                 extra_count=SESSION_MINUTE_FETCH_COUNT,
             )
@@ -1524,6 +1561,51 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
                 momentum_ranked_symbols
             )
             intraday_sample["momentumRankingError"] = momentum_ranking_error
+        if (
+            args.portfolio == "rule"
+            and interval == "1m"
+            and universe_result is not None
+            and momentum_context_ready
+            and setup_parameter_evaluation_due
+            and time(10, 0)
+            <= now.astimezone(ZoneInfo("Asia/Seoul")).time()
+            < time(10, 6)
+        ):
+            try:
+                assert momentum_session is not None
+                assert setup_parameter_signal_session is not None
+                setup_parameter_shadow = evaluate_setup_parameter_shadow(
+                    market_repository,
+                    symbols=momentum_research_pool,
+                    session=momentum_session,
+                    signal_session=setup_parameter_signal_session,
+                    observed_at=now,
+                    equity=settings.paper_initial_cash,
+                    available_cash=settings.paper_initial_cash,
+                )
+            except (
+                OSError,
+                RuntimeError,
+                TossApiError,
+                TypeError,
+                ValueError,
+            ) as error:
+                setup_parameter_shadow = {
+                    "status": "unavailable",
+                    "ruleVersion": SETUP_PARAMETER_SHADOW_RULE_VERSION,
+                    "sessionDate": momentum_session.business_date.isoformat(),
+                    "error": f"{type(error).__name__}: {error}",
+                }
+            local_time = now.astimezone(ZoneInfo("Asia/Seoul")).time()
+            if (
+                setup_parameter_shadow.get("status") == "evaluated"
+                or local_time >= time(10, 5)
+            ):
+                _record_setup_parameter_shadow_once(
+                    paper_ledger,
+                    payload=setup_parameter_shadow,
+                    observed_at=now,
+                )
         if (
             args.portfolio == "rule"
             and interval == "1m"
@@ -1812,6 +1894,7 @@ def _run_paper_cycle(settings: Settings, args: argparse.Namespace) -> int:
             },
             "intradaySample": intraday_sample,
             "momentumShadow": momentum_shadow,
+            "setupParameterShadow": setup_parameter_shadow,
             "summary": {
                 "symbols": result.symbol_count,
                 "signals": result.signal_count,
@@ -2343,6 +2426,90 @@ def _record_momentum_shadow_once(
     payload["auditRunId"] = run_id
     payload["cacheHit"] = False
     return run_id
+
+
+def _record_setup_parameter_shadow_once(
+    ledger: Any,
+    *,
+    payload: dict[str, Any],
+    observed_at: datetime,
+) -> str:
+    session_date = str(payload.get("sessionDate") or "")
+    if not session_date:
+        raise ValueError("setup parameter shadow sessionDate is required")
+    for run in ledger.recent_automation_runs(
+        limit=100, run_type="setup-parameter-shadow"
+    ):
+        details = run.get("details")
+        if not isinstance(details, Mapping):
+            continue
+        if (
+            details.get("sessionDate") == session_date
+            and details.get("ruleVersion") == SETUP_PARAMETER_SHADOW_RULE_VERSION
+        ):
+            run_id = str(run["runId"])
+            payload["auditRunId"] = run_id
+            payload["cacheHit"] = True
+            return run_id
+    succeeded = payload.get("status") == "evaluated"
+    run_id = ledger.record_automation_run(
+        run_type="setup-parameter-shadow",
+        status="succeeded" if succeeded else "failed",
+        stage=str(payload.get("status") or "unavailable"),
+        started_at=observed_at,
+        finished_at=observed_at,
+        error=(
+            None
+            if succeeded
+            else str(payload.get("error") or "parameter shadow data incomplete")
+        ),
+        details=payload,
+    )
+    payload["auditRunId"] = run_id
+    payload["cacheHit"] = False
+    return run_id
+
+
+def _setup_parameter_shadow_recorded(
+    ledger: Any, *, session_date: str
+) -> bool:
+    return any(
+        isinstance(run.get("details"), Mapping)
+        and run["details"].get("sessionDate") == session_date
+        and run["details"].get("ruleVersion")
+        == SETUP_PARAMETER_SHADOW_RULE_VERSION
+        for run in ledger.recent_automation_runs(
+            limit=100, run_type="setup-parameter-shadow"
+        )
+    )
+
+
+def _recorded_setup_parameter_symbols(
+    ledger: Any, *, session_date: str
+) -> tuple[str, ...]:
+    for run in ledger.recent_automation_runs(
+        limit=100, run_type="setup-parameter-shadow"
+    ):
+        details = run.get("details")
+        if not isinstance(details, Mapping):
+            continue
+        if (
+            details.get("sessionDate") != session_date
+            or details.get("ruleVersion")
+            != SETUP_PARAMETER_SHADOW_RULE_VERSION
+        ):
+            continue
+        rows = details.get("rows")
+        if not isinstance(rows, list):
+            return ()
+        return tuple(
+            dict.fromkeys(
+                str(row["symbol"])
+                for row in rows
+                if isinstance(row, Mapping) and row.get("symbol")
+            )
+        )
+    return ()
 
 
 def _momentum_shadow_recorded(
