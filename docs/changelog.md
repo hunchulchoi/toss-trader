@@ -19,6 +19,13 @@
   `strategyInput=false`, `shadowOnly=true`, `strictPITApproved=false`; Rule,
   Hermes, Risk, 주문, 체결 변경 없음
 - 기록 시각: 2026-08-27 22:23 KST
+- 배포 시각: 2026-08-27 22:39 KST. Infisical prod 주입 후 automation만
+  `--no-deps` 재빌드·재생성했고 health `healthy`, restart 0,
+  `TRADING_ENABLED=false`, 배포 모듈 `setup-parameter-shadow-v1`을 확인했다
+- 운영 검증: 2026-08-28·08-31·09-01·09-02 총 4개 서울 세션 모두
+  `succeeded/evaluated`. 일별 research pool 341~343종의 opening 30봉 coverage가
+  전부 100%였다. DB·n8n 수동 변경과 주문 없음
+- 기록 시각: 2026-09-02 15:55 KST
 
 ### automation·timeline main checksum 정합 배포
 

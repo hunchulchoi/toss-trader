@@ -50,6 +50,10 @@ No tasks awaiting review.
   10-20 independent forward sessions are required before parameter promotion
 - Commit: `4a828ba`
 - 기록 시각: 2026-08-27 22:27 KST
+- Deployment: automation-only rebuild/recreate at 2026-08-27 22:39 KST;
+  healthy, restart 0, `TRADING_ENABLED=false`. Four production shadow sessions
+  through 2026-09-02 succeeded with complete 341-343 symbol opening coverage
+- 기록 시각: 2026-09-02 15:55 KST
 
 ### OPS-004 Align automation and timeline images with main
 
